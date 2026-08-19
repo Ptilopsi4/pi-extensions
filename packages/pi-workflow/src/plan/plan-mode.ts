@@ -51,6 +51,7 @@ import {
 import {
 	awaitPlanModeSettingsWrites,
 	configuredImplementationPlanRetention,
+	configuredPlanModeToggleShortcut,
 	configuredThinkingLevel,
 	type ImplementationPlanRetention,
 	type PlanModeSettings,
@@ -143,6 +144,8 @@ export default function planMode(
 	};
 	let state: PlanModeState = { enabled: false, awaitingAction: false };
 	let settings: PlanModeSettings = { thinkingLevel: "inherit" };
+	let toggleShortcut: ReturnType<typeof configuredPlanModeToggleShortcut>;
+	const clearPlanModeShortcutHandler = () => {};
 	let currentContext: ExtensionContext | undefined;
 	let sessionReady = true;
 	let handoffInFlightImplementationId: string | undefined;
@@ -304,13 +307,7 @@ export default function planMode(
 			}
 			if (command === "exit" || command === "off") {
 				if (linkedPlanExitBlocked(ctx)) return;
-				const notification = state.activeImplementation
-					? "Active implementation plan cleared."
-					: state.savedPlan
-						? "Saved plan cleared."
-						: state.latestPlan
-							? "Plan mode disabled. Proposed plan discarded."
-							: "Plan mode disabled.";
+				const notification = planModeDisableNotification();
 				exitPlanMode(ctx);
 				ctx.ui.notify(notification, "info");
 				return;
@@ -343,6 +340,28 @@ export default function planMode(
 		},
 	});
 
+	const applyPlanModeShortcut = (
+		nextShortcut: ReturnType<typeof configuredPlanModeToggleShortcut>,
+	) => {
+		if (toggleShortcut && toggleShortcut !== nextShortcut) {
+			pi.registerShortcut(toggleShortcut, {
+				handler: clearPlanModeShortcutHandler,
+			});
+		}
+		if (!nextShortcut) {
+			toggleShortcut = undefined;
+			return;
+		}
+		if (toggleShortcut === nextShortcut) return;
+		pi.registerShortcut(nextShortcut, {
+			description: "Toggle Plan mode",
+			handler: (ctx) => {
+				togglePlanMode(ctx);
+			},
+		});
+		toggleShortcut = nextShortcut;
+	};
+
 	pi.on("session_start", async (event, ctx) => {
 		const generation = ++menuGeneration;
 		sessionReady = false;
@@ -366,6 +385,7 @@ export default function planMode(
 		if (loadedSettings.notice && dependencies.reportSettingsIssues !== false) {
 			ctx.ui.notify(loadedSettings.notice, "warning");
 		}
+		applyPlanModeShortcut(configuredPlanModeToggleShortcut(settings));
 		const requestedFlagActivation = pi.getFlag("plan") === true && !state.enabled;
 		const flagBlocker = requestedFlagActivation ? dependencies.canStartPlan?.() : undefined;
 		if (flagBlocker) ctx.ui.notify(flagBlocker, "warning");
@@ -657,6 +677,33 @@ export default function planMode(
 
 	function readyPresentationIsCurrent(intent: ReadyPresentationIntent) {
 		return completedPlanIsCurrent(intent) && readyPresentationIntent?.nonce === intent.nonce;
+	}
+
+	function togglePlanMode(ctx: ExtensionContext) {
+		// Pi keeps a registered shortcut across sessions, so the handler stays inert while a session
+		// is starting, replaced, or shut down instead of mutating state the session does not own.
+		if (!sessionReady) return;
+		if (state.enabled) {
+			if (linkedPlanExitBlocked(ctx)) return;
+			const notification = planModeDisableNotification();
+			exitPlanMode(ctx);
+			ctx.ui.notify(notification, "info");
+			return;
+		}
+		if (planStartBlocked(ctx)) return;
+		if (savedPlanBlocksNewWorkflow(ctx, state.savedPlan !== undefined)) return;
+		enterPlanMode(ctx);
+		ctx.ui.notify("Plan mode enabled. I will explore and plan, but not modify files.", "info");
+	}
+
+	function planModeDisableNotification() {
+		return state.activeImplementation
+			? "Active implementation plan cleared."
+			: state.savedPlan
+				? "Saved plan cleared."
+				: state.latestPlan
+					? "Plan mode disabled. Proposed plan discarded."
+					: "Plan mode disabled.";
 	}
 
 	function requestFinalPlan(ctx: ExtensionContext) {
@@ -1016,7 +1063,9 @@ export default function planMode(
 			settingsPath: dependencies.settingsPath,
 			...(dependencies.updateSettings ? { updateSettings: dependencies.updateSettings } : {}),
 			onSaved: (saved) => {
-				if (isCurrent()) settings = saved;
+				if (!isCurrent()) return;
+				settings = saved;
+				applyPlanModeShortcut(configuredPlanModeToggleShortcut(saved));
 			},
 			...(dependencies.readSettings
 				? { readSettings: async () => dependencies.readSettings?.() ?? { kind: "missing" } }

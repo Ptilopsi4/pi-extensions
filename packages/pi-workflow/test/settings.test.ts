@@ -261,3 +261,54 @@ test("Plan and Goal adapters expose only their normalized section", async () => 
 		await fixture.cleanup();
 	}
 });
+
+test("the Plan toggle shortcut round-trips through the workflow document", async () => {
+	const fixture = await temporarySettings();
+	try {
+		await writeFile(
+			fixture.path,
+			JSON.stringify({ plan: { thinkingLevel: "medium", futurePlan: { kept: true } } }),
+		);
+
+		const saved = await updateWorkflowPlanSettings(
+			{ toggleShortcut: "ctrl+alt+p" },
+			{ settingsPath: fixture.path },
+		);
+		assert.equal(saved.toggleShortcut, "ctrl+alt+p");
+		assert.deepEqual(readWorkflowPlanSettings(fixture.path), {
+			kind: "loaded",
+			settings: { thinkingLevel: "medium", toggleShortcut: "ctrl+alt+p" },
+		});
+
+		const cleared = await updateWorkflowPlanSettings(
+			{ toggleShortcut: null },
+			{ settingsPath: fixture.path },
+		);
+		assert.equal(cleared.toggleShortcut, undefined);
+		const document = JSON.parse(await readFile(fixture.path, "utf8")) as {
+			plan?: Record<string, unknown>;
+		};
+		assert.equal(Object.hasOwn(document.plan ?? {}, "toggleShortcut"), false);
+		assert.deepEqual(document.plan?.futurePlan, { kept: true });
+	} finally {
+		await fixture.cleanup();
+	}
+});
+
+test("an invalid Plan toggle shortcut blocks the workflow settings write", async () => {
+	const fixture = await temporarySettings();
+	try {
+		await writeFile(fixture.path, JSON.stringify({ plan: { toggleShortcut: "bad+key" } }));
+		assert.equal(readWorkflowSettings(fixture.path).kind, "invalid");
+		await assert.rejects(
+			updateWorkflowPlanSettings({ thinkingLevel: "high" }, { settingsPath: fixture.path }),
+			/invalid/,
+		);
+		assert.equal(
+			await readFile(fixture.path, "utf8"),
+			JSON.stringify({ plan: { toggleShortcut: "bad+key" } }),
+		);
+	} finally {
+		await fixture.cleanup();
+	}
+});

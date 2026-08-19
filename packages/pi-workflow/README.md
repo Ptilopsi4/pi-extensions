@@ -17,6 +17,7 @@ Those packages intentionally share command, tool, event-channel, and session-sta
 - Provides `/workflow`, `/plan`, and `/goal` from one extension.
 - Registers Plan and Goal behavior eagerly while loading the combined manager and fresh-session handoff code only when those routes are used.
 - Preserves Plan exploration, structured questions, completion, save, export, tool selection, and thinking-level control.
+- Supports an optional configurable global shortcut for toggling Plan mode, disabled by default.
 - Supports Plan alone, Goal alone, and approved Plan-to-Goal execution without adding a non-Goal implementation path.
 - Preserves Goal completion, blocking, external waits, pause, resume, edit, clear, token budgets, continuation guards, optional ordered queues, and managed-run RPC.
 - Uses review-first handoff by default, matching Codex's authoritative-plan and explicit-approval workflow.
@@ -171,6 +172,8 @@ A new Plan cannot start while any unfinished Goal exists.
 
 Clear the Goal first so one runtime owns tool restrictions and automatic work.
 
+Plan mode has no global shortcut until `plan.toggleShortcut` configures one; the configured key then toggles Plan mode and respects the same Goal and saved-plan guards as `/plan`.
+
 ### Goal
 
 ```text
@@ -248,6 +251,7 @@ Example:
     "thinkingLevel": "inherit",
     "defaultPlanTools": ["read", "bash", "grep", "find", "ls"],
     "defaultPlanExportPath": "PLAN.md",
+    "toggleShortcut": "<your_key>",
     "safeSubcommands": {
       "git": ["status", "log", "diff", "show"]
     }
@@ -270,7 +274,17 @@ Example:
 
 `workflow.planHandoff` accepts `review` or `automatic`.
 
-The `plan` object accepts Plan thinking, tools, export destination, and reviewed shell-subcommand defaults.
+The `plan` object accepts Plan thinking, tools, export destination, Plan-mode shortcut, and reviewed shell-subcommand defaults.
+
+`plan.toggleShortcut` controls the global Plan-mode keybinding and accepts a Pi key identifier such as `ctrl+alt+p`.
+
+Omit it—or submit an empty value in **Plan mode shortcut**—to keep the shortcut disabled.
+
+Avoid values that conflict with editor shortcuts.
+
+An invalid key string makes the whole settings file read-only, so fix it before saving again.
+
+A shortcut saved through Settings is rebound immediately; a manual file edit applies on the next session start or `/reload`.
 
 The standalone `implementationPlanRetention` setting is not used by `pi-workflow` because every Implement action starts Goal and keeps the exact Plan until linked execution ends.
 
