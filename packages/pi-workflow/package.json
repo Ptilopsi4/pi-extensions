@@ -1,6 +1,6 @@
 {
 	"name": "@narumitw/pi-workflow",
-	"version": "0.3.1",
+	"version": "0.4.0",
 	"description": "Experimental Pi extension combining Plan mode and Goal execution with an integrated handoff.",
 	"type": "module",
 	"license": "MIT",
