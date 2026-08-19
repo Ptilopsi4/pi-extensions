@@ -106,6 +106,8 @@ export async function updateWorkflowPlanSettings(
 	else if (patch.defaultPlanExportPath !== undefined) {
 		plan.defaultPlanExportPath = patch.defaultPlanExportPath;
 	}
+	if (patch.toggleShortcut === null) delete plan.toggleShortcut;
+	else if (patch.toggleShortcut !== undefined) plan.toggleShortcut = patch.toggleShortcut;
 	const normalized = normalizeWorkflowPlanSettings(plan);
 	if (!normalized) throw invalidSettingsError(settingsPath, "invalid Plan settings shape");
 	const document = { ...current, plan };

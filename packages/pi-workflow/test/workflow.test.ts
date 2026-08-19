@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import type { KeyId } from "@earendil-works/pi-tui";
 import { test } from "vitest";
 import { builtinTool, createMockContext, createMockPi } from "../../../test/support.js";
 import { serializeGoalState } from "../src/goal/persistence.js";
 import { createGoal } from "../src/goal/runtime.js";
 import { DEFAULT_GOAL_SETTINGS } from "../src/goal/settings.js";
 import { startFreshWorkflowImplementation, WORKFLOW_GOAL_OBJECTIVE } from "../src/handoff.js";
+import type { WorkflowSettingsLoadResult } from "../src/settings.js";
 import workflow from "../src/workflow.js";
 
 const BASE_TOOLS = ["read", "bash", "edit", "write"];
@@ -1113,4 +1115,66 @@ test("a failed Goal kickoff restores the ready Plan and clears provisional Goal 
 	assert.equal(goalState.goal, null);
 	assert.equal(statuses.get("workflow:plan"), "plan ready");
 	assert.equal(statuses.get("workflow:goal"), undefined);
+});
+
+function workflowSettingsWithShortcut(toggleShortcut: KeyId): () => WorkflowSettingsLoadResult {
+	return () => ({
+		kind: "loaded",
+		settings: {
+			planHandoff: "review",
+			plan: { thinkingLevel: "inherit", toggleShortcut },
+			goal: structuredClone(DEFAULT_GOAL_SETTINGS),
+		},
+	});
+}
+
+test("Plan mode has no workflow shortcut unless settings configure one", async () => {
+	const { mock, ctx } = setup();
+	await emitAll(mock, "session_start", { reason: "startup" }, ctx);
+	assert.equal(mock.shortcuts.size, 0);
+});
+
+test("the configured workflow shortcut toggles Plan mode", async () => {
+	const { mock, ctx, statuses, notifications } = setup(
+		workflowSettingsWithShortcut("ctrl+shift+p"),
+	);
+	await emitAll(mock, "session_start", { reason: "startup" }, ctx);
+	const toggle = mock.shortcuts.get("ctrl+shift+p");
+	assert.ok(toggle, "the configured shortcut should be registered");
+	assert.equal(mock.shortcuts.has("ctrl+alt+p"), false);
+
+	await toggle.handler(ctx);
+	assert.equal(statuses.get("workflow:plan"), "plan active");
+	assert.match(notifications.at(-1)?.message ?? "", /Plan mode enabled/);
+
+	await toggle.handler(ctx);
+	assert.equal(statuses.get("workflow:plan"), undefined);
+	assert.match(notifications.at(-1)?.message ?? "", /Plan mode disabled/);
+});
+
+test("the workflow shortcut cannot start Plan mode while a Goal is active", async () => {
+	const fixture = setup(workflowSettingsWithShortcut("ctrl+alt+p"));
+	await emitAll(fixture.mock, "session_start", { reason: "startup" }, fixture.ctx);
+	await fixture.mock.commands.get("goal")?.handler("finish the release", fixture.ctx);
+	const toggle = fixture.mock.shortcuts.get("ctrl+alt+p");
+	assert.ok(toggle);
+
+	await toggle.handler(fixture.ctx);
+	assert.equal(fixture.statuses.get("workflow:plan"), undefined);
+	assert.match(fixture.notifications.at(-1)?.message ?? "", /clear.*Goal.*Plan/i);
+	assert.match(fixture.statuses.get("workflow:goal") ?? "", /^active/u);
+});
+
+test("the workflow shortcut cannot detach a linked Goal from its Plan", async () => {
+	const fixture = setup(workflowSettingsWithShortcut("ctrl+alt+p"));
+	await startLinkedWorkflow(fixture, "# Keep linked");
+	const toggle = fixture.mock.shortcuts.get("ctrl+alt+p");
+	assert.ok(toggle);
+
+	await toggle.handler(fixture.ctx);
+	const retainedPlan = fixture.mock.entries
+		.filter((entry) => entry.customType === "plan-mode-state")
+		.at(-1)?.data as { activeImplementation?: { goalId?: string } };
+	assert.ok(retainedPlan.activeImplementation?.goalId);
+	assert.match(fixture.notifications.at(-1)?.message ?? "", /clear.*Goal.*Plan/i);
 });

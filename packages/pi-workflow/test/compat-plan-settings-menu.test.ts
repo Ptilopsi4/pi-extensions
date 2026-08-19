@@ -52,7 +52,7 @@ function menuOptions(
 	};
 }
 
-test("Plan settings show four flat workflow rows without materializing a missing file", async () => {
+test("Plan settings show five flat workflow rows without materializing a missing file", async () => {
 	await withSettingsMenu(async ({ settingsPath, tui, ctx, saved }) => {
 		const running = showPlanModeSettings(ctx, menuOptions(settingsPath, saved));
 		await tui.waitForOpen();
@@ -62,6 +62,7 @@ test("Plan settings show four flat workflow rows without materializing a missing
 		assert.match(frame, /Plan tools\s+Automatic safe built-ins/);
 		assert.match(frame, /After Implement\s+Keep plan active/);
 		assert.match(frame, /Export destination\s+PLAN\.md/);
+		assert.match(frame, /Plan mode shortcut\s+none/);
 		assert.ok(tui.render(34).every((line) => visibleWidth(line) <= 34));
 		await assert.rejects(access(settingsPath));
 
@@ -84,6 +85,7 @@ test("Workflow Plan settings hide standalone implementation retention", async ()
 		assert.match(frame, /Plan tools\s+Automatic safe built-ins/);
 		assert.doesNotMatch(frame, /After Implement/);
 		assert.match(frame, /Export destination\s+PLAN\.md/);
+		assert.match(frame, /Plan mode shortcut\s+none/);
 		assert.ok(tui.render(34).every((line) => visibleWidth(line) <= 34));
 
 		tui.press("ctrl+c");
@@ -310,6 +312,49 @@ test("Invalid Plan settings are read-only and save failures roll back displayed 
 	});
 });
 
+test("Plan mode shortcut can be set, rejected, and reset in Settings", async () => {
+	await withSettingsMenu(async ({ settingsPath, tui, ctx, notifications, saved }) => {
+		const running = showPlanModeSettings(ctx, menuOptions(settingsPath, saved));
+		await tui.waitForOpen();
+		for (let index = 0; index < 4; index += 1) tui.press("tui.select.down");
+		tui.press("tui.select.confirm");
+		await tui.waitForPending();
+		await tui.waitForOpen();
+		tui.type("bad+key");
+		tui.press("tui.input.submit");
+		await tui.waitForPending();
+		await tui.waitForOpen();
+		assert.match(notifications.at(-1)?.message ?? "", /Invalid key identifier/);
+		assert.equal(saved.length, 0);
+		await assert.rejects(access(settingsPath));
+
+		tui.type("ctrl+shift+p");
+		tui.press("tui.input.submit");
+		await tui.waitForPending();
+		await tui.waitForOpen();
+		assert.equal(saved.at(-1)?.toggleShortcut, "ctrl+shift+p");
+		assert.equal(
+			(JSON.parse(await readFile(settingsPath, "utf8")) as { toggleShortcut?: string })
+				.toggleShortcut,
+			"ctrl+shift+p",
+		);
+		assert.match(tui.render().join("\n"), /Plan mode shortcut\s+ctrl\+shift\+p/);
+
+		tui.press("tui.select.confirm");
+		await tui.waitForPending();
+		await tui.waitForOpen();
+		tui.press("tui.input.submit");
+		await tui.waitForPending();
+		await tui.waitForOpen();
+		assert.equal(saved.at(-1)?.toggleShortcut, undefined);
+		const resetFile = JSON.parse(await readFile(settingsPath, "utf8")) as Record<string, unknown>;
+		assert.equal(Object.hasOwn(resetFile, "toggleShortcut"), false);
+		assert.match(tui.render().join("\n"), /Plan mode shortcut\s+none/);
+		tui.press("ctrl+c");
+		await running;
+	});
+});
+
 test("RPC Settings changes retention and export destination with the same flat navigation", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "pi-plan-mode-settings-rpc-"));
 	const settingsPath = join(directory, "pi-plan-mode.json");
@@ -322,6 +367,7 @@ test("RPC Settings changes retention and export destination with the same flat n
 					"Plan tools (Automatic safe built-ins)",
 					"After Implement (Keep plan active)",
 					"Export destination (PLAN.md)",
+					"Plan mode shortcut (none)",
 					"Back",
 				],
 				response: "After Implement (Keep plan active)",
@@ -333,6 +379,7 @@ test("RPC Settings changes retention and export destination with the same flat n
 					"Plan tools (Automatic safe built-ins)",
 					"After Implement (Use plan for handoff only)",
 					"Export destination (PLAN.md)",
+					"Plan mode shortcut (none)",
 					"Back",
 				],
 				response: "Export destination (PLAN.md)",
@@ -349,6 +396,7 @@ test("RPC Settings changes retention and export destination with the same flat n
 					"Plan tools (Automatic safe built-ins)",
 					"After Implement (Use plan for handoff only)",
 					"Export destination (rpc/PLAN.md)",
+					"Plan mode shortcut (none)",
 					"Back",
 				],
 				response: undefined,
@@ -374,6 +422,7 @@ test("Plan settings adapt to RPC cancellation and disposal aborts an in-flight s
 				"Plan tools (Automatic safe built-ins)",
 				"After Implement (Keep plan active)",
 				"Export destination (PLAN.md)",
+				"Plan mode shortcut (none)",
 				"Back",
 			],
 			response: undefined,
