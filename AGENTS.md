@@ -110,6 +110,7 @@ Run commands from the repository root unless a command says otherwise.
 
 - Keep active tests under `packages/<package>/test/*.test.ts` and run them with `npm test`.
 - Keep archived tests under `deprecated/` and outside active checks.
+- Keep every Vitest test within a 5,000 ms hard timeout, never add a larger per-test override, and split or synchronize a slow test instead of raising the limit.
 - Run `npm run check` or `just check` for the build, Biome, boundaries, and workspace typechecks.
 - Run `npm test` or `just test` separately for active tests.
 - CI and release verification must run both gates.
