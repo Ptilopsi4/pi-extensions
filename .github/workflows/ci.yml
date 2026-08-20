@@ -40,7 +40,10 @@ jobs:
           test "$installed_version" = "$expected_version"
           test "$cli_version" = "$expected_version"
 
-      - name: Run checks and affected tests
+      - name: Run checks
+        run: npm run check
+
+      - name: Run affected tests
         env:
           PI_EXTENSIONS_TEST_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: npm run check
+        run: npm test
