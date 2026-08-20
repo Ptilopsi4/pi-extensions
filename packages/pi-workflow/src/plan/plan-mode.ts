@@ -17,25 +17,21 @@ import {
 	onAgentSettled,
 	setPlanThinkingLevel,
 } from "./extension-runtime.js";
-import {
-	type FreshImplementationFromStateOptions,
-	formatImplementationHandoff,
-	startFreshImplementationFromState,
-} from "./fresh-implementation.js";
+import type { FreshImplementationFromStateOptions } from "./fresh-implementation.js";
 import {
 	createImplementationRetentionCoordinator,
 	implementationRetentionPreview,
 } from "./implementation-retention.js";
 import { invalidPlanMessage, latestAssistantText, parseProposedPlan } from "./message-transform.js";
 import { createPlanActionController } from "./plan-action-controller.js";
-import { createPlanExportController } from "./plan-export-controller.js";
+import { planExportDestination } from "./plan-export-path.js";
 import {
 	clearPlanModeUi,
 	planModeStatusText as formatPlanModeStatusText,
 	showStoredPlan,
 	updatePlanModeUi,
 } from "./presentation.js";
-import { buildPlanModePrompt } from "./prompt.js";
+import { buildPlanModePrompt, formatImplementationHandoff } from "./prompt.js";
 import {
 	answerPlanModeQuestions,
 	normalizePlanModeQuestionParams,
@@ -45,12 +41,9 @@ import {
 } from "./question-tool.js";
 import { withoutRequiredPlanModeTools, withRequiredPlanModeTools } from "./required-tools.js";
 import {
-	preflightSavedPlanImplementation,
-	savedPlanBlocksNewWorkflow,
-} from "./saved-plan-preflight.js";
-import {
 	awaitPlanModeSettingsWrites,
 	configuredImplementationPlanRetention,
+	configuredPlanExportPath,
 	configuredPlanModeToggleShortcut,
 	configuredThinkingLevel,
 	type ImplementationPlanRetention,
@@ -83,6 +76,15 @@ interface ReadyPresentationIntent {
 	source: PlanCompletionSource;
 }
 type InteractiveUi = typeof import("./interactive-ui.js");
+type FreshImplementationModule = Pick<
+	typeof import("./fresh-implementation.js"),
+	"startFreshImplementationFromState"
+>;
+type PlanExportModule = Pick<typeof import("./plan-export.js"), "exportStoredPlan">;
+type SavedPlanPreflightModule = Pick<
+	typeof import("./saved-plan-preflight.js"),
+	"preflightSavedPlanImplementation"
+>;
 
 export interface PlanImplementationHandoffRequest {
 	implementationId: string;
@@ -98,6 +100,9 @@ export interface PlanModeDependencies {
 	settingsPath?: string;
 	reportSettingsIssues?: boolean;
 	loadInteractiveUi?(): Promise<InteractiveUi>;
+	loadFreshImplementation?(): Promise<FreshImplementationModule>;
+	loadPlanExport?(): Promise<PlanExportModule>;
+	loadSavedPlanPreflight?(): Promise<SavedPlanPreflightModule>;
 	updateSettings?: typeof updatePlanModeSettings;
 	shouldAutoHandoff?(): boolean;
 	canStartPlan?(): string | undefined;
@@ -142,6 +147,15 @@ export default function planMode(
 		}
 		return interactiveUiPromise;
 	};
+	const loadFreshImplementation = cachedModuleLoader(
+		dependencies.loadFreshImplementation ?? (() => import("./fresh-implementation.js")),
+	);
+	const loadPlanExport = cachedModuleLoader(
+		dependencies.loadPlanExport ?? (() => import("./plan-export.js")),
+	);
+	const loadSavedPlanPreflight = cachedModuleLoader(
+		dependencies.loadSavedPlanPreflight ?? (() => import("./saved-plan-preflight.js")),
+	);
 	let state: PlanModeState = { enabled: false, awaitingAction: false };
 	let settings: PlanModeSettings = { thinkingLevel: "inherit" };
 	let toggleShortcut: ReturnType<typeof configuredPlanModeToggleShortcut>;
@@ -159,23 +173,19 @@ export default function planMode(
 	let menuController = new AbortController();
 	const implementationRetention = createImplementationRetentionCoordinator();
 	const persistState = () => pi.appendEntry<PlanModeState>(STATE_ENTRY_TYPE, state);
-	const planExports = createPlanExportController({
-		getState: () => state,
-		getSettings: () => settings,
-		finishReady: (ctx) => exitPlanMode(ctx),
-	});
 	const planActions = createPlanActionController({
 		loadInteractiveUi,
 		getState: () => state,
 		captureLifecycle: captureMenuLifecycle,
 		statusText: planStatusText,
 		implementationOutcome,
-		getExportDestination: (ctx) => planExports.getDestination(ctx),
+		getExportDestination: (ctx) =>
+			planExportDestination(configuredPlanExportPath(settings), ctx.cwd),
 		show: (ctx) => showStoredPlan(pi, ctx, state),
 		finalize: requestFinalPlan,
 		implementHere: startImplementation,
 		implementFresh: startFreshImplementation,
-		exportPlan: (ctx, path, signal, isCurrent) => planExports.export(path, ctx, signal, isCurrent),
+		exportPlan: (ctx, path, signal, isCurrent) => exportPlan(path, ctx, signal, isCurrent),
 		settings: showSettings,
 		save: savePlanForLater,
 		stay: updateUi,
@@ -302,7 +312,7 @@ export default function planMode(
 			const exportMatch = /^export(?:\s+([\s\S]+))?$/iu.exec(prompt);
 			if (exportMatch) {
 				const lifecycle = captureMenuLifecycle();
-				await planExports.export(exportMatch[1], ctx, lifecycle.signal, lifecycle.isCurrent);
+				await exportPlan(exportMatch[1], ctx, lifecycle.signal, lifecycle.isCurrent);
 				return;
 			}
 			if (command === "exit" || command === "off") {
@@ -747,11 +757,52 @@ export default function planMode(
 		ctx.ui.notify("Plan saved for later. Plan mode disabled.", "info");
 	}
 
+	async function exportPlan(
+		path: string | undefined,
+		ctx: ExtensionContext,
+		signal: AbortSignal,
+		isCurrent: () => boolean,
+	) {
+		const exportedState = state;
+		const defaultPath = configuredPlanExportPath(settings);
+		if (signal.aborted || !isCurrent()) return false;
+		let module: PlanExportModule;
+		try {
+			module = await loadPlanExport();
+		} catch (error) {
+			if (signal.aborted || !isCurrent() || state !== exportedState) return false;
+			throw error;
+		}
+		if (signal.aborted || !isCurrent() || state !== exportedState) return false;
+		return module.exportStoredPlan(
+			exportedState,
+			path,
+			ctx,
+			{
+				signal,
+				isCurrent,
+				getState: () => state,
+				finishReady: () => exitPlanMode(ctx),
+			},
+			defaultPath,
+		);
+	}
+
 	async function startFreshImplementation(ctx: ExtensionContext, menuIsCurrent: () => boolean) {
-		await startFreshImplementationFromState(ctx, {
+		const retention = effectiveImplementationPlanRetention();
+		if (!menuIsCurrent()) return;
+		let module: FreshImplementationModule;
+		try {
+			module = await loadFreshImplementation();
+		} catch (error) {
+			if (!menuIsCurrent()) return;
+			throw error;
+		}
+		if (!menuIsCurrent()) return;
+		await module.startFreshImplementationFromState(ctx, {
 			getState: () => state,
 			menuIsCurrent,
-			retention: effectiveImplementationPlanRetention(),
+			retention,
 			stateEntryType: STATE_ENTRY_TYPE,
 			...(dependencies.startFreshImplementation
 				? { startSession: dependencies.startFreshImplementation }
@@ -762,15 +813,18 @@ export default function planMode(
 	async function startImplementation(ctx: ExtensionContext) {
 		const savedPlan = state.enabled ? undefined : state.savedPlan;
 		if (savedPlan) {
-			const sessionGeneration = menuGeneration;
-			const planWorkflowGeneration = workflowGeneration;
+			const lifecycle = captureMenuLifecycle();
 			const isCurrent = () =>
-				sessionGeneration === menuGeneration &&
-				planWorkflowGeneration === workflowGeneration &&
-				!menuController.signal.aborted &&
-				!state.enabled &&
-				state.savedPlan === savedPlan;
-			if (!(await preflightSavedPlanImplementation(ctx, isCurrent))) return;
+				lifecycle.isCurrent() && !state.enabled && state.savedPlan === savedPlan;
+			let module: SavedPlanPreflightModule;
+			try {
+				module = await loadSavedPlanPreflight();
+			} catch (error) {
+				if (!isCurrent()) return;
+				throw error;
+			}
+			if (!isCurrent()) return;
+			if (!(await module.preflightSavedPlanImplementation(ctx, isCurrent))) return;
 		}
 		const plan = (state.enabled ? state.latestPlan : savedPlan?.plan)?.trim();
 		const source =
@@ -1017,11 +1071,12 @@ export default function planMode(
 		if (!lifecycle.isCurrent() || lifecycle.signal.aborted) return;
 		await ui.showActiveImplementationMenu(ctx, {
 			statusText: planStatusText(),
-			getExportDestination: () => planExports.getDestination(ctx),
+			getExportDestination: () =>
+				planExportDestination(configuredPlanExportPath(settings), ctx.cwd),
 			signal: lifecycle.signal,
 			isCurrent: lifecycle.isCurrent,
 			show: () => showStoredPlan(pi, ctx, state),
-			exportPlan: (path, signal) => planExports.export(path, ctx, signal, lifecycle.isCurrent),
+			exportPlan: (path, signal) => exportPlan(path, ctx, signal, lifecycle.isCurrent),
 			settings: (signal) => showSettings(ctx, signal, lifecycle.isCurrent),
 			...(state.activeImplementation?.goalId
 				? {
@@ -1078,12 +1133,15 @@ export default function planMode(
 		const sessionGeneration = menuGeneration;
 		const planWorkflowGeneration = workflowGeneration;
 		const controller = menuController;
+		const sessionManager = currentContext?.sessionManager;
 		return {
 			signal: controller.signal,
 			isCurrent: () =>
 				sessionGeneration === menuGeneration &&
 				planWorkflowGeneration === workflowGeneration &&
-				!controller.signal.aborted,
+				controller === menuController &&
+				!controller.signal.aborted &&
+				currentContext?.sessionManager === sessionManager,
 		};
 	}
 
@@ -1309,6 +1367,30 @@ export default function planMode(
 		recoverUnlinkedImplementation,
 		handleGoalState,
 		reconcileGoalState,
+	};
+}
+
+function savedPlanBlocksNewWorkflow(ctx: ExtensionContext, hasSavedPlan: boolean) {
+	if (!hasSavedPlan) return false;
+	const message =
+		"A plan is saved for later. Implement or clear it before starting another Plan-mode workflow.";
+	if (!ctx.hasUI) throw new Error(message);
+	ctx.ui.notify(message, "warning");
+	return true;
+}
+
+function cachedModuleLoader<Module>(load: () => Promise<Module>): () => Promise<Module> {
+	let pending: Promise<Module> | undefined;
+	return () => {
+		if (!pending) {
+			pending = Promise.resolve()
+				.then(load)
+				.catch((error) => {
+					pending = undefined;
+					throw error;
+				});
+		}
+		return pending;
 	};
 }
 
