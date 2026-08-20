@@ -151,9 +151,26 @@ interactive work should expose cancellation.
   notices and licenses. **Verification:** `Smoke` with `npm pack --workspace <name> --dry-run --json`
   for package or publishing changes.
 
-Use lowercase `pi-*` package directories and `@narumitw/pi-*` npm names. Keep packages small and
-self-contained, add dependencies only for current runtime needs, and review source files over 1,000
-lines for responsibility-based decomposition rather than mechanical splitting.
+Use lowercase `pi-*` package directories and `@narumitw/pi-*` npm names.
+Keep packages small and self-contained, add dependencies only for current runtime needs, and review source files over 1,000 lines for responsibility-based decomposition rather than mechanical splitting.
+
+#### Build-backed Jiti runtimes
+
+An extension **SHOULD** adopt a generated split runtime when a repeatable separate-process benchmark shows that Jiti processing of its package-owned TypeScript graph materially contributes to package-load time.
+Do not add a generated runtime to a small extension without measured startup evidence because the build and release path has an ongoing maintenance cost.
+Use JavaScript syntax with a `.ts` output extension when Pi must load the generated files through its Jiti runtime.
+
+- **MUST:** Bundle only package-owned source into the generated runtime and keep every package import external so Pi peers and third-party dependencies resolve from the installing package's own module root.
+  **Verification:** `Review` of bundler metadata and generated imports plus a builder `Test` that rejects bundled `node_modules` inputs.
+- **MUST:** Preserve every intentional dynamic-import boundary so commands, menus, optional integrations, and first-use implementations do not become eager merely because the source graph is bundled.
+  **Verification:** `Test` of the generated eager graph plus `Review` of source and output imports.
+- **MUST:** Generate deterministic source-mapped output in a staging directory, validate it before publication, and replace the previous `dist` atomically so a failed build does not publish partial or stale chunks.
+  **Verification:** `Test` of repeated builds, stale-chunk removal, failed validation, and failed publication recovery.
+- **MUST:** Exercise the generated entry with Pi's Jiti resource loader rather than relying only on a direct test-runner import, and preserve the extension's registration plus startup and shutdown behavior.
+  **Verification:** `Test` through `DefaultResourceLoader`, lifecycle tests against the generated entry, and a package-directory Pi load `Smoke`.
+
+Record before-and-after package-load samples in the change handoff, but do not enforce a timing threshold in deterministic tests because host and filesystem conditions vary.
+The existing build-backed entrypoint, package-content, clean-build, pack, and local-load rules remain applicable.
 
 ### Slash commands and menus
 

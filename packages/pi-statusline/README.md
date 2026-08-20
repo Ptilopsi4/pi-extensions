@@ -13,6 +13,7 @@ A representative uncolored layout:
 
 ## ✨ Features
 
+- **Fast package startup:** Pi's Jiti loader reads a generated split TypeScript runtime.
 - **Zero-config default:** model, thinking, workspace, Git/PR state, context use, and local time.
 - **Responsive:** removes lower-priority segments before important information gets clipped.
 - **Quiet when idle:** activity appears only while Pi is streaming or running tools.
@@ -35,12 +36,21 @@ A representative uncolored layout:
 pi install npm:@narumitw/pi-statusline
 ```
 
-Try the published package without installing, or load it directly from this repository:
+Try the published package without installing it permanently:
 
 ```bash
 pi -e npm:@narumitw/pi-statusline
+```
+
+Build the generated runtime and try the local package from this repository:
+
+```bash
+npm --workspace @narumitw/pi-statusline run build
 just try statusline
 ```
+
+The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
+`just try statusline` runs that build automatically.
 
 For the best result, use a terminal font that includes Powerline glyphs and emoji.
 
@@ -335,6 +345,9 @@ Put transient activity in the value and always clear the same complete key.
 
 ```text
 packages/pi-statusline/
+├── dist/                  # generated split TypeScript runtime loaded by Jiti
+├── scripts/
+│   └── build-runtime.mjs  # deterministic runtime bundler and eager-boundary validator
 ├── src/
 │   ├── index.ts          # thin entrypoint forwarding to the source runtime
 │   ├── statusline.ts     # authoritative lifecycle implementation
@@ -358,8 +371,8 @@ packages/pi-statusline/
 └── package.json
 ```
 
-`src/` is the authoritative published implementation, and `src/index.ts` remains the sole declared
-Pi entrypoint.
+`src/` is the authoritative implementation, and `src/index.ts` remains its thin source forwarder.
+The package build emits the sole declared Pi entrypoint at `dist/index.ts` without forwarding back into `src`.
 
 ## 🔎 Keywords
 
