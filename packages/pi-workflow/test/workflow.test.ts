@@ -86,7 +86,8 @@ test("workflow command is menu-only with observable mode handling", async () => 
 	});
 	await emitAll(mock, "session_start", { reason: "startup" }, tui.ctx);
 	await mock.commands.get("workflow")?.handler("", tui.ctx);
-	assert.ok(tui.notifications.some((notice) => /experimental/i.test(notice.message)));
+	assert.equal(mock.commands.get("workflow")?.description, "Manage the Plan-to-Goal workflow");
+	assert.equal(tui.notifications.length, 0);
 
 	await mock.commands.get("workflow")?.handler("unknown", tui.ctx);
 	assert.match(tui.notifications.at(-1)?.message ?? "", /does not accept arguments/u);

@@ -58,6 +58,7 @@ pi -e npm:@narumitw/pi-goal \
 | [`pi-btw`](./packages/pi-btw) | Ask a quick `/btw` side question without adding it to the main conversation. | `pi install npm:@narumitw/pi-btw` |
 | [`pi-caffeinate`](./packages/pi-caffeinate) | Prevent system sleep while Pi processes a long-running prompt. | `pi install npm:@narumitw/pi-caffeinate` |
 | [`pi-goal`](./packages/pi-goal) | Keep the agent working until a goal is verified complete; optionally enable an experimental ordered queue. | `pi install npm:@narumitw/pi-goal` |
+| [`pi-workflow`](./packages/pi-workflow) | Combine `/plan` and `/goal` in one package with an integrated, recoverable Plan-to-Goal handoff. | `pi install npm:@narumitw/pi-workflow` |
 | [`pi-worktree`](./packages/pi-worktree) | Create, switch, remove, and prune Git worktrees while carrying the Pi session into another workspace. | `pi install npm:@narumitw/pi-worktree` |
 
 ### Accounts and data
@@ -103,7 +104,6 @@ commands, settings persistence, confirmations, and specialized UI.
 | [`pi-file-context`](./packages/pi-file-context) | Browse project files, preview text, select exact lines or Git diff hunks, and attach immutable snapshots with Git provenance to the next prompt. Open it with configurable `F8` or `/file-context`. | `pi install npm:@narumitw/pi-file-context` |
 | [`pi-fleet`](./packages/pi-fleet) | Start a separate Pi process in a Ghostty split and connect explicit local Pi sessions for bounded messages and one-turn requests. | `pi install npm:@narumitw/pi-fleet` |
 | [`pi-recall`](./packages/pi-recall) | Save selected text messages locally and preview or quote them across Pi sessions. | `pi install npm:@narumitw/pi-recall` |
-| [`pi-workflow`](./packages/pi-workflow) | Combine `/plan` and `/goal` in one experimental package with an integrated, recoverable Plan-to-Goal handoff. | `pi install npm:@narumitw/pi-workflow` |
 
 ## 🔧 Advanced installation
 

@@ -2,11 +2,9 @@
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-workflow)](https://www.npmjs.com/package/@narumitw/pi-workflow) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-`@narumitw/pi-workflow` is an experimental Pi extension that combines Codex-like Plan mode and persistent Goal execution in one independently installable package.
+`@narumitw/pi-workflow` is a Pi extension that combines Codex-like Plan mode and persistent Goal execution in one independently installable package.
 
 It keeps the established `/plan` and `/goal` command surfaces while making the approved Plan-to-Goal handoff one owned, recoverable transition.
-
-> **Experimental:** Workflow behavior, settings, and integrated persistence may change between releases.
 
 Do not load this package together with `@narumitw/pi-plan-mode` or `@narumitw/pi-goal`.
 
@@ -339,13 +337,11 @@ Automatic Goal work can consume substantial tokens and provider cost.
 
 Keep finite safety limits unless unlimited execution is an informed choice.
 
-This experimental package owns source snapshots of the stable Plan and Goal implementations so it remains independently installable.
-
-This is an explicit prototype deviation from the existing shared workflow-engine roadmap.
-
-The package must migrate to one shared engine, or receive a superseding architecture decision, before promotion to stable.
+This package owns source snapshots of the stable Plan and Goal implementations so it remains independently installable.
 
 It does not import or depend on another extension package.
+
+The shared workflow engine remains a planned maintainability improvement rather than a stability prerequisite.
 
 Behavioral updates to either stable predecessor must be intentionally synchronized and reverified here.
 

@@ -1,7 +1,7 @@
 {
 	"name": "@narumitw/pi-workflow",
 	"version": "0.4.2",
-	"description": "Experimental Pi extension combining Plan mode and Goal execution with an integrated handoff.",
+	"description": "Pi extension combining Plan mode and Goal execution with an integrated handoff.",
 	"type": "module",
 	"license": "MIT",
 	"private": false,
@@ -26,7 +26,7 @@
 		]
 	},
 	"piExtension": {
-		"lifecycle": "experimental"
+		"lifecycle": "stable"
 	},
 	"scripts": {
 		"build": "node scripts/build-runtime.mjs",

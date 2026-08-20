@@ -178,10 +178,6 @@ export default function workflow(pi: ExtensionAPI, dependencies: WorkflowDepende
 		if (settingsIssue) {
 			ctx.ui.notify(`pi-workflow settings ignored: ${safeTerminalText(settingsIssue)}`, "warning");
 		}
-		ctx.ui.notify(
-			"pi-workflow is experimental. Workflow behavior and persisted integration state may change.",
-			"warning",
-		);
 	});
 	pi.on("session_shutdown", (_event, ctx) => {
 		workflowGeneration += 1;
@@ -221,7 +217,7 @@ export default function workflow(pi: ExtensionAPI, dependencies: WorkflowDepende
 	};
 
 	pi.registerCommand("workflow", {
-		description: "Manage the experimental Plan-to-Goal workflow",
+		description: "Manage the Plan-to-Goal workflow",
 		handler: async (args, ctx) => {
 			if (args.trim()) {
 				reportWorkflowError("/workflow does not accept arguments.", ctx);

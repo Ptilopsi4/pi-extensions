@@ -27,6 +27,7 @@
 			"./packages/pi-sync/src/index.ts",
 			"./packages/pi-tool/src/index.ts",
 			"./packages/pi-usage/src/index.ts",
+			"./packages/pi-workflow/src/index.ts",
 			"./packages/pi-worktree/src/index.ts"
 		]
 	},
