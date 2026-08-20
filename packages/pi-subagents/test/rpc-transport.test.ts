@@ -6,7 +6,7 @@ import { test } from "vitest";
 import type { ManagedAgent } from "../src/registry.js";
 import { finalizeTimedOutRpcTurn } from "../src/rpc-timeout-finalization.js";
 import { buildRpcArgs, RpcProtocolClient, RpcTransport } from "../src/rpc-transport.js";
-import { PI_SUBAGENTS_RPC_PROTOCOL } from "../src/transport-types.js";
+import { PI_SUBAGENTS_RPC_PROTOCOL, type TransportTelemetry } from "../src/transport-types.js";
 
 test("RPC timeout finalization never prompts after an explicit parent abort", async () => {
 	const controller = new AbortController();
@@ -75,7 +75,7 @@ function fixtureScript(root: string): string {
 			'import { StringDecoder } from "node:string_decoder";',
 			"const decoder=new StringDecoder('utf8');let buffer='';let turns=0;let pendingPrompt;",
 			"const send=(value)=>process.stdout.write(JSON.stringify(value)+'\\n');",
-			"const finishPrompt=()=>{const command=pendingPrompt;pendingPrompt=undefined;send({id:command.id,type:'response',command:'prompt',success:true});send({type:'agent_start'});send({type:'message_update',assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:'turn '+turns}});send({type:'agent_end',messages:[],willRetry:false});send({type:'message_end',message:{role:'assistant',content:[{type:'text',text:'turn '+turns}],provider:'fake',model:'rpc-model',usage:{input:turns,output:2,cacheRead:0,cacheWrite:0,totalTokens:turns+2,cost:{total:0}},stopReason:'stop'}});send({type:'agent_settled'});};const handle=(line)=>{const command=JSON.parse(line);",
+			"const finishPrompt=()=>{const command=pendingPrompt;pendingPrompt=undefined;const firstUsage={input:turns,output:1,cacheRead:0,cacheWrite:0,totalTokens:turns+1,cost:{total:0.125}};const finalUsage={input:turns,output:2,cacheRead:0,cacheWrite:0,totalTokens:turns+2,cost:{total:0.25}};send({id:command.id,type:'response',command:'prompt',success:true});send({type:'agent_start'});send({type:'message_start',message:{role:'assistant',content:[]}});send({type:'message_update',usage:firstUsage,assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:'turn '}});send({type:'message_update',usage:firstUsage,assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:''}});send({type:'message_update',usage:finalUsage,assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:String(turns)}});send({type:'agent_end',messages:[],willRetry:false});send({type:'message_end',message:{role:'assistant',content:[{type:'text',text:'turn '+turns}],provider:'fake',model:'rpc-model',usage:finalUsage,stopReason:'stop'}});send({type:'agent_settled'});};const handle=(line)=>{const command=JSON.parse(line);",
 			"if(command.type==='get_state'){send({id:command.id,type:'response',command:'get_state',success:true,data:{model:{provider:'fake',id:'rpc-model'},thinkingLevel:'medium',isStreaming:false,isCompacting:false,steeringMode:'one-at-a-time',followUpMode:'one-at-a-time',sessionId:'fake-session',autoCompactionEnabled:true,messageCount:turns*2,pendingMessageCount:0}});return;}",
 			"if(command.type==='abort'){send({id:command.id,type:'response',command:'abort',success:true});send({type:'agent_settled'});return;}",
 			"if(command.type==='extension_ui_response'){if(command.id==='ui-'+turns&&command.cancelled===true)finishPrompt();return;}",
@@ -342,12 +342,34 @@ test("RpcTransport retains one child across turns and reports pi-subagents:v1 te
 			},
 		});
 		const agent = { ...managedAgent(), cwd: root };
-		const first = await transport.runTurn(agent, "first", new AbortController().signal);
+		const progress: TransportTelemetry[] = [];
+		const first = await transport.runTurn(agent, "first", new AbortController().signal, (update) =>
+			progress.push(update),
+		);
 		assert.equal(first.output, "turn 1");
 		assert.equal(first.exitCode, 0);
 		assert.equal(first.telemetry?.protocol, PI_SUBAGENTS_RPC_PROTOCOL);
+		assert.equal(first.telemetry?.provider, "fake");
 		assert.equal(first.telemetry?.model, "rpc-model");
-		assert.equal(first.telemetry?.usage?.input, 1);
+		assert.equal(first.telemetry?.phase, "settled");
+		assert.deepEqual(first.telemetry?.usage, {
+			input: 1,
+			output: 2,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 3,
+			cost: 0.25,
+			turns: 1,
+		});
+		assert.deepEqual(
+			progress
+				.filter((update) => update.phase === "running" && update.usage && update.usage.turns === 0)
+				.map((update) => [update.usage?.totalTokens, update.usage?.cost, update.usage?.turns]),
+			[
+				[2, 0.125, 0],
+				[3, 0.25, 0],
+			],
+		);
 		assert.deepEqual(resourceRequests, [{ cwd: root, trusted: true }]);
 		assert.ok(rolePromptPath && existsSync(rolePromptPath));
 		const second = await transport.runTurn(
@@ -466,7 +488,7 @@ test("RpcTransport waits for agent_settled after agent_end and times out without
 				"let buffer='';const send=v=>process.stdout.write(JSON.stringify(v)+'\\n');",
 				"process.stdin.on('data',chunk=>{buffer+=chunk;let i;while((i=buffer.indexOf('\\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(!line)continue;const c=JSON.parse(line);",
 				"if(c.type==='get_state')send({id:c.id,type:'response',command:'get_state',success:true,data:{model:{provider:'fake',id:'model'},thinkingLevel:'low',sessionId:'s'}});",
-				"if(c.type==='prompt'){send({id:c.id,type:'response',command:'prompt',success:true});send({type:'agent_end',messages:[],willRetry:true});setTimeout(()=>{send({type:'message_end',message:{role:'assistant',content:[{type:'text',text:'after retry'}],provider:'fake',model:'model',usage:{},stopReason:'stop'}});send({type:'agent_settled'});},30);}",
+				"if(c.type==='prompt'){send({id:c.id,type:'response',command:'prompt',success:true});send({type:'message_start',message:{role:'assistant',content:[]}});send({type:'message_update',usage:{input:3,output:1,cacheRead:0,cacheWrite:0,totalTokens:4,cost:{total:0.25}},assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:'before retry'}});send({type:'agent_end',messages:[],willRetry:true});setTimeout(()=>{send({type:'compaction_start'});send({type:'compaction_end'});send({type:'message_start',message:{role:'assistant',content:[]}});send({type:'message_update',usage:{input:2,output:1,cacheRead:0,cacheWrite:0,totalTokens:3,cost:{total:0.125}},assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:'after retry'}});send({type:'message_end',message:{role:'assistant',content:[{type:'text',text:'after retry'}],provider:'fake',model:'model',usage:{input:2,output:2,cacheRead:0,cacheWrite:0,totalTokens:4,cost:{total:0.5}},stopReason:'stop'}});send({type:'agent_settled'});},30);}",
 				"if(c.type==='abort'){send({id:c.id,type:'response',command:'abort',success:true});send({type:'agent_settled'});}",
 				"}});",
 			].join(""),
@@ -488,6 +510,15 @@ test("RpcTransport waits for agent_settled after agent_end and times out without
 			new AbortController().signal,
 		);
 		assert.equal(result.output, "after retry");
+		assert.deepEqual(result.telemetry?.usage, {
+			input: 5,
+			output: 3,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 8,
+			cost: 0.75,
+			turns: 1,
+		});
 		assert.ok(Date.now() - started >= 20, "agent_end must not settle the turn");
 		await transport.shutdown();
 
@@ -498,7 +529,7 @@ test("RpcTransport waits for agent_settled after agent_end and times out without
 				"let buffer='';const send=v=>process.stdout.write(JSON.stringify(v)+'\\n');let prompts=0;",
 				"process.stdin.on('data',chunk=>{buffer+=chunk;let i;while((i=buffer.indexOf('\\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(!line)continue;const c=JSON.parse(line);",
 				"if(c.type==='get_state')send({id:c.id,type:'response',command:'get_state',success:true,data:{model:{provider:'fake',id:'model'},thinkingLevel:'low',sessionId:'s'}});",
-				"if(c.type==='prompt'){prompts++;send({id:c.id,type:'response',command:'prompt',success:true});send({type:'agent_end',messages:[],willRetry:false});}",
+				"if(c.type==='prompt'){prompts++;send({id:c.id,type:'response',command:'prompt',success:true});send({type:'message_start',message:{role:'assistant',content:[]}});send({type:'message_update',usage:{input:9,output:1,cacheRead:0,cacheWrite:0,totalTokens:10,cost:{total:0.5}},assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:'PARTIAL_HANG'}});send({type:'agent_end',messages:[],willRetry:false});}",
 				"if(c.type==='abort')send({id:c.id,type:'response',command:'abort',success:true});",
 				"}});",
 			].join(""),
@@ -520,9 +551,72 @@ test("RpcTransport waits for agent_settled after agent_end and times out without
 			new AbortController().signal,
 		);
 		assert.equal(timedOut.exitCode, 124);
+		assert.equal(timedOut.output, "PARTIAL_HANG");
 		assert.match(timedOut.error ?? "", /timed out/);
 		assert.equal(timedOut.telemetry?.failurePhase, "running");
+		assert.deepEqual(timedOut.telemetry?.usage, {
+			input: 9,
+			output: 1,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 10,
+			cost: 0.5,
+			turns: 0,
+		});
 		await timeoutTransport.shutdown();
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("RPC explicit abort preserves streaming usage after the child settles", async () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-rpc-abort-usage-"));
+	try {
+		const script = path.join(root, "abort-usage.mjs");
+		writeFileSync(
+			script,
+			[
+				"let buffer='';const send=v=>process.stdout.write(JSON.stringify(v)+'\\n');",
+				"process.stdin.on('data',chunk=>{buffer+=chunk;let i;while((i=buffer.indexOf('\\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(!line)continue;const c=JSON.parse(line);",
+				"if(c.type==='get_state')send({id:c.id,type:'response',command:'get_state',success:true,data:{model:{provider:'fake',id:'model'},thinkingLevel:'low',sessionId:'s'}});",
+				"if(c.type==='prompt'){send({id:c.id,type:'response',command:'prompt',success:true});send({type:'message_start',message:{role:'assistant',content:[]}});send({type:'message_update',usage:{input:4,output:2,cacheRead:0,cacheWrite:0,totalTokens:6,cost:{total:0.25}},assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:'PARTIAL_ABORT'}});}",
+				"if(c.type==='abort'){send({id:c.id,type:'response',command:'abort',success:true});send({type:'agent_settled'});}",
+				"}});",
+			].join(""),
+		);
+		const transport = new RpcTransport({
+			getParentRuntime: () => ({ model: undefined, thinkingLevel: "low" }),
+			defaultTimeoutMs: 1_000,
+			abortGraceMs: 20,
+			createClient: (options) =>
+				new RpcProtocolClient({
+					...options,
+					terminationGraceMs: 10,
+					invocation: { command: process.execPath, args: [script] },
+				}),
+		});
+		const controller = new AbortController();
+		const result = await transport.runTurn(
+			{ ...managedAgent(), cwd: root },
+			"abort",
+			controller.signal,
+			(update) => {
+				if (update.usage?.totalTokens === 6 && update.usage.turns === 0) controller.abort();
+			},
+		);
+		assert.equal(result.exitCode, 130);
+		assert.equal(result.aborted, true);
+		assert.equal(result.output, "PARTIAL_ABORT");
+		assert.deepEqual(result.telemetry?.usage, {
+			input: 4,
+			output: 2,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 6,
+			cost: 0.25,
+			turns: 0,
+		});
+		await transport.shutdown();
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -532,13 +626,15 @@ test("RPC timeout aborts the work turn and requests a bounded summary after sett
 	const root = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-rpc-timeout-summary-"));
 	try {
 		const script = path.join(root, "timeout-summary.mjs");
+		const marker = path.join(root, "prompts.log");
 		writeFileSync(
 			script,
 			[
+				'import { appendFileSync } from "node:fs";',
 				"let buffer='';const send=v=>process.stdout.write(JSON.stringify(v)+'\\n');let prompts=0;",
 				"process.stdin.on('data',chunk=>{buffer+=chunk;let i;while((i=buffer.indexOf('\\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(!line)continue;const c=JSON.parse(line);",
 				"if(c.type==='get_state')send({id:c.id,type:'response',command:'get_state',success:true,data:{model:{provider:'fake',id:'model'},thinkingLevel:'low',sessionId:'s'}});",
-				"if(c.type==='prompt'){prompts++;send({id:c.id,type:'response',command:'prompt',success:true});if(prompts===1){send({type:'tool_execution_start',toolCallId:'read-1',toolName:'read',args:{path:'src/rpc.ts'}});send({type:'tool_execution_end',toolCallId:'read-1',toolName:'read',result:{content:[{type:'text',text:'RPC_TOOL_EVIDENCE'}]},isError:false});send({type:'message_end',message:{role:'toolResult',toolCallId:'read-1',toolName:'read',content:[{type:'text',text:'RPC_TOOL_EVIDENCE'}],isError:false}});send({type:'message_end',message:{role:'assistant',content:[{type:'text',text:'PARTIAL_RPC'}],provider:'fake',model:'model',usage:{},stopReason:'toolUse'}});}else{send({type:'message_end',message:{role:'assistant',content:[{type:'text',text:'SUMMARY_RPC'}],provider:'fake',model:'model',usage:{},stopReason:'stop'}});send({type:'agent_settled'});}}",
+				`if(c.type==='prompt'){appendFileSync(${JSON.stringify(marker)},'prompt\\n');prompts++;send({id:c.id,type:'response',command:'prompt',success:true});if(prompts===1){send({type:'message_start',message:{role:'assistant',content:[]}});send({type:'message_update',usage:{input:5,output:1,cacheRead:0,cacheWrite:0,totalTokens:6,cost:{total:0.25}},assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:'PARTIAL_RPC'}});send({type:'tool_execution_start',toolCallId:'read-1',toolName:'read',args:{path:'src/rpc.ts'}});send({type:'tool_execution_end',toolCallId:'read-1',toolName:'read',result:{content:[{type:'text',text:'RPC_TOOL_EVIDENCE'}]},isError:false});send({type:'message_end',message:{role:'toolResult',toolCallId:'read-1',toolName:'read',content:[{type:'text',text:'RPC_TOOL_EVIDENCE'}],isError:false}});}else{send({type:'message_start',message:{role:'assistant',content:[]}});send({type:'message_update',usage:{input:2,output:1,cacheRead:0,cacheWrite:0,totalTokens:3,cost:{total:0.125}},assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:'SUMMARY_RPC'}});send({type:'message_end',message:{role:'assistant',content:[{type:'text',text:'SUMMARY_RPC'}],provider:'fake',model:'model',usage:{input:2,output:2,cacheRead:0,cacheWrite:0,totalTokens:4,cost:{total:0.5}},stopReason:'stop'}});send({type:'agent_settled'});}}`,
 				"if(c.type==='abort'){send({id:c.id,type:'response',command:'abort',success:true});send({type:'agent_settled'});}",
 				"}});",
 			].join(""),
@@ -571,6 +667,16 @@ test("RPC timeout aborts the work turn and requests a bounded summary after sett
 		);
 		assert.equal(result.termination?.checkpoint.completedTools.length, 1);
 		assert.equal(result.telemetry?.phase, "failed");
+		assert.deepEqual(result.telemetry?.usage, {
+			input: 7,
+			output: 3,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 10,
+			cost: 0.75,
+			turns: 1,
+		});
+		assert.equal(readFileSync(marker, "utf8"), "prompt\nprompt\n");
 		await transport.shutdown();
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -700,7 +806,7 @@ test("RPC prompt acceptance timeout discards the child without replay", async ()
 				"let buffer='';const send=v=>process.stdout.write(JSON.stringify(v)+'\\n');",
 				"process.stdin.on('data',chunk=>{buffer+=chunk;let i;while((i=buffer.indexOf('\\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(!line)continue;const c=JSON.parse(line);",
 				"if(c.type==='get_state')send({id:c.id,type:'response',command:'get_state',success:true,data:{model:{provider:'fake',id:'model'},thinkingLevel:'low',sessionId:'s'}});",
-				`if(c.type==='prompt'){appendFileSync(${JSON.stringify(crashMarker)},'prompt\\n');send({id:c.id,type:'response',command:'prompt',success:true});setImmediate(()=>process.exit(7));}`,
+				`if(c.type==='prompt'){appendFileSync(${JSON.stringify(crashMarker)},'prompt\\n');send({id:c.id,type:'response',command:'prompt',success:true});send({type:'message_start',message:{role:'assistant',content:[]}});send({type:'message_update',usage:{input:8,output:1,cacheRead:0,cacheWrite:0,totalTokens:9,cost:{total:0.5}},assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:'PARTIAL_CRASH'}});setImmediate(()=>process.exit(7));}`,
 				"}});",
 			].join(""),
 		);
@@ -721,7 +827,17 @@ test("RPC prompt acceptance timeout discards the child without replay", async ()
 			new AbortController().signal,
 		);
 		assert.equal(crashed.exitCode, 1);
+		assert.equal(crashed.output, "PARTIAL_CRASH");
 		assert.match(crashed.error ?? "", /exited/);
+		assert.deepEqual(crashed.telemetry?.usage, {
+			input: 8,
+			output: 1,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 9,
+			cost: 0.5,
+			turns: 0,
+		});
 		assert.equal(readFileSync(crashMarker, "utf8"), "prompt\n");
 		await crashTransport.shutdown();
 	} finally {
