@@ -12,6 +12,7 @@ One ordinary async worker requires named non-overlapping main-agent work that st
 
 ## ✨ Features
 
+- Loads a generated split TypeScript runtime through Pi's Jiti loader while preserving first-use execution, UI, inspection, and transport chunks.
 - Keeps all delegation methods as the compatibility default while recommending async-only for a smaller responsive surface.
 - Adds `subagent_inspect` for bounded metadata without child launch, mailbox-content access, acknowledgement, or mutation.
 - Adds `subagent_consult` for one synchronous ephemeral child constrained to built-in `read`, `grep`, `find`, and `ls` tools (or a narrower agent allow-list).
@@ -53,11 +54,15 @@ Try without installing permanently:
 pi -e npm:@narumitw/pi-subagents
 ```
 
-Try this package locally from the repository root:
+Build and try this package locally from the repository root:
 
 ```bash
-pi -e ./packages/pi-subagents
+just try subagents
 ```
+
+The published package declares `dist/index.ts`, and `just try` runs its build before loading the package directory.
+For an explicit local flow, run `npm --workspace @narumitw/pi-subagents run build` before `pi -e ./packages/pi-subagents`.
+An unbuilt checkout intentionally has no declared generated entrypoint.
 
 ## 🚀 Quick start
 
@@ -592,7 +597,7 @@ Simple and immediate critical-path work should stay in the main agent.
 The bounded persisted completion outbox provides ordered at-least-once delivery across process restart without replaying the child turn. A top-level completion targets `/root`; a nested completion enters the direct retained parent's mailbox and is not duplicated into the root transcript. If the direct parent cannot own delivery, routing walks toward the nearest live retained ancestor and uses `/root` only as the final fallback. An idle parent remains asleep, and inspection exposes its unread and pending-completion counts until a later turn consumes the envelope. When state must be reduced to its storage bound, persistence drops roots without pending completions first and trims old history rather than discarding an outbox-owned root. A completion is acknowledged only after the intended recipient context observes its exact `completionId`; an injection that returns synchronously but never reaches context remains pending for retry. If the process exits after context assembly but before acknowledgement is persisted, the same ID can be delivered again and consumers must deduplicate it. Auto-resume applies only to `/root`; nested delivery never silently starts the parent. Transient terminal-persistence failures retry with bounded exponential backoff and keep the run pending; shutdown cancels retry waits and reports a final persistence failure instead of silently resolving unsaved work.
 
 The default `subprocess` transport preserves compatibility: each turn starts a fresh isolated `pi --mode json -p --no-session` child and receives sanitized, bounded history.
-Pi registers every Subagents tool and command during startup, but loads blocking execution, manager UI, inspection work, and the selected detached transport implementation only on first use.
+Pi loads one generated split TypeScript runtime and registers every Subagents tool and command during startup, but loads blocking execution, manager UI, inspection work, and the selected detached transport implementation only on first use.
 Session restoration, pending completion delivery, settings validation, and cleanup ownership remain eager.
 A failed first-use code load is reported normally and can be retried.
 Set `transport` to `in-process` to retain one public Pi SDK `AgentSession` per stateful `agentId`, avoiding repeated process startup while preserving native child history in memory.
@@ -1062,8 +1067,11 @@ Downgrading is safe: older extension versions ignore this separate state directo
 
 ```txt
 packages/pi-subagents/
+├── dist/                         # Generated split TypeScript runtime loaded through Pi's Jiti loader
+├── scripts/
+│   └── build-runtime.mjs         # Deterministic bundler and eager-boundary validator
 ├── src/
-│   ├── index.ts                  # Pi package entrypoint
+│   ├── index.ts                  # Thin authoritative source entrypoint
 │   ├── subagents-extension.ts    # Lightweight extension composition and blocking registration
 │   ├── subagents.ts              # Backward-compatible public utility exports
 │   ├── cached-module-loader.ts   # Retryable first-use code-module cache
@@ -1135,7 +1143,8 @@ packages/pi-subagents/
 └── package.json
 ```
 
-`index.ts` is the Pi entrypoint and forwards to `subagents-extension.ts`.
+`src/index.ts` is the authoritative thin entrypoint and forwards to `subagents-extension.ts`.
+The package build bundles that source graph into split `.ts` files under `dist` for Pi's Jiti loader.
 `subagents.ts` and `stateful.ts` preserve existing source-level utility imports without making those utility graphs part of Pi startup.
 Workflow settings remain backward compatible: older files without `blocking.enabled` receive the eight-tool default, and an absent `blocking.maxParallelTasks` keeps the previous eight-worker limit.
 Existing `stateful.enabled: false` files expose blocking delegation plus inspection/consultation.
@@ -1145,7 +1154,7 @@ The package exposes its Pi extension through `package.json`:
 ```json
 {
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": ["./dist/index.ts"]
   }
 }
 ```
