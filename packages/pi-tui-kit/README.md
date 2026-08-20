@@ -1,22 +1,18 @@
-# 🧭 Pi TUI Kit
+# 🧭 Pi TUI Kit — Build Consistent Pi Extension Interfaces
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-tui-kit)](https://www.npmjs.com/package/@narumitw/pi-tui-kit)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Reusable navigation helpers and typed, declarative interaction flows for independently installable
-[Pi](https://pi.dev) extensions, built on
-[`@earendil-works/pi-tui`](https://www.npmjs.com/package/@earendil-works/pi-tui). The initial
-high-level API lets extensions describe menu screens and domain actions while this package owns
-standard rendering, navigation, mode adaptation, cancellation, and lifecycle behavior. It also
-provides standalone task, confirmation, and live-choice interactions plus lifecycle ownership for
-specialized custom components.
+Build consistent typed menus and interactions for independently installable [Pi](https://pi.dev) extensions without reimplementing navigation, rendering, cancellation, or mode adaptation.
+
+Pi TUI Kit provides declarative screens, standalone task and confirmation flows, live choices, terminal-text helpers, and lifecycle ownership for specialized components.
 
 ## ✨ Features
 
-- Provides typed declarative action, detail, settings, choice, review, and document screens.
-- Adapts shared interaction flows across Pi TUI and RPC modes.
-- Owns standard navigation, cancellation, disposal, and width-safe rendering behavior.
-- Exposes focused helpers for tasks, confirmations, live choices, terminal text, interaction hints, and testing.
+- Defines typed action, detail, settings, choice, review, multi-select, and document screens.
+- Adapts shared flows across Pi TUI and RPC modes.
+- Owns standard navigation, cancellation, disposal, lifecycle, and width-safe rendering.
+- Provides focused task, confirmation, live-choice, custom-interaction, terminal-text, hint, and testing helpers.
 - Publishes built ESM and TypeScript declarations for independently installable extensions.
 
 ## 📦 Install
@@ -27,52 +23,67 @@ Add the library as a runtime dependency of the extension package:
 npm install @narumitw/pi-tui-kit
 ```
 
-The published package contains built ESM and declarations in `dist/`; consumers do not need a
-TypeScript loader for dependencies.
+The published package contains built ESM and declarations in `dist/`; consumers do not need a TypeScript loader for dependencies.
 
 The package root remains the supported entrypoint for menus and interaction runners.
-Import lightweight display helpers from `@narumitw/pi-tui-kit/terminal-text` or
-`@narumitw/pi-tui-kit/interaction-hints` when a startup path does not otherwise need the full Kit
-runtime.
+Import lightweight display helpers from `@narumitw/pi-tui-kit/terminal-text` or `@narumitw/pi-tui-kit/interaction-hints` when a startup path does not otherwise need the full Kit runtime.
 
 ### Compatibility floor
 
-Pi TUI Kit is still a zero-major package, so caret ranges are minor-bounded: for example,
-`^0.40.0` accepts releases from `0.40.0` up to, but not including, `0.41.0`. When an extension adopts
-an API introduced in a later Kit minor, raise that extension's minimum compatible minor rather than
-using a broad `<1` range. Otherwise an existing npm lock can retain an older Kit that lacks the
-screen or contract the extension expects.
+Pi TUI Kit is still a zero-major package, so caret ranges are minor-bounded: for example, `^0.40.0` accepts releases from `0.40.0` up to, but not including, `0.41.0`.
+When an extension adopts an API introduced in a later Kit minor, raise that extension's minimum compatible minor rather than using a broad `<1` range.
+Otherwise an existing npm lock can retain an older Kit that lacks the screen or contract the extension expects.
 
-Compatibility ranges are consumer-owned. Review each extension against the APIs it imports and keep
-its tested minimum; do not automatically synchronize every consumer range with the current Kit
-version. Pi TUI Kit and its consumers version independently through Changesets. Publish a new Kit API
-before raising a consumer's compatibility floor to use it, and declare the dependency in the
-consuming package so local hoisting cannot hide an incompatible or missing published dependency.
+Compatibility ranges are consumer-owned.
+Review each extension against the APIs it imports and keep its tested minimum; do not automatically synchronize every consumer range with the current Kit version.
+Pi TUI Kit and its consumers version independently through Changesets.
+Publish a new Kit API before raising a consumer's compatibility floor to use it, and declare the dependency in the consuming package so local hoisting cannot hide an incompatible or missing published dependency.
 
 ## ⚡ Runtime performance
 
 The Kit's production JavaScript imports Pi TUI at runtime but keeps Pi Coding Agent imports type-only.
-This prevents a source-loaded extension from evaluating a second heavyweight coding-agent runtime
-when its menu first opens. Borders and task loaders compose public Pi TUI primitives with the theme
-and keybindings supplied by the active UI callback; review syntax coloring uses the Kit's declared
-highlighter dependency and the same callback theme. Mermaid rendering lazy-loads its declared
-renderer only before the first screen containing an enabled Mermaid fence.
+This prevents a source-loaded extension from evaluating a second heavyweight coding-agent runtime when its menu first opens.
+Borders and task loaders compose public Pi TUI primitives with the theme and keybindings supplied by the active UI callback; review syntax coloring uses the Kit's declared highlighter dependency and the same callback theme.
+Mermaid rendering lazy-loads its declared renderer only before the first screen containing an enabled Mermaid fence.
 
-The `terminal-text` and `interaction-hints` subpaths expose only their focused ESM and declaration
-graphs, while the package root keeps every existing export for compatibility.
+The `terminal-text` and `interaction-hints` subpaths expose only their focused ESM and declaration graphs, while the package root keeps every existing export for compatibility.
 
-Repository maintainers can measure cold root and lightweight-subpath imports plus first actions,
-code-review, Mermaid, and task frames in fresh serial processes:
+Repository maintainers can measure cold root and lightweight-subpath imports plus first actions, code-review, Mermaid, and task frames in fresh serial processes:
 
 ```bash
 npm run build --workspace @narumitw/pi-tui-kit
 node scripts/benchmark-tui-kit-runtime.mjs --runs 5
 ```
 
-The benchmark reports medians, median absolute deviations, resolved package URLs, and graph-presence
-flags so a fast import cannot hide the same dependency cost in the first interaction.
+The benchmark reports medians, median absolute deviations, resolved package URLs, and graph-presence flags so a fast import cannot hide the same dependency cost in the first interaction.
 
 ## 🚀 Quick start
+
+Define a typed screen and let Pi TUI Kit own its navigation and mode adaptation:
+
+```ts
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { defineMenu, runMenu } from "@narumitw/pi-tui-kit";
+
+const menu = defineMenu<undefined, "main", "unused">({
+  start: "main",
+  screens: {
+    main: () => ({
+      kind: "detail",
+      title: "Example extension",
+      lines: ["Ready"],
+      hint: "close",
+    }),
+  },
+  actions: { unused: async () => ({ kind: "stay" }) },
+});
+
+export function showMenu(ctx: ExtensionCommandContext) {
+  return runMenu(ctx, menu, { getState: () => undefined });
+}
+```
+
+## 🧭 Complete menu example
 
 ```ts
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
@@ -148,18 +159,15 @@ export async function showMenu(ctx: ExtensionCommandContext, generation: number)
 }
 ```
 
-The state loader runs again whenever a screen is entered or refreshed, so screen factories can
-remain pure projections of current extension state. An ordinary terminal result is
-`{ kind: "closed", reason: "back" | "close" }`: root Back reports `back`; Ctrl+C, a Close hint,
-a close row, or an accepted action that returns Close reports `close`. Nested Back remains inside the
-menu. RPC preserves each adapter's existing transition: a generic cancelled selector applies Back,
-while input and review cancellation follow their declared hint. Owner replacement remains `stale`
-and takes precedence over any racing Close event.
+The state loader runs again whenever a screen is entered or refreshed, so screen factories can remain pure projections of current extension state.
+An ordinary terminal result is `{ kind: "closed", reason: "back" | "close" }`: root Back reports `back`; Ctrl+C, a Close hint, a close row, or an accepted action that returns Close reports `close`.
+Nested Back remains inside the menu.
+RPC preserves each adapter's existing transition: a generic cancelled selector applies Back, while input and review cancellation follow their declared hint.
+Owner replacement remains `stale` and takes precedence over any racing Close event.
 
-For abort-aware work outside a menu, use `runTask()`. TUI mode shows the Kit's Pi-styled cancellable
-bordered loader; RPC, print, and JSON execute the same task directly. User cancellation, owner
-replacement, external component disposal, errors, and successful completion remain distinct typed
-results.
+For abort-aware work outside a menu, use `runTask()`.
+TUI mode shows the Kit's Pi-styled cancellable bordered loader; RPC, print, and JSON execute the same task directly.
+User cancellation, owner replacement, external component disposal, errors, and successful completion remain distinct typed results.
 
 ```ts
 import { runTask } from "@narumitw/pi-tui-kit";
@@ -175,11 +183,10 @@ const result = await runTask(ctx, {
 if (result.kind === "completed") ctx.ui.notify("Refreshed", "info");
 ```
 
-A task must honor its supplied signal. The runner aborts and drains owned work before returning; it
-does not hide an uncooperative task behind an arbitrary timeout.
+A task must honor its supplied signal.
+The runner aborts and drains owned work before returning; it does not hide an uncooperative task behind an arbitrary timeout.
 
-For a confirmation nested inside a larger flow, use `runConfirmation()` when Escape must return to
-the caller while Ctrl+C closes the whole TUI interaction:
+For a confirmation nested inside a larger flow, use `runConfirmation()` when Escape must return to the caller while Ctrl+C closes the whole TUI interaction:
 
 ```ts
 import { runConfirmation } from "@narumitw/pi-tui-kit";
@@ -198,17 +205,14 @@ if (confirmation.kind === "confirmed") await deleteDomainData();
 else if (confirmation.kind === "closed" && confirmation.reason === "close") return;
 ```
 
-TUI confirmation uses the standard bounded actions presentation: selecting the cancel row or pressing
-Escape returns `{ kind: "closed", reason: "back" }`, while Ctrl+C returns the same result with reason
-`"close"`. RPC uses one signal-aware `select()` request with explicit confirm and cancel rows;
-explicit cancel and protocol cancellation deterministically map to Back because Pi RPC does not expose
-a separate Ctrl+C dialog outcome. Print and JSON return `unsupported`. Owner abort, session
-replacement, external TUI disposal, and failures remain distinct `stale` or `error` results. The Kit
-owns only this interaction lifecycle—the caller performs every confirmed side effect and must abort
-its owner signal on replacement or shutdown.
+TUI confirmation uses the standard bounded actions presentation: selecting the cancel row or pressing Escape returns `{ kind: "closed", reason: "back" }`, while Ctrl+C returns the same result with reason `"close"`.
+RPC uses one signal-aware `select()` request with explicit confirm and cancel rows.
+Explicit cancel and protocol cancellation deterministically map to Back because Pi RPC does not expose a separate Ctrl+C dialog outcome.
+Print and JSON return `unsupported`.
+Owner abort, session replacement, external TUI disposal, and failures remain distinct `stale` or `error` results.
+The Kit owns only this interaction lifecycle—the caller performs every confirmed side effect and must abort its owner signal on replacement or shutdown.
 
-For a choice whose cursor drives an extension-owned preview, use `runLiveChoice()` instead of making
-a declarative `choice` screen side-effecting:
+For a choice whose cursor drives an extension-owned preview, use `runLiveChoice()` instead of making a declarative `choice` screen side-effecting:
 
 ```ts
 import { runLiveChoice } from "@narumitw/pi-tui-kit";
@@ -249,27 +253,21 @@ else if (choice?.kind === "shortcut") await customizePreset(choice.itemId);
 
 TUI calls `onSelectionChange` for the initial cursor and later focused rows, including disabled rows.
 A fully `disabled` row blocks both primary confirmation and shortcuts.
-Set `confirmationDisabled` with an optional `confirmationDisabledReason` when only the primary action
-must be inert while shortcuts remain available, such as allowing Customize for an already-active
-preset that cannot be applied again.
+Set `confirmationDisabled` with an optional `confirmationDisabledReason` when only the primary action must be inert while shortcuts remain available, such as allowing Customize for an already-active preset that cannot be applied again.
 If both states are present, full `disabled` behavior and its reason take precedence.
-Shortcut keys use Pi `KeyId` values; keys that conflict with current standard choice controls are
-omitted from shortcut hints and dispatch.
+Shortcut keys use Pi `KeyId` values; keys that conflict with current standard choice controls are omitted from shortcut hints and dispatch.
 Synchronous previews run immediately.
-While an asynchronous preview is pending, newer cursor changes coalesce to the latest row. Completion,
-Back, Close, owner cancellation, external disposal, and errors abort the callback signal and drain
-owned preview work before returning. The callback must honor that signal. The caller still owns its
-preview snapshot, rollback, persistence, confirmation, and final apply policy.
+While an asynchronous preview is pending, newer cursor changes coalesce to the latest row.
+Completion, Back, Close, owner cancellation, external disposal, and errors abort the callback signal and drain owned preview work before returning.
+The callback must honor that signal.
+The caller still owns its preview snapshot, rollback, persistence, confirmation, and final apply policy.
 
-RPC deliberately degrades to a signal-aware ordinary selector: it never runs live previews or custom
-shortcuts, disabled and confirmation-disabled rows remain explanatory and inert, and cancellation
-follows the requested Back/Close hint. Print and JSON return `unsupported`. Results distinguish
-`selected`, `shortcut`, `closed`, `stale`, `unsupported`, and `error`.
+RPC deliberately degrades to a signal-aware ordinary selector: it never runs live previews or custom shortcuts, disabled and confirmation-disabled rows remain explanatory and inert, and cancellation follows the requested Back/Close hint.
+Print and JSON return `unsupported`.
+Results distinguish `selected`, `shortcut`, `closed`, `stale`, `unsupported`, and `error`.
 
-`formatInteractionHints()` is available for other specialized components. Pass the callback-injected
-keybindings plus binding-backed or literal-key hint groups; the formatter normalizes arrows,
-Enter/Escape names, sanitizes controls, applies exclusions, de-duplicates keys, and supports a custom
-separator.
+`formatInteractionHints()` is available for other specialized components.
+Pass the callback-injected keybindings plus binding-backed or literal-key hint groups; the formatter normalizes arrows, Enter/Escape names, sanitizes controls, applies exclusions, de-duplicates keys, and supports a custom separator.
 
 ```ts
 import { formatInteractionHints } from "@narumitw/pi-tui-kit/interaction-hints";
@@ -281,12 +279,10 @@ const hint = formatInteractionHints(keybindings, [
 ]);
 ```
 
-For a specialized custom component that does not belong in the declarative screen union, use
-`runCustomInteraction()`.  It supplies an interaction-owned signal, classifies owner replacement and
-external component disposal as stale, disposes exactly once, and drains optional `waitForPending()`
-work before returning. The consumer still owns the component, its Back/Close value, and every domain
-side effect. Async factories and pending work must honor the supplied signal; the helper drains them
-but does not hide uncooperative work behind a timeout.
+For a specialized custom component that does not belong in the declarative screen union, use `runCustomInteraction()`.
+It supplies an interaction-owned signal, classifies owner replacement and external component disposal as stale, disposes exactly once, and drains optional `waitForPending()` work before returning.
+The consumer still owns the component, its Back/Close value, and every domain side effect.
+Async factories and pending work must honor the supplied signal; the helper drains them but does not hide uncooperative work behind a timeout.
 
 Use `sanitizeTerminalText()` when a specialized component must place an untrusted model label, path, or other value on one terminal line.
 It removes complete and unterminated terminal control sequences, C0/C1 controls, and bidirectional display controls; line separators become spaces.
@@ -320,32 +316,23 @@ const result = await runCustomInteraction<{ kind: "back" | "close" }>(ctx, {
 
 `defineMenu()` supports eight standard screen kinds:
 
-- **`actions`** — navigation targets, domain actions, close rows, optional cancellable busy labels,
-  adaptive long-label columns, and disabled explanations.
+- **`actions`** — navigation targets, domain actions, close rows, optional cancellable busy labels, adaptive long-label columns, and disabled explanations.
 - **`detail`** — read-only wrapped text with Back or Close behavior.
-- **`browse`** — a read-only searchable catalog with textual status, adaptive list/detail views,
-  stable selection restoration, legacy prose or exact document details, and paginated RPC details.
+- **`browse`** — a read-only searchable catalog with textual status, adaptive list/detail views, stable selection restoration, legacy prose or exact document details, and paginated RPC details.
 - **`choice`** — one confirmed value from a static list, with separate current and initial items, selected details, disabled explanations, an optional TUI search field, and a bounded viewport.
-- **`settings`** — Pi-style searchable, aligned settings rows with immediate value changes,
-  serialized saves, and rollback when an action rejects.
-- **`input`** — single-line text entry inside the menu stack with IME focus, serialized submission,
-  rejected-draft retention, and TUI/RPC adaptation.
-- **`review`** — fixed or terminal-adaptive scrollable exact text, code, or diff content with an
-  optional primary confirmation action and paginated RPC fallback.
-- **`multiSelect`** — optimistic toggles with stable cursor restoration, serialized saves, rollback,
-  selected-row descriptions, optional fuzzy search and bulk action rows, and a bounded TUI viewport.
+- **`settings`** — Pi-style searchable, aligned settings rows with immediate value changes, serialized saves, and rollback when an action rejects.
+- **`input`** — single-line text entry inside the menu stack with IME focus, serialized submission, rejected-draft retention, and TUI/RPC adaptation.
+- **`review`** — fixed or terminal-adaptive scrollable exact text, code, or diff content with an optional primary confirmation action and paginated RPC fallback.
+- **`multiSelect`** — optimistic toggles with stable cursor restoration, serialized saves, rollback, selected-row descriptions, optional fuzzy search and bulk action rows, and a bounded TUI viewport.
 
-All standard TUI screens use Pi's injected keybindings, sanitize display text, rebuild themed
-content after invalidation, and bound rendered output to the supplied terminal width. Escape follows
-the screen's Back/Close hint; `Ctrl+C` closes the menu.
+All standard TUI screens use Pi's injected keybindings, sanitize display text, rebuild themed content after invalidation, and bound rendered output to the supplied terminal width.
+Escape follows the screen's Back/Close hint; `Ctrl+C` closes the menu.
 
-Disabled action rows stay visible and focusable for context but never navigate, close, or invoke a
-domain action. Set `disabledReason` to explain why. TUI prefixes the semantic label with `[-]`, keeps
-a supplied unavailable reason visible below the selected row at every width, and adapts the primary
-column to available width; unavoidable action-label truncation uses an ellipsis. When a reason is
-supplied, RPC adds the unavailable state and reason to its selector label; legacy disabled rows
-without a reason keep
-their existing RPC label. This contract also applies to action rows under `multiSelect.actions`.
+Disabled action rows stay visible and focusable for context but never navigate, close, or invoke a domain action.
+Set `disabledReason` to explain why.
+TUI prefixes the semantic label with `[-]`, keeps a supplied unavailable reason visible below the selected row at every width, and adapts the primary column to available width; unavoidable action-label truncation uses an ellipsis.
+When a reason is supplied, RPC adds the unavailable state and reason to its selector label; legacy disabled rows without a reason keep their existing RPC label.
+This contract also applies to action rows under `multiSelect.actions`.
 
 ```ts
 const resetAction = {
@@ -358,13 +345,13 @@ const resetAction = {
 };
 ```
 
-Choice screens are for bounded static alternatives rather than actions that run while the cursor
-moves. `currentItemId` adds the textual current marker; `initialItemId` controls the first cursor when
-there is no remembered selection. They remain separate so a custom or legacy current value can focus
-a safe fallback. A confirmed row invokes the screen action with its raw `itemId`; moving the cursor
-only changes selected details. Rejected or thrown actions retain the selection. Disabled rows stay
-focusable for their explanation but never invoke the action. RPC flattens choice rows to unique dialog
-labels while preserving raw identity.
+Choice screens are for bounded static alternatives rather than actions that run while the cursor moves.
+`currentItemId` adds the textual current marker; `initialItemId` controls the first cursor when there is no remembered selection.
+They remain separate so a custom or legacy current value can focus a safe fallback.
+A confirmed row invokes the screen action with its raw `itemId`; moving the cursor only changes selected details.
+Rejected or thrown actions retain the selection.
+Disabled rows stay focusable for their explanation but never invoke the action.
+RPC flattens choice rows to unique dialog labels while preserving raw identity.
 
 ```ts
 const profileScreen = {
@@ -398,31 +385,25 @@ Details and raw IDs are not searched implicitly.
 RPC deliberately keeps one deterministic unfiltered selector and ignores interactive search metadata.
 
 Keep preview snapshots, rollback, persistence, and confirmation policy in the consuming extension.
-Use standalone `runLiveChoice()` when its list-and-shortcut contract fits; keep a fully specialized UI
-local only when cursor behavior needs more than that contract.
+Use standalone `runLiveChoice()` when its list-and-shortcut contract fits; keep a fully specialized UI local only when cursor behavior needs more than that contract.
 
-Browse screens are read-only and invoke no action. TUI fuzzy-searches each sanitized label, textual
-`statusText`, description, and optional non-rendered `searchText`. Enter opens an adaptive scrolling
-detail view; Escape returns to the list without losing the query or selected raw id, then returns to
-the parent, while Ctrl+C closes the menu. Omitted or `"adaptive"` viewport size uses the live terminal
-row budget; a positive number caps item rows without disabling terminal bounds. RPC intentionally
-keeps one deterministic unfiltered list, then presents bounded detail pages; `searchText` is never
-rendered.
+Browse screens are read-only and invoke no action.
+TUI fuzzy-searches each sanitized label, textual `statusText`, description, and optional non-rendered `searchText`.
+Enter opens an adaptive scrolling detail view; Escape returns to the list without losing the query or selected raw id, then returns to the parent, while Ctrl+C closes the menu.
+Omitted or `"adaptive"` viewport size uses the live terminal row budget; a positive number caps item rows without disabling terminal bounds.
+RPC intentionally keeps one deterministic unfiltered list, then presents bounded detail pages; `searchText` is never rendered.
 
-Use `details` for legacy prose lines. The Kit normalizes their whitespace and prepends available
-status and description text. Use `detailDocument` for a complete body such as JSON, source code, a
-diff, or Markdown. Text, code, and diff formats preserve indentation, expand tabs to four-column
-stops, hard-wrap by terminal cells, and strip terminal plus bidirectional display controls. Markdown
-format applies the same safety boundary but then renders semantic Markdown rather than preserving
-exact source whitespace. When both fields are
-present, `detailDocument` is the complete body and takes precedence over `details`, status, and
-description inside the detail body. The item label still names the detail, while status and
-description remain available in list presentation. RPC retains the existing status-bearing selector
-label as the dialog title for compatibility, but does not prepend a second status line to the body.
+Use `details` for legacy prose lines.
+The Kit normalizes their whitespace and prepends available status and description text.
+Use `detailDocument` for a complete body such as JSON, source code, a diff, or Markdown.
+Text, code, and diff formats preserve indentation, expand tabs to four-column stops, hard-wrap by terminal cells, and strip terminal plus bidirectional display controls.
+Markdown format applies the same safety boundary but then renders semantic Markdown rather than preserving exact source whitespace.
+When both fields are present, `detailDocument` is the complete body and takes precedence over `details`, status, and description inside the detail body.
+The item label still names the detail, while status and description remain available in list presentation.
+RPC retains the existing status-bearing selector label as the dialog title for compatibility, but does not prepend a second status line to the body.
 
-Exact document content is never added to fuzzy-search metadata or RPC selector labels. Copy only safe,
-intentional aliases or metadata into `searchText`; do not copy a large or sensitive document merely
-to make it searchable.
+Exact document content is never added to fuzzy-search metadata or RPC selector labels.
+Copy only safe, intentional aliases or metadata into `searchText`; do not copy a large or sensitive document merely to make it searchable.
 
 ```ts
 const modulesScreen = {
@@ -457,19 +438,18 @@ const schemasScreen = {
 };
 ```
 
-Use `choice` when confirmation invokes a domain action; use `browse` when selection only reveals
-information. Domain status meaning, catalog construction, and data freshness remain consumer-owned.
+Use `choice` when confirmation invokes a domain action; use `browse` when selection only reveals information.
+Domain status meaning, catalog construction, and data freshness remain consumer-owned.
 
-TUI settings screens retain the extension title and supporting context above Pi's familiar search
-field, aligned label/value columns, ten-row viewport, position indicator, selected-row description,
-and keyboard hint. Typing fuzzy-filters labels, arrows navigate, and Enter or Space changes the
-selected value. Changes save immediately, so Back or Close never implies rollback. The embedded
-search input forwards focus for IME positioning. The kit owns this adapter because Pi's public
-`SettingsList` does not currently expose restored-cursor, disabled-row, async rollback, and search
-focus behavior together.
+TUI settings screens retain the extension title and supporting context above Pi's familiar search field, aligned label/value columns, ten-row viewport, position indicator, selected-row description, and keyboard hint.
+Typing fuzzy-filters labels, arrows navigate, and Enter or Space changes the selected value.
+Changes save immediately, so Back or Close never implies rollback.
+The embedded search input forwards focus for IME positioning.
+The kit owns this adapter because Pi's public `SettingsList` does not currently expose restored-cursor, disabled-row, async rollback, and search focus behavior together.
 
-Input screens submit through the existing action `value`. Validation, normalization, persistence,
-and product copy remain extension-owned. Rejection keeps the TUI draft available for correction;
+Input screens submit through the existing action `value`.
+Validation, normalization, persistence, and product copy remain extension-owned.
+Rejection keeps the TUI draft available for correction.
 RPC reopens its signal-aware input dialog.
 
 ```ts
@@ -482,10 +462,10 @@ const inputScreen = {
 };
 ```
 
-Review screens preserve indentation and hard-wrap by terminal cells rather than prose words. Their
-viewport supports Up, Down, Page Up, Page Down, Home, and End. RPC sends bounded pages instead of one
-unbounded dialog title. Treat `content` as untrusted display input; the kit strips terminal and
-bidirectional display controls before formatting it.
+Review screens preserve indentation and hard-wrap by terminal cells rather than prose words.
+Their viewport supports Up, Down, Page Up, Page Down, Home, and End.
+RPC sends bounded pages instead of one unbounded dialog title.
+Treat `content` as untrusted display input; the kit strips terminal and bidirectional display controls before formatting it.
 
 ```ts
 const reviewScreen = {
@@ -498,17 +478,15 @@ const reviewScreen = {
 };
 ```
 
-Review formats are `{ kind: "text" }`, `{ kind: "code", language?, filePath? }`,
-`{ kind: "diff", filePath? }`, and
-`{ kind: "markdown", renderLatex?, renderMermaid? }`. Choosing Markdown is opt-in; both rich
-renderers default to `true`, and either can be disabled explicitly. TUI uses Pi's Markdown renderer
-for headings, emphasis, links, lists, code highlighting, and supported inline or block LaTeX.
+Review formats are `{ kind: "text" }`, `{ kind: "code", language?, filePath? }`, `{ kind: "diff", filePath? }`, and `{ kind: "markdown", renderLatex?, renderMermaid? }`.
+Choosing Markdown is opt-in; both rich renderers default to `true`, and either can be disabled explicitly.
+TUI uses Pi's Markdown renderer for headings, emphasis, links, lists, code highlighting, and supported inline or block LaTeX.
 
-Enabled top-level `mermaid` fences render locally as themed Unicode when a warning-free flowchart,
-state, class, entity-relationship, or sequence diagram fits the current width. Partial parses retain
-the fenced source and add a warning. Unsupported, oversized, unavailable, or disabled rendering
-retains readable fenced source. Resizing can switch between source and art. The Kit options are
-independent of Pi's transcript-only Mermaid setting and use no browser, image, SVG, or network.
+Enabled top-level `mermaid` fences render locally as themed Unicode when a warning-free flowchart, state, class, entity-relationship, or sequence diagram fits the current width.
+Partial parses retain the fenced source and add a warning.
+Unsupported, oversized, unavailable, or disabled rendering retains readable fenced source.
+Resizing can switch between source and art.
+The Kit options are independent of Pi's transcript-only Mermaid setting and use no browser, image, SVG, or network.
 
 ```ts
 const markdownReviewScreen = {
@@ -520,20 +498,18 @@ const markdownReviewScreen = {
 };
 ```
 
-Rich Markdown rendering is TUI-only. RPC keeps sanitized, bounded source pages, and a host without
-Pi's public rich-Markdown capability safely displays readable source for unsupported rich elements.
-Omitted `viewportSize` keeps the fixed 14-row TUI viewport, and numeric values remain fixed integers
-from 1 through 50. Set `viewportSize: "adaptive"` to recompute from the live terminal height on every
-TUI render. Adaptive review reserves three terminal rows for Pi-owned UI and keeps the complete frame
-within `max(1, floor(terminal rows) - 3)` rows; this mode is not capped at the numeric 50-row maximum.
+Rich Markdown rendering is TUI-only.
+RPC keeps sanitized, bounded source pages, and a host without Pi's public rich-Markdown capability safely displays readable source for unsupported rich elements.
+Omitted `viewportSize` keeps the fixed 14-row TUI viewport, and numeric values remain fixed integers from 1 through 50.
+Set `viewportSize: "adaptive"` to recompute from the live terminal height on every TUI render.
+Adaptive review reserves three terminal rows for Pi-owned UI and keeps the complete frame within `max(1, floor(terminal rows) - 3)` rows; this mode is not capped at the numeric 50-row maximum.
 
-At constrained heights, adaptive review prioritizes one content row, then a compact title, then a
-compact confirmation/Back-or-Close/navigation hint. From four available rows it shows position when
-content scrolls; additional space restores wrapped title and supporting context, the full keyboard
-hint, and the separator before enlarging the content viewport. Fixed and omitted review rendering is
-unchanged. RPC does not read terminal dimensions: adaptive and omitted reviews use deterministic
-pages of at most eight rows, while numeric values retain the existing eight-row cap. A review without
-`confirm` is read-only. Escape follows Back/Close and `Ctrl+C` closes the whole menu.
+At constrained heights, adaptive review prioritizes one content row, then a compact title, then a compact confirmation/Back-or-Close/navigation hint.
+From four available rows it shows position when content scrolls; additional space restores wrapped title and supporting context, the full keyboard hint, and the separator before enlarging the content viewport.
+Fixed and omitted review rendering is unchanged.
+RPC does not read terminal dimensions: adaptive and omitted reviews use deterministic pages of at most eight rows, while numeric values retain the existing eight-row cap.
+A review without `confirm` is read-only.
+Escape follows Back/Close and `Ctrl+C` closes the whole menu.
 
 Action handlers return one of these results:
 
@@ -545,24 +521,22 @@ Action handlers return one of these results:
 { kind: "rejected", error?: unknown }
 ```
 
-A rejected settings or multi-select action restores the last accepted value. Throwing has the same
-recovery behavior and is routed through `onError`.
+A rejected settings or multi-select action restores the last accepted value.
+Throwing has the same recovery behavior and is routed through `onError`.
 
-For a large multi-select, set `viewportSize` to the maximum number of toggle and action rows rendered
-at once. Up and Down wrap; Page Up and Page Down move by one viewport and clamp at the first or last
-row. Descriptions for the selected row appear below the viewport.
+For a large multi-select, set `viewportSize` to the maximum number of toggle and action rows rendered at once.
+Up and Down wrap; Page Up and Page Down move by one viewport and clamp at the first or last row.
+Descriptions for the selected row appear below the viewport.
 
-Set `enableSearch: true` when toggle rows can become difficult to scan. TUI typing fuzzy-filters each
-sanitized label plus optional non-rendered `searchText`; use that field for source, policy, aliases, or
-other useful metadata without parsing display labels or raw IDs. The query is local to the current
-screen instance. Rows in `actions` remain pinned below the matches, including when there are no
-matching toggle rows, so Save, Discard, and bulk workflows stay reachable. Clearing the query restores
-a valid stable-ID selection. The embedded public Pi `Input` forwards focus for IME positioning and
-sanitizes pasted terminal controls before filtering.
+Set `enableSearch: true` when toggle rows can become difficult to scan.
+TUI typing fuzzy-filters each sanitized label plus optional non-rendered `searchText`; use that field for source, policy, aliases, or other useful metadata without parsing display labels or raw IDs.
+The query is local to the current screen instance.
+Rows in `actions` remain pinned below the matches, including when there are no matching toggle rows, so Save, Discard, and bulk workflows stay reachable.
+Clearing the query restores a valid stable-ID selection.
+The embedded public Pi `Input` forwards focus for IME positioning and sanitizes pasted terminal controls before filtering.
 
-Search and the viewport affect TUI presentation only. RPC deliberately keeps one flat, unfiltered
-list of unique dialog choices, preserving raw identity, disabled rows, toggle semantics, and action
-rows without introducing a second query protocol.
+Search and the viewport affect TUI presentation only.
+RPC deliberately keeps one flat, unfiltered list of unique dialog choices, preserving raw identity, disabled rows, toggle semantics, and action rows without introducing a second query protocol.
 
 ```ts
 const tools = {
@@ -587,10 +561,9 @@ const tools = {
 };
 ```
 
-Disabled multi-select rows stay visible and focusable, use a textual `[-]`/`unavailable` marker, show
-`disabledReason` with the selected description, and never invoke the toggle handler. RPC exposes the
-same unavailable reason and safely returns to the screen when the row is selected. Keep policy and
-bulk-set validation in the consuming extension and revalidate it again before mutation.
+Disabled multi-select rows stay visible and focusable, use a textual `[-]`/`unavailable` marker, show `disabledReason` with the selected description, and never invoke the toggle handler.
+RPC exposes the same unavailable reason and safely returns to the screen when the row is selected.
+Keep policy and bulk-set validation in the consuming extension and revalidate it again before mutation.
 
 ## 🔌 Runtime and mode behavior
 
@@ -602,13 +575,13 @@ bulk-set validation in the consuming extension and revalidate it again before mu
 - `onError(ctx, error)` customizes observable failure reporting.
 - `onUnsupportedMode(ctx, mode)` provides print/JSON fallback behavior.
 
-In TUI mode the runtime uses `ctx.ui.custom()`. In RPC mode it adapts standard screens to
-`ctx.ui.select()` dialogs. Print and JSON modes never attempt custom UI and instead call the
-unsupported-mode hook. `runMenu()` resolves to `closed`, `unsupported`, `stale`, or `error`; only the
-`closed` result carries the mandatory interaction-level `reason`.
+In TUI mode the runtime uses `ctx.ui.custom()`.
+In RPC mode it adapts standard screens to `ctx.ui.select()` dialogs.
+Print and JSON modes never attempt custom UI and instead call the unsupported-mode hook.
+`runMenu()` resolves to `closed`, `unsupported`, `stale`, or `error`; only the `closed` result carries the mandatory interaction-level `reason`.
 
-Lifecycle handlers can opt into the shared `ExtensionContext` surface without a cast. Existing
-three-generic command menus keep `ExtensionCommandContext`, including command-only methods.
+Lifecycle handlers can opt into the shared `ExtensionContext` surface without a cast.
+Existing three-generic command menus keep `ExtensionCommandContext`, including command-only methods.
 
 ```ts
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -627,24 +600,20 @@ pi.on("agent_settled", async (_event, ctx) => {
 });
 ```
 
-The consumer must own and abort the session signal, check its generation or equivalent identity after
-every await, and never retain or use an `ExtensionContext` after session replacement, reload, or
-shutdown. The kit does not create lifecycle ownership for the extension. `input` uses a signal-aware
-RPC dialog; a multi-line `editor` screen is intentionally deferred because Pi's current RPC editor
-contract does not accept an `AbortSignal`.
+The consumer must own and abort the session signal, check its generation or equivalent identity after every await, and never retain or use an `ExtensionContext` after session replacement, reload, or shutdown.
+The kit does not create lifecycle ownership for the extension.
+`input` uses a signal-aware RPC dialog; a multi-line `editor` screen is intentionally deferred because Pi's current RPC editor contract does not accept an `AbortSignal`.
 
 ## 🧩 Ownership boundary
 
 Reuse Pi primitives and domain components from their package root whenever their public contract fits.
-Use non-exported Pi composites only as interaction references; never deep-import Pi's `dist/*`
-implementation paths. The kit owns a composite only when public controls do not provide the complete
-cross-mode and lifecycle contract shared by multiple extensions.
+Use non-exported Pi composites only as interaction references; never deep-import Pi's `dist/*` implementation paths.
+The kit owns a composite only when public controls do not provide the complete cross-mode and lifecycle contract shared by multiple extensions.
 
 The library owns:
 
 - standalone task-mode adaptation, cancellation, stale checks, error routing, and draining;
-- lifecycle ownership, disposal, and pending-work draining around live-choice and specialized custom
-  interactions;
+- lifecycle ownership, disposal, and pending-work draining around live-choice and specialized custom interactions;
 - width-safe standard rendering and injected keybindings;
 - screen-stack navigation, Back/Close semantics, and per-screen cursor memory;
 - serial settings and multi-select updates, optimistic rollback, and pending-update draining;
@@ -660,17 +629,15 @@ The consuming extension still owns:
 - transactional persistence and preservation of unknown settings fields;
 - confirmations and product-specific copy;
 - session generation and shutdown policy supplied through `isCurrent()`;
-- preview snapshots, rollback and persistence, multi-line editors, secret inputs, multi-field forms,
-  or other specialized custom TUI.
+- preview snapshots, rollback and persistence, multi-line editors, secret inputs, multi-field forms, or other specialized custom TUI.
 
 Keep specialized UI local rather than adding package hooks that expose Pi TUI internals.
 
 ## 🧪 Supported testing entrypoint
 
-The same npm package exposes test-only drivers from `@narumitw/pi-tui-kit/testing`; there is no
-second package to install. Keep production imports on the main entrypoint and import harnesses only
-from test code. The testing entrypoint drives Kit behavior through Pi's public custom-factory and RPC
-dialog boundaries without returning a raw component or creating a general `ExtensionContext` mock.
+The same npm package exposes test-only drivers from `@narumitw/pi-tui-kit/testing`; there is no second package to install.
+Keep production imports on the main entrypoint and import harnesses only from test code.
+The testing entrypoint drives Kit behavior through Pi's public custom-factory and RPC dialog boundaries without returning a raw component or creating a general `ExtensionContext` mock.
 
 Compose `createTuiHarness()` with the consumer's own context fixture:
 
@@ -697,11 +664,9 @@ const frame = tui.render();
 const result = await running;
 ```
 
-The TUI harness supports semantic Kit bindings, explicit raw input, Ctrl+C/Home/End, focus,
-invalidation, live width/row changes, render-request observations, pending-action draining,
-sequential screens, result observation, and external disposal. `done`, disposal, factory failure,
-and obsolete async openings settle exactly once; input after closure is inert. Supply optional
-callback-compatible theme/keybinding overrides only when a test needs them.
+The TUI harness supports semantic Kit bindings, explicit raw input, Ctrl+C/Home/End, focus, invalidation, live width/row changes, render-request observations, pending-action draining, sequential screens, result observation, and external disposal.
+`done`, disposal, factory failure, and obsolete async openings settle exactly once; input after closure is inert.
+Supply optional callback-compatible theme/keybinding overrides only when a test needs them.
 
 Use strict scripts for RPC:
 
@@ -724,12 +689,11 @@ await runMenu(rpcCtx, menu, options);
 rpc.assertConsumed();
 ```
 
-RPC steps match call kind and optional exact title, placeholder, or choices. Responses are exact raw
-strings or `undefined` cancellation; the harness never fuzzy-matches labels. A `waitForAbort: true`
-step supports owner-abort tests without a timer. Dialog records are immutable, unexpected or leftover
-steps fail observably, and any RPC request for custom TUI throws. The current Kit runtime uses only
-signal-aware `input()` and `select()` in RPC, so the testing entrypoint deliberately does not mock
-confirmations, editors, notifications, sessions, models, settings, filesystems, clocks, or networks.
+RPC steps match call kind and optional exact title, placeholder, or choices.
+Responses are exact raw strings or `undefined` cancellation; the harness never fuzzy-matches labels.
+A `waitForAbort: true` step supports owner-abort tests without a timer.
+Dialog records are immutable, unexpected or leftover steps fail observably, and any RPC request for custom TUI throws.
+The current Kit runtime uses only signal-aware `input()` and `select()` in RPC, so the testing entrypoint deliberately does not mock confirmations, editors, notifications, sessions, models, settings, filesystems, clocks, or networks.
 Consumer fixtures continue to own domain state, persistence, generation checks, and owner signals.
 
 ## 📚 Public API
@@ -737,31 +701,18 @@ Consumer fixtures continue to own domain state, persistence, generation checks, 
 - `defineMenu()` — validates and returns a typed menu definition.
 - `runMenu()` — runs the definition in the current Pi mode and preserves root Back versus Close.
 - `runTask()` — runs typed abort-aware work with a cancellable TUI loader and direct non-TUI fallback.
-- `runConfirmation()` — preserves Confirmed, Back, Close, Stale, Unsupported, and Error for one
-  standalone confirmation without owning the confirmed side effect.
-- `runLiveChoice()` — adapts a live-preview choice to TUI and ordinary RPC selection while preserving
-  typed selection, confirmation-only gating, shortcuts, Back, Close, Stale, Unsupported, and Error.
-- `formatInteractionHints()` — formats sanitized, normalized, de-duplicated injected bindings and
-  literal shortcut keys for specialized interaction hints; the lightweight
-  `@narumitw/pi-tui-kit/interaction-hints` subpath exports it and its public types.
-- `sanitizeTerminalText()` — removes terminal and bidirectional display controls from untrusted
-  single-line presentation text without mutating raw payloads; the lightweight
-  `@narumitw/pi-tui-kit/terminal-text` subpath exports it.
-- `runCustomInteraction()` — owns cancellation, stale checks, exactly-once disposal, optional pending
-  work draining, and typed results around one extension-owned custom TUI component.
+- `runConfirmation()` — preserves Confirmed, Back, Close, Stale, Unsupported, and Error for one standalone confirmation without owning the confirmed side effect.
+- `runLiveChoice()` — adapts a live-preview choice to TUI and ordinary RPC selection while preserving typed selection, confirmation-only gating, shortcuts, Back, Close, Stale, Unsupported, and Error.
+- `formatInteractionHints()` — formats sanitized, normalized, de-duplicated injected bindings and literal shortcut keys for specialized interaction hints; the lightweight `@narumitw/pi-tui-kit/interaction-hints` subpath exports it and its public types.
+- `sanitizeTerminalText()` — removes terminal and bidirectional display controls from untrusted single-line presentation text without mutating raw payloads; the lightweight `@narumitw/pi-tui-kit/terminal-text` subpath exports it.
+- `runCustomInteraction()` — owns cancellation, stale checks, exactly-once disposal, optional pending work draining, and typed results around one extension-owned custom TUI component.
 - `resolveMenuScreen()` — resolves and validates a dynamic screen for tests or adapters.
 - `createMenuNavigator()` — lower-level stack and selection state helper.
-- exported screen, item, action, transition, runtime option, `BrowseDetailDocument`,
-  `MenuCloseReason`, and result types.
-- `@narumitw/pi-tui-kit/testing` — separate subpath for `createTuiHarness()`, `createRpcHarness()`,
-  strict scripts, and their public testing types; it is not re-exported from the production root.
+- exported screen, item, action, transition, runtime option, `BrowseDetailDocument`, `MenuCloseReason`, and result types.
+- `@narumitw/pi-tui-kit/testing` — separate subpath for `createTuiHarness()`, `createRpcHarness()`, strict scripts, and their public testing types; it is not re-exported from the production root.
 - `PI_EXTENSION_MENU_API_VERSION` — current API version (`13`).
-  Version 13 adds opt-in Markdown, LaTeX, and Mermaid document formatting while version-12 menu
-  definitions remain valid. Version 12 added optional searchable `choice` fields, version 11 added
-  Live Choice confirmation-only gating, version 10 added exact browse detail documents, version 9
-  added `runLiveChoice()` and `formatInteractionHints()`, version 8 added disabled action reasons and
-  adaptive action-label columns, version 7 added `runConfirmation()`, and version 6 added the
-  read-only `browse` screen and `runCustomInteraction()`.
+Version 13 adds opt-in Markdown, LaTeX, and Mermaid document formatting while version-12 menu definitions remain valid.
+Version 12 added optional searchable `choice` fields, version 11 added Live Choice confirmation-only gating, version 10 added exact browse detail documents, version 9 added `runLiveChoice()` and `formatInteractionHints()`, version 8 added disabled action reasons and adaptive action-label columns, version 7 added `runConfirmation()`, and version 6 added the read-only `browse` screen and `runCustomInteraction()`.
 
 ## 🗂️ Package layout
 
@@ -771,10 +722,8 @@ Consumer fixtures continue to own domain state, persistence, generation checks, 
 - `src/task.ts` — standalone and menu-shared task lifecycle orchestration
 - `src/confirmation.ts` — standalone confirmation mode adaptation and lifecycle results
 - `src/live-choice.ts` — standalone live-choice TUI/RPC adaptation and preview-work ownership
-- `src/interaction-hints.ts` — injected-key and literal-shortcut hint formatting, published through
-  the lightweight `/interaction-hints` subpath
-- `src/terminal-text.ts` — terminal display sanitization published through the lightweight
-  `/terminal-text` subpath
+- `src/interaction-hints.ts` — injected-key and literal-shortcut hint formatting, published through the lightweight `/interaction-hints` subpath
+- `src/terminal-text.ts` — terminal display sanitization published through the lightweight `/terminal-text` subpath
 - `src/custom-interaction.ts` — lifecycle ownership for specialized public custom components
 - `dist/` — generated ESM and declarations included in the npm package
 - `test/` — contract, renderer, navigation, lifecycle, and public testing-entrypoint coverage

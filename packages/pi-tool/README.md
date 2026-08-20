@@ -1,18 +1,17 @@
-# 🧰 pi-tool — Tool Browser for Pi
+# 🧰 pi-tool — Browse Pi Tools and Their Schemas
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-tool)](https://www.npmjs.com/package/@narumitw/pi-tool) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-`@narumitw/pi-tool` adds one read-only `/tool` command for browsing every tool configured in the current Pi session and inspecting the metadata Pi exposes for it.
+Browse every tool configured in the current Pi session and inspect its active state, description, origin, schema, and prompt guidance through one read-only `/tool` command.
 
 ## ✨ Features
 
 - Lists built-in, SDK-provided, and extension-provided tools in one searchable catalog.
-- Shows whether each tool is currently active.
-- Shows the tool description, source, scope, origin, path, and optional base directory.
-- Shows the complete JSON parameter schema and every prompt guideline exposed by `pi.getAllTools()`.
-- Shows the effective prompt snippet exposed for an active tool by `ctx.getSystemPromptOptions()`.
-- Reads fresh tool and system-prompt metadata each time the catalog opens.
-- Changes no tools, settings, files, or session data.
+- Shows active state, description, source, scope, origin, path, and optional base directory.
+- Displays the complete JSON parameter schema and prompt guidelines exposed by Pi.
+- Shows the effective system-prompt snippet for each active tool.
+- Refreshes metadata every time the catalog opens.
+- Never changes tools, settings, files, or session data.
 
 ## 📦 Install
 

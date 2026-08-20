@@ -1,4 +1,4 @@
-# 🧭 Pi TUI Kit Showcase
+# 🧭 Pi TUI Kit Showcase — Preview Standard Pi Interactions
 
 [![private](https://img.shields.io/badge/npm-private-lightgrey)](./package.json) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
@@ -6,19 +6,17 @@
 > Pi TUI Kit Showcase is experimental and private.
 > It is a local maintainer demo, not a published extension.
 
-`@narumitw/pi-tui-kit-showcase` opens an interactive local demo of public `@narumitw/pi-tui-kit` screens and standalone interactions.
+Preview the public `@narumitw/pi-tui-kit` screens and standalone interactions in one local interactive demo.
 
-It stores no persistent settings.
-
-It uses only in-memory state for the current demo session.
+The showcase uses only in-memory state and stores no settings.
 
 ## ✨ Features
 
-- Shows `actions`, `detail`, `browse`, `choice`, `settings`, `input`, `review`, and `multiSelect` menu screens.
-- Shows standalone `runTask()`, `runConfirmation()`, and `runLiveChoice()` interactions from the same entry menu.
-- Demonstrates disabled rows, busy labels, searchable choices, exact browse documents, adaptive review, bulk multi-select actions, and selected-row descriptions.
-- Keeps all side effects inside the demo process.
-- Lazy-loads the Kit runtime only after the command runs.
+- Demonstrates action, detail, browse, choice, settings, input, review, and multi-select screens.
+- Demonstrates standalone task, confirmation, and live-choice interactions from the same menu.
+- Covers disabled rows, busy labels, search, exact documents, adaptive review, bulk actions, and row descriptions.
+- Keeps all effects in memory inside the demo process.
+- Loads the Kit runtime only after `/tui-kit-showcase` runs.
 
 ## 📦 Install
 

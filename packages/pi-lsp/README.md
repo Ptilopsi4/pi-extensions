@@ -1,35 +1,31 @@
-# 🧠 pi-lsp — Configurable Language Server Tools for Pi
+# 🧠 pi-lsp — Run Targeted LSP Diagnostics and Fixes
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-lsp)](https://www.npmjs.com/package/@narumitw/pi-lsp) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-`@narumitw/pi-lsp` is a native [Pi coding agent](https://pi.dev) extension that exposes diagnostics and source-fix tools through configurable Language Server Protocol routes.
+Give Pi targeted Language Server Protocol diagnostics and source fixes without running a full-project check for every intermediate edit.
 
-The extension is language-agnostic: servers are selected by config and file extension instead of hard-coded language families.
+Configure any language server by command and file extension instead of using hard-coded language families.
 
 ## ✨ Features
 
-- Configure LSP servers with simple JSON keyed by server name.
-- Routes diagnostics and source fixes by configured file extensions.
-- Supports multiple servers for the same extension, for example `ty` and `ruff` for `.py`/`.pyi` diagnostics.
-- Uses one internal LSP runner for JSON-RPC framing, subprocess lifecycle, diagnostics, code actions, and workspace edit application.
-- Supports workspace roots, file limits, recursive file discovery, server overrides, and write-or-preview edits.
-- Starts language servers only for tool calls, then shuts them down.
-- Shows statusline activity only while LSP tools are running.
+- Configures language servers in JSON and routes files by extension.
+- Runs multiple servers for the same file type when complementary diagnostics are useful.
+- Exposes `lsp_diagnostics` for exact ranges and `lsp_fix` for supported source actions.
+- Supports workspace roots, bounded discovery, per-call server overrides, and preview-or-write edits.
+- Starts servers only for tool calls, shuts them down afterward, and shows activity only while they run.
 
 ## 🎯 When to use pi-lsp
 
-Use pi-lsp when an LSP can answer a targeted question about the files being edited faster than the
-project's authoritative validation commands. It is most useful when:
+Use pi-lsp when an LSP can answer a targeted question about the files being edited faster than the project's authoritative validation commands.
+It is most useful when:
 
 - a full-project lint or typecheck is slow, but only a few files need intermediate feedback;
 - structured diagnostics with exact ranges and severity are easier to act on than CLI output;
-- a language server provides a useful source action such as `source.fixAll` or
-  `source.organizeImports`;
+- a language server provides a useful source action such as `source.fixAll` or `source.organizeImports`;
 - a multi-language repository benefits from one configurable interface for targeted diagnostics.
 
-For most repositories, first document the authoritative format, lint, typecheck, build, and test
-commands in `AGENTS.md`, then enforce them with pre-commit hooks or CI where appropriate. If those
-commands are already fast and reliable, pi-lsp may add little value.
+For most repositories, first document the authoritative format, lint, typecheck, build, and test commands in `AGENTS.md`, then enforce them with pre-commit hooks or CI where appropriate.
+If those commands are already fast and reliable, pi-lsp may add little value.
 
 A practical workflow is:
 
@@ -40,20 +36,14 @@ A practical workflow is:
 
 ### Current limitations
 
-- Diagnostics are not continuously injected into the conversation; the agent must call
-  `lsp_diagnostics`.
-- Language servers start and stop for each tool call, so pi-lsp does not retain an editor-like
-  incremental session.
-- The current tools expose diagnostics and source code actions, not symbol navigation, references,
-  or semantic rename.
+- Diagnostics are not continuously injected into the conversation; the agent must call `lsp_diagnostics`.
+- Language servers start and stop for each tool call, so pi-lsp does not retain an editor-like incremental session.
+- The current tools expose diagnostics and source code actions, not symbol navigation, references, or semantic rename.
 - A clean LSP result does not replace the project's formatter, linter, type checker, build, or tests.
-- This project has not yet demonstrated through benchmarks that LSP improves agent task success,
-  latency, or tool usage.
+- This project has not yet demonstrated through benchmarks that LSP improves agent task success, latency, or tool usage.
 
-This outcome-first framing is informed by
-[Eric Traut's comment on LSP integration for coding agents](https://github.com/openai/codex/issues/8745#issuecomment-3713058579):
-the protocol was not designed specifically for coding agents, and repository-native checks may
-already provide much of the desired verification value.
+This outcome-first framing is informed by [Eric Traut's comment on LSP integration for coding agents](https://github.com/openai/codex/issues/8745#issuecomment-3713058579).
+The comment explains that the protocol was not designed specifically for coding agents and that repository-native checks may already provide much of the desired verification value.
 
 ## 📦 Install
 
@@ -83,7 +73,11 @@ The agent can call `lsp_diagnostics` for targeted diagnostics and `lsp_fix` for 
 
 ## ⚙️ Settings
 
-If no config is provided, pi-lsp ships a broad catalog of direct-command defaults. Servers are started only when matching files are requested. pi-lsp does not download language servers, so install the commands you need and make them available on `PATH`. During no-config diagnostics, unavailable default commands are filtered before workspace discovery. If none can run, diagnostics completes successfully and reports the skipped servers. Explicitly selected or custom-configured missing commands still report an error.
+If no config is provided, pi-lsp ships a broad catalog of direct-command defaults.
+Servers are started only when matching files are requested. pi-lsp does not download language servers, so install the commands you need and make them available on `PATH`.
+During no-config diagnostics, unavailable default commands are filtered before workspace discovery.
+If none can run, diagnostics completes successfully and reports the skipped servers.
+Explicitly selected or custom-configured missing commands still report an error.
 
 | Language or format | Default server | Startup command | Extensions |
 | --- | --- | --- | --- |
@@ -131,11 +125,15 @@ Custom config is resolved in this order:
 2. `~/.pi/agent/pi-lsp.json`
 3. the built-in server catalog
 
-An untrusted project's canonical and legacy files are ignored. A `root` passed to an LSP tool selects files and the server working directory; it does not grant that directory authority to provide project settings. Project settings always come from the trusted Pi session workspace.
+An untrusted project's canonical and legacy files are ignored.
+A `root` passed to an LSP tool selects files and the server working directory; it does not grant that directory authority to provide project settings.
+Project settings always come from the trusted Pi session workspace.
 
-Compatibility: user-scoped `lsp.json` and trusted project-scoped `.pi/lsp.json` remain readable with a warning and are never modified automatically; rename them to their canonical `pi-lsp.json` names. New paths take precedence when both names exist.
+Compatibility: user-scoped `lsp.json` and trusted project-scoped `.pi/lsp.json` remain readable with a warning and are never modified automatically; rename them to their canonical `pi-lsp.json` names.
+New paths take precedence when both names exist.
 
-pi-lsp-specific environment settings have been removed. Move their values into canonical JSON:
+pi-lsp-specific environment settings have been removed.
+Move their values into canonical JSON:
 
 | Removed setting | JSON replacement |
 | --- | --- |
@@ -145,7 +143,8 @@ pi-lsp-specific environment settings have been removed. Move their values into c
 
 `servers[].env` remains supported because it configures the launched LSP child process rather than pi-lsp itself.
 
-Providing custom config replaces the default server map. The following `pi-lsp.json` example intentionally keeps five selected servers:
+Providing custom config replaces the default server map.
+The following `pi-lsp.json` example intentionally keeps five selected servers:
 
 ```json
 {
@@ -211,16 +210,25 @@ Each server entry supports:
 
 - `command`: argv array used to start the LSP server.
 - `extensions`: file extensions that should route to this server.
-- `env`: environment overrides for the LSP server process. The child inherits Pi's environment, then applies these values; an `env.PATH` value is also used to resolve `command[0]`.
+- `env`: environment overrides for the LSP server process.
+  The child inherits Pi's environment, then applies these values; an `env.PATH` value is also used to resolve `command[0]`.
 - `initialization`: LSP initialization options and workspace configuration values.
-- `skipDirectories`: additional directory names to exclude from recursive discovery. Explicitly requested paths remain available.
-- `diagnosticsSettleMs`: positive number of milliseconds without another push-diagnostics publication before using the latest result. Defaults to `800`; the built-in intelephense route uses `4000`. The global timeout remains the upper bound.
-- `pushDiagnosticsGraceMs`: positive number of milliseconds to wait for the first publication from a push-only server. It is unset by default, so a silent push-only server waits for the global timeout. The built-in Lua and Haskell routes use `3000`; Dart, Terraform, Gleam, and Tinymist use `2000`. This lets clean files finish after bounded silence without returning before a late error publication.
-- `pullDiagnosticsGraceMs`: positive number of milliseconds to wait for a newer push publication after a server returns an empty pull-diagnostics result. It is unset by default; the built-in rust-analyzer route uses `5000` because initial workspace analysis can finish after an early empty pull response.
+- `skipDirectories`: additional directory names to exclude from recursive discovery.
+  Explicitly requested paths remain available.
+- `diagnosticsSettleMs`: positive number of milliseconds without another push-diagnostics publication before using the latest result.
+  Defaults to `800`; the built-in intelephense route uses `4000`.
+  The global timeout remains the upper bound.
+- `pushDiagnosticsGraceMs`: positive number of milliseconds to wait for the first publication from a push-only server.
+  It is unset by default, so a silent push-only server waits for the global timeout.
+  The built-in Lua and Haskell routes use `3000`; Dart, Terraform, Gleam, and Tinymist use `2000`.
+  This lets clean files finish after bounded silence without returning before a late error publication.
+- `pullDiagnosticsGraceMs`: positive number of milliseconds to wait for a newer push publication after a server returns an empty pull-diagnostics result.
+  It is unset by default; the built-in rust-analyzer route uses `5000` because initial workspace analysis can finish after an early empty pull response.
 
 Global options:
 
-- `timeout`: request timeout in milliseconds. Defaults to `20000`.
+- `timeout`: request timeout in milliseconds.
+  Defaults to `20000`.
 
 pi-lsp infers `languageId` from common extensions and falls back to the extension without the leading dot.
 
@@ -254,21 +262,28 @@ Run diagnostics through configured servers.
 
 Parameters:
 
-- `paths?`: files or directories to check. Defaults to the workspace root.
-- `root?`: workspace root. Defaults to cwd.
+- `paths?`: files or directories to check.
+  Defaults to the workspace root.
+- `root?`: workspace root.
+  Defaults to cwd.
 - `limit?`: maximum files to open per selected server.
-- `server?`: configured server name, or an array of names. Defaults to all matching servers.
+- `server?`: configured server name, or an array of names.
+  Defaults to all matching servers.
 
 ### `lsp_fix`
 
-Apply source fixes or import organization through a configured server that matches its extension. If multiple servers match, pass `server` explicitly.
+Apply source fixes or import organization through a configured server that matches its extension.
+If multiple servers match, pass `server` explicitly.
 
 Parameters:
 
 - `path`: file to fix.
-- `root?`: workspace root. Defaults to cwd.
-- `kind?`: source action kind. Defaults to `source.fixAll`.
-- `write?`: write fixed text back to the file. Defaults to false.
+- `root?`: workspace root.
+  Defaults to cwd.
+- `kind?`: source action kind.
+  Defaults to `source.fixAll`.
+- `write?`: write fixed text back to the file.
+  Defaults to false.
 - `server?`: optional configured server name.
 
 ## 💬 Commands
@@ -311,4 +326,5 @@ Pi extension, Pi Coding Agent, Language Server Protocol, LSP diagnostics, code a
 
 ## 📄 License
 
-MIT. See [`LICENSE`](./LICENSE).
+MIT.
+See [`LICENSE`](./LICENSE).

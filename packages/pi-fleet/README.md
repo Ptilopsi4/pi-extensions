@@ -1,4 +1,4 @@
-# 🚀 Pi Fleet — Experimental Local Pi Sessions
+# 🚀 Pi Fleet — Launch and Connect Local Pi Sessions
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-fleet)](https://www.npmjs.com/package/@narumitw/pi-fleet) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
@@ -6,25 +6,19 @@
 > Pi Fleet is experimental.
 > Its local protocol, terminal automation, tool schemas, and agent-request behavior may change between releases.
 
-`@narumitw/pi-fleet` starts a separate Pi process in a terminal split while preserving the parent session.
-Its built-in default automatically selects the current tmux, Zellij, or Ghostty context, while users can pin a backend in Settings or per tool call.
-It also lets explicitly joined Pi sessions owned by the same operating-system user exchange bounded local messages and one-turn requests.
+Start another Pi process in a terminal split without replacing the current session, then optionally connect trusted local Pi sessions for bounded messages and one-turn requests.
+
+Pi Fleet automatically detects tmux, Zellij, or Ghostty, and lets you pin a backend when needed.
 
 ## ✨ Features
 
-- Starts a distinct Pi process with automatic or pinned tmux, Ghostty, or Zellij selection.
-- Resolves the current supported terminal from bounded environment signatures before launch side effects.
-- Preserves the parent Pi session instead of replacing it with `ctx.newSession()`.
-- Inherits the parent cwd, model identity, thinking level, and an optional first task.
-- Lets users keep or skip the final launch preview while retaining one-time experimental consent.
-- Waits for an authenticated child endpoint before reporting that the new session is ready.
-- Connects explicit sessions through owner-only Unix sockets and ephemeral bearer invites.
-- Authenticates strict version-2 manifests and frames with separate HMAC-SHA-256 domains.
-- Binds every live process instance to a random endpoint id as well as its logical Pi session id.
-- Bounds frames, messages, directory scans, peers, concurrent probes, connections, deliveries, rates, deadlines, diagnostics, and deduplication state.
-- Delivers notify messages without starting a model turn.
-- Starts at most one turn for an allowed request or parent-capability launch kickoff, while replies do not trigger another automatic turn.
-- Cleans sockets, manifests, connections, launchers, tasks, timers, and status on leave, replacement, reload, and shutdown.
+- Opens a distinct Pi process in tmux, Ghostty, or Zellij while preserving the parent session.
+- Inherits the cwd, model, thinking level, and an optional first task after a reviewed launch flow.
+- Waits for the child to authenticate before reporting that the new session is ready.
+- Connects explicitly joined same-user sessions through owner-only local sockets and ephemeral invites.
+- Delivers notifications without a model turn and bounds each allowed request to one turn.
+- Authenticates and bounds local protocol traffic, peers, retries, rates, deadlines, and diagnostics.
+- Cleans all sockets, launchers, tasks, timers, and status on leave, reload, replacement, or shutdown.
 
 ## 📦 Install
 
@@ -57,19 +51,15 @@ Review extension source before installing it.
 
 ## 🚀 Quick start
 
-Run:
+Run `/fleet`, choose **New Pi session…**, select a split direction, and optionally provide the first task.
+Pi Fleet asks for one-time experimental consent and shows the configured launch confirmation before creating a split.
 
-```text
-/fleet
-```
+## 🧭 Launch flow
 
 Choose **Settings** first when you want to pin a terminal backend or change final launch confirmation.
-Then choose **New Pi session…**.
-Pi Fleet resolves the configured terminal preference and asks for a split direction and an optional first task.
-It always requires one-time experimental consent.
-When **Confirm new sessions** is **Ask**, it also shows an exact launch preview before creating any socket or split.
+Pi Fleet otherwise resolves the current supported terminal automatically.
 
-After the required consent and optional launch confirmation, Pi Fleet:
+After consent and any configured launch confirmation, Pi Fleet:
 
 1. Creates or reuses an ephemeral local group.
 2. Creates the selected terminal split.
