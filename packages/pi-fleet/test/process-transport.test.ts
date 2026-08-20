@@ -141,7 +141,6 @@ posixTest(
 			await rm(baseDirectory, { recursive: true, force: true });
 		}
 	},
-	15_000,
 );
 
 function compiledFixture(name: string): string {

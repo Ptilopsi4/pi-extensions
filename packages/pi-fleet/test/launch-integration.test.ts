@@ -137,7 +137,6 @@ posixTest(
 			await rm(childCwd, { recursive: true, force: true });
 		}
 	},
-	15_000,
 );
 
 async function waitForChildEvent(
