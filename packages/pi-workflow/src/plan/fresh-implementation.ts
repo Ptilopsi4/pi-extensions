@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { formatImplementationHandoff } from "./prompt.js";
 import type { ImplementationPlanRetention } from "./settings.js";
 import type { PlanCompletionSource, PlanModeState } from "./state.js";
+
+export { formatImplementationHandoff } from "./prompt.js";
 
 type NewSessionOptions = Exclude<Parameters<ExtensionCommandContext["newSession"]>[0], undefined>;
 type ReplacementContext = Parameters<NonNullable<NewSessionOptions["withSession"]>>[0];
@@ -31,10 +34,6 @@ export type FreshImplementationResult =
 	| { kind: "partial" }
 	| { kind: "rejected" }
 	| { kind: "stale" };
-
-export function formatImplementationHandoff(plan: string) {
-	return `Plan mode is now disabled. Full tool access is restored. Implement this proposed plan now:\n\n${plan}`;
-}
 
 export async function startFreshImplementationFromState(
 	ctx: ExtensionContext,

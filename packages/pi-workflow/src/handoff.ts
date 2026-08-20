@@ -3,11 +3,11 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { serializeGoalState } from "./goal/persistence.js";
 import { buildGoalPrompt } from "./goal/prompts.js";
 import { createGoal, GOAL_STATE_ENTRY_TYPE } from "./goal/runtime.js";
-import {
-	type FreshImplementationRequest,
-	type FreshImplementationResult,
-	formatImplementationHandoff,
+import type {
+	FreshImplementationRequest,
+	FreshImplementationResult,
 } from "./plan/fresh-implementation.js";
+import { formatImplementationHandoff } from "./plan/prompt.js";
 import type { PlanModeState } from "./plan/state.js";
 import { WORKFLOW_GOAL_OBJECTIVE } from "./workflow-contract.js";
 

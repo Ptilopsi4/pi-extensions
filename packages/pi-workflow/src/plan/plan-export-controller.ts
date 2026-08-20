@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { exportStoredPlan, planExportDestination } from "./plan-export.js";
+import { exportStoredPlan } from "./plan-export.js";
+import { planExportDestination } from "./plan-export-path.js";
 import { configuredPlanExportPath, type PlanModeSettings } from "./settings.js";
 import type { PlanModeState } from "./state.js";
 

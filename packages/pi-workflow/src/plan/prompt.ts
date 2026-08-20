@@ -1,5 +1,9 @@
 const PLAN_CONTEXT_MARKER = "[CODEX-LIKE PLAN MODE ACTIVE]";
 
+export function formatImplementationHandoff(plan: string) {
+	return `Plan mode is now disabled. Full tool access is restored. Implement this proposed plan now:\n\n${plan}`;
+}
+
 export function buildPlanModePrompt() {
 	return `${PLAN_CONTEXT_MARKER}
 # Plan Mode (Conversational)
