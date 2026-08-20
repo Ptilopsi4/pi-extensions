@@ -60,6 +60,7 @@ if (options.worker) {
 				mermaidRendererLoaded: measurements[scenario].some(
 					(result) => result.mermaidRendererLoaded,
 				),
+				syntaxHighlighted: measurements[scenario].some((result) => result.syntaxHighlighted),
 			},
 		]),
 	);
@@ -106,29 +107,30 @@ async function runWorker(scenario) {
 		initTheme("dark", false);
 	}
 	let firstFrameMs;
+	let syntaxHighlighted = false;
 	if (scenario === "actions") {
-		firstFrameMs = await runMenuFrame(kit, startedAt, {
+		({ firstFrameMs, syntaxHighlighted } = await runMenuFrame(kit, startedAt, {
 			kind: "actions",
 			title: "Benchmark actions",
 			items: [{ id: "close", label: "Close", close: true }],
 			hint: "close",
-		});
+		}));
 	} else if (scenario === "review") {
-		firstFrameMs = await runMenuFrame(kit, startedAt, {
+		({ firstFrameMs, syntaxHighlighted } = await runMenuFrame(kit, startedAt, {
 			kind: "review",
 			title: "Benchmark review",
 			content: "const answer: number = 42;",
 			format: { kind: "code", filePath: "benchmark.ts" },
 			hint: "close",
-		});
+		}));
 	} else if (scenario === "mermaid") {
-		firstFrameMs = await runMenuFrame(kit, startedAt, {
+		({ firstFrameMs, syntaxHighlighted } = await runMenuFrame(kit, startedAt, {
 			kind: "review",
 			title: "Benchmark Mermaid",
 			content: "```mermaid\nflowchart LR\n A[Start] --> B[Done]\n```",
 			format: { kind: "markdown" },
 			hint: "close",
-		});
+		}));
 	} else if (scenario === "task") {
 		const context = benchmarkContext(
 			(elapsed) => {
@@ -166,6 +168,7 @@ async function runWorker(scenario) {
 			),
 			highlightJsLoaded: packageUrls.some((url) => url.includes("/highlight.js/")),
 			mermaidRendererLoaded: packageUrls.some((url) => url.includes("/grok-mermaid/")),
+			syntaxHighlighted,
 			packageUrls,
 		})}\n`,
 	);
@@ -181,8 +184,10 @@ function kitDistRelativePath(url) {
 
 async function runMenuFrame(kit, startedAt, screen) {
 	let firstFrameMs;
-	const context = benchmarkContext((elapsed) => {
+	let syntaxHighlighted = false;
+	const context = benchmarkContext((elapsed, frame) => {
 		firstFrameMs ??= elapsed;
+		syntaxHighlighted ||= frame.syntaxHighlighted;
 	}, startedAt);
 	const menu = kit.defineMenu({
 		start: "main",
@@ -192,12 +197,16 @@ async function runMenuFrame(kit, startedAt, screen) {
 	const result = await kit.runMenu(context, menu, { getState: () => undefined });
 	if (result.kind !== "closed") throw new Error(`Unexpected menu result: ${result.kind}`);
 	if (firstFrameMs === undefined) throw new Error("Menu did not render a frame");
-	return firstFrameMs;
+	return { firstFrameMs, syntaxHighlighted };
 }
 
 function benchmarkContext(onFirstFrame, startedAt, closeAfterFirstFrame = true) {
+	let syntaxHighlighted = false;
 	const theme = {
-		fg: (_color, text) => text,
+		fg: (color, text) => {
+			syntaxHighlighted ||= color.startsWith("syntax");
+			return text;
+		},
 		bold: (text) => text,
 		italic: (text) => text,
 		underline: (text) => text,
@@ -224,7 +233,7 @@ function benchmarkContext(onFirstFrame, startedAt, closeAfterFirstFrame = true) 
 				});
 				const component = factory(tui, theme, keybindings, resolveResult);
 				component.render(80);
-				onFirstFrame(performance.now() - startedAt);
+				onFirstFrame(performance.now() - startedAt, { syntaxHighlighted });
 				if (closeAfterFirstFrame) resolveResult(undefined);
 				const result = await resultPromise;
 				component.dispose?.();

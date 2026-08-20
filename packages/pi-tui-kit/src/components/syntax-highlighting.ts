@@ -1,5 +1,9 @@
+import { createRequire } from "node:module";
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import hljs from "highlight.js";
+import type { HLJSApi } from "highlight.js";
+
+const require = createRequire(import.meta.url);
+let highlighter: HLJSApi | undefined;
 
 export type SyntaxTheme = Pick<Theme, "fg" | "bold"> & Partial<Pick<Theme, "italic" | "underline">>;
 
@@ -101,15 +105,40 @@ export function highlightCode(
 	language: string | undefined,
 	theme: SyntaxTheme,
 ): string {
-	if (!language || !hljs.getLanguage(language)) {
-		return theme.fg("mdCodeBlock", theme.fg("mdCodeBlock", code));
-	}
+	if (!language) return plainCode(code, theme);
+	const hljs = loadHighlighter();
+	if (!hljs.getLanguage(language)) return plainCode(code, theme);
 	try {
 		const html = hljs.highlight(code, { language, ignoreIllegals: true }).value;
 		return theme.fg("mdCodeBlock", renderHighlightedHtml(html, syntaxFormatters(theme)));
 	} catch {
 		return theme.fg("mdCodeBlock", code);
 	}
+}
+
+function loadHighlighter(): HLJSApi {
+	if (highlighter) return highlighter;
+	const loaded = require("highlight.js") as unknown;
+	const candidate = highlightApi(loaded) ?? highlightApi(moduleDefault(loaded));
+	if (!candidate) throw new TypeError("highlight.js did not expose its expected API");
+	highlighter = candidate;
+	return candidate;
+}
+
+function highlightApi(value: unknown): HLJSApi | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const candidate = value as Partial<HLJSApi>;
+	return typeof candidate.getLanguage === "function" && typeof candidate.highlight === "function"
+		? (candidate as HLJSApi)
+		: undefined;
+}
+
+function moduleDefault(value: unknown): unknown {
+	return value && typeof value === "object" && "default" in value ? value.default : undefined;
+}
+
+function plainCode(code: string, theme: SyntaxTheme): string {
+	return theme.fg("mdCodeBlock", theme.fg("mdCodeBlock", code));
 }
 
 function syntaxFormatters(theme: SyntaxTheme): Readonly<Record<string, Formatter>> {

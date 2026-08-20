@@ -43,7 +43,9 @@ Publish a new Kit API before raising a consumer's compatibility floor to use it,
 
 The Kit's production JavaScript imports Pi TUI at runtime but keeps Pi Coding Agent imports type-only.
 This prevents a source-loaded extension from evaluating a second heavyweight coding-agent runtime when its menu first opens.
-Borders and task loaders compose public Pi TUI primitives with the theme and keybindings supplied by the active UI callback; review syntax coloring uses the Kit's declared highlighter dependency and the same callback theme.
+Borders and task loaders compose public Pi TUI primitives with the theme and keybindings supplied by the active UI callback.
+Review syntax coloring synchronously loads the Kit's complete declared highlighter dependency on first use and applies the same callback theme.
+Root imports, ordinary menus, task frames, and Markdown-only reviews do not evaluate that highlighter.
 Mermaid rendering lazy-loads its declared renderer only before the first screen containing an enabled Mermaid fence.
 
 The `terminal-text` and `interaction-hints` subpaths expose only their focused ESM and declaration graphs, while the package root keeps every existing export for compatibility.
@@ -55,7 +57,7 @@ npm run build --workspace @narumitw/pi-tui-kit
 node scripts/benchmark-tui-kit-runtime.mjs --runs 5
 ```
 
-The benchmark reports medians, median absolute deviations, resolved package URLs, and graph-presence flags so a fast import cannot hide the same dependency cost in the first interaction.
+The benchmark reports medians, median absolute deviations, resolved package URLs, syntax-color evidence, and graph-presence flags so a fast import cannot hide the same dependency cost in the first interaction.
 
 ## 🚀 Quick start
 
