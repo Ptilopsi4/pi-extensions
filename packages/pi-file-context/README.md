@@ -35,15 +35,14 @@ Try from npm without installing permanently:
 pi -e npm:@narumitw/pi-file-context
 ```
 
-Try the local working tree from this repository checkout:
+Build and try the local working tree from this repository checkout:
 
 ```bash
+npm --workspace @narumitw/pi-file-context run build
 pi -e ./packages/pi-file-context
 ```
 
-The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-file-context run build` before Pi loads the package directory.
-
-`just try file-context` runs that build automatically.
+The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 
 ## 🚀 Quick start
 

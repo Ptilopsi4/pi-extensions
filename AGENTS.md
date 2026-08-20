@@ -115,7 +115,7 @@ Run commands from the repository root unless a command says otherwise.
 - Run `npm test` or `just test` separately for active tests.
 - CI and release verification must run both gates.
 - Run `just pack <unscoped-name>` and inspect the tarball after package metadata or publishing changes.
-- Run `just try <unscoped-name>` or an equivalent `pi -e` smoke after extension runtime-loading changes; record why and what remains unverified if the smoke is impractical.
+- After extension runtime-loading changes, run `npm --workspace @narumitw/pi-<unscoped-name> run build --if-present`, then smoke with `pi -e ./packages/pi-<unscoped-name>`; record why and what remains unverified if the smoke is impractical.
 - Start subprocess timing deadlines only after a child readiness handshake.
 - Synchronize concurrent HTTP tests on a server-observable response or callback instead of a fixed sleep after `fetch()`.
 - Set `PI_CODING_AGENT_DIR` before importing an extension in lifecycle tests and use fresh imports for module-cached paths.

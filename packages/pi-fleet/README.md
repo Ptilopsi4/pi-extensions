@@ -40,21 +40,20 @@ Try the published package without a permanent install:
 pi -e npm:@narumitw/pi-fleet
 ```
 
-Load the extension from a local checkout:
+Build and load the extension from a local checkout:
 
 ```bash
+npm --workspace @narumitw/pi-fleet run build
 pi --no-extensions --no-skills --no-session -e ./packages/pi-fleet
 ```
+
+The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 
 A child started in any supported terminal backend uses normal Pi extension discovery.
 Install Pi Fleet persistently before testing the complete split-and-auto-join flow because a parent's temporary `-e` argument is not copied into the child process.
 
 Pi extensions execute with your user permissions.
 Review extension source before installing it.
-
-The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-fleet run build` before Pi loads the package directory.
-
-`just try fleet` runs that build automatically.
 
 ## 🚀 Quick start
 

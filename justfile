@@ -74,12 +74,6 @@ _validate-package-name name:
 pack name: (_validate-package-name name)
     npm --workspace {{ quote("@narumitw/pi-" + name) }} pack --dry-run
 
-# Try an extension package from this working tree as a temporary pi package
-# Usage: just try subagents
-try name: (_validate-package-name name)
-    npm --workspace {{ quote("@narumitw/pi-" + name) }} run build --if-present
-    pi -e {{ quote("./packages/pi-" + name) }}
-
 # Open the private Pi TUI Kit showcase extension from this working tree
 showcase-tui-kit:
     npm --workspace @narumitw/pi-tui-kit run build

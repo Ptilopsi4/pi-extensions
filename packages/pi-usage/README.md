@@ -34,15 +34,14 @@ Try without installing permanently:
 pi -e npm:@narumitw/pi-usage
 ```
 
-Try this package locally from the repository root:
+Build and try this package locally from the repository root:
 
 ```bash
+npm --workspace @narumitw/pi-usage run build
 pi -e ./packages/pi-usage
 ```
 
-The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-usage run build` before Pi loads the package directory.
-
-`just try usage` runs that build automatically.
+The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 
 ## 🚀 Usage
 

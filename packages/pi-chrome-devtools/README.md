@@ -45,15 +45,14 @@ Try without installing permanently:
 pi -e npm:@narumitw/pi-chrome-devtools
 ```
 
-Try this package locally from the repository root:
+Build and try this package locally from the repository root:
 
 ```bash
+npm --workspace @narumitw/pi-chrome-devtools run build
 pi -e ./packages/pi-chrome-devtools
 ```
 
-The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-chrome-devtools run build` before Pi loads the package directory.
-
-`just try chrome-devtools` runs that build automatically.
+The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 
 ## 🚀 Browser startup
 
