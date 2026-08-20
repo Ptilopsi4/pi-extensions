@@ -41,7 +41,12 @@ Try this package locally from the repository root:
 pi -e ./packages/pi-worktree
 ```
 
-## 💬 Usage
+## 🚀 Quick start
+
+Run `/worktree` in TUI or RPC mode and choose the worktree action you need.
+Every mutation shows package-owned safety checks and an exact confirmation before Git changes the worktree state.
+
+## 💬 Commands
 
 Run the command without arguments:
 
@@ -94,7 +99,7 @@ Leave the path input blank to accept the suggestion. A custom absolute path is u
 
 The MVP does not expose `--force`, `-B`, `--detach`, `--orphan`, or lock options.
 
-## ⚙️ Worktree root settings
+## ⚙️ Settings
 
 The machine-local user settings file is:
 
@@ -146,7 +151,7 @@ A successfully created Git worktree is never rolled back merely because Pi sessi
 
 Use Git directly when you intentionally need force removal, branch deletion, custom prune expiry, detach/orphan creation, move, repair, lock, unlock, or remote refresh behavior.
 
-## Requirements and limits
+## 🚧 Limitations
 
 - Git must be installed and the current Pi cwd must be inside a non-bare Git worktree.
 - The command requires a UI-capable Pi mode; print and JSON modes cannot drive its dialogs.

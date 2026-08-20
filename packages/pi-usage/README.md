@@ -43,7 +43,12 @@ pi -e ./packages/pi-usage
 
 The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 
-## 🚀 Usage
+## 🚀 Quick start
+
+Run `/usage` in TUI or RPC mode to inspect the current provider, refresh usage, or choose another configured provider.
+Use `/fast` separately to toggle Fast mode for a supported current Codex model.
+
+## 💬 Commands
 
 Run:
 
@@ -77,6 +82,8 @@ replacement or shutdown still aborts owned work. A transport failure offers **Tr
 same redemption request ID so the backend can treat an uncertain retry idempotently. Successful,
 already-completed, not-needed, and no-credit outcomes are reported separately, then usage and the
 statusline are refreshed for the still-current account.
+
+## ⚙️ Settings
 
 ### Codex Fast mode
 

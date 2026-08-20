@@ -45,7 +45,12 @@ The package declares `dist/index.ts`, so an unbuilt local checkout must run the 
 
 Do not enable this together with `@narumitw/pi-statusline`: both own Pi's footer, and Pi does not arbitrate that conflict.
 
-## ⚙️ Configuration
+## 🚀 Quick start
+
+Start Pi with the extension to use the built-in footer without creating a settings file.
+Run `/starship` to inspect the footer, choose a preset, or customize the configuration.
+
+## ⚙️ Settings
 
 The only configuration source is:
 

@@ -70,6 +70,11 @@ Close
 Settings save immediately. Mounted compatible stamps reformat on the next render, and future stamps
 use the same effective values.
 
+## 💬 Commands
+
+Run `/stamp` in TUI or RPC mode to open the presentation, status, and help menu.
+The command accepts no arguments and rejects print and JSON modes without changing settings.
+
 ## ⚙️ Settings
 
 The `/stamp` Settings screen provides these controls:

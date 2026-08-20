@@ -76,7 +76,12 @@ pi -e ./packages/pi-lsp
 
 The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 
-## ⚙️ Configuration
+## 🚀 Quick start
+
+Install at least one supported language server on `PATH`, then run `/lsp` to inspect command availability.
+The agent can call `lsp_diagnostics` for targeted diagnostics and `lsp_fix` for supported source actions.
+
+## ⚙️ Settings
 
 If no config is provided, pi-lsp ships a broad catalog of direct-command defaults. Servers are started only when matching files are requested. pi-lsp does not download language servers, so install the commands you need and make them available on `PATH`. During no-config diagnostics, unavailable default commands are filtered before workspace discovery. If none can run, diagnostics completes successfully and reports the skipped servers. Explicitly selected or custom-configured missing commands still report an error.
 
@@ -241,7 +246,7 @@ For example, run the configured Ruff server through the project's uv environment
 
 Use project formatters or shell commands for formatting workflows.
 
-## 🛠️ Pi tools
+## 🛠️ Tools
 
 ### `lsp_diagnostics`
 
@@ -266,7 +271,7 @@ Parameters:
 - `write?`: write fixed text back to the file. Defaults to false.
 - `server?`: optional configured server name.
 
-## 💬 Command
+## 💬 Commands
 
 ```text
 /lsp

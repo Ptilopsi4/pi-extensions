@@ -115,7 +115,7 @@ Unknown and trailing arguments are rejected. RPC receives an observable warning.
 - Each snippet stores the text visible at selection time. It does not silently reread changed content when the prompt is submitted.
 - A snippet is limited to 500 lines and 50 KB. At most eight selected snippets and 100 KB of aggregate context text are accepted.
 
-## 🧪 Experimental limitations
+## 🚧 Limitations
 
 - Keyboard line selection only; mouse drag selection is not implemented.
 - Up to eight selected snippets; exact review and repeated removal are supported, but there are not yet bulk clear, undo, or reorder actions.

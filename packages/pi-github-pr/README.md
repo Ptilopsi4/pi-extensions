@@ -61,6 +61,11 @@ gh auth login --hostname github.example.com:8443
 
 The extension shells out to `gh`; GitHub Enterprise hosts and credential storage are delegated to `gh`. It uses the PR URL host (including any port) for follow-up API calls, so no manual `GH_HOST` is required.
 
+## 🚀 Quick start
+
+Start Pi inside a Git worktree after authenticating `gh`.
+The extension automatically shows the current branch's pull request status and does not register a command or model tool.
+
 ## 💬 Behavior
 
 The extension runs passively:
@@ -74,7 +79,7 @@ The extension runs passively:
 - If the directory has no GitHub PR, the statusline entry stays empty.
 - If `gh` is missing or unauthenticated, the statusline shows a short hint such as `PR gh missing` or `PR gh auth`.
 
-## Known limits
+## 🚧 Limitations
 
 - Requires `gh`; there is no direct GitHub API, `GITHUB_TOKEN` fallback, or manual `GH_HOST` requirement.
 - Only the current branch PR is shown; there is no command or tool for arbitrary PR lookup.
@@ -82,7 +87,7 @@ The extension runs passively:
 - It does not read PR comment bodies, review bodies, inline diff comments, or unresolved review-thread text.
 - While a session is open, refresh runs every 60 seconds in addition to session start, branch changes, and agent turns; each refresh invokes `gh pr view` and one GraphQL count query.
 
-## 📁 Package layout
+## 🗂️ Package layout
 
 ```text
 packages/pi-github-pr/
@@ -95,7 +100,7 @@ packages/pi-github-pr/
 └── tsconfig.json
 ```
 
-## 🏷️ Keywords
+## 🔎 Keywords
 
 `pi-package`, `pi-extension`, `github`, `pull-request`, `statusline`, `gh`
 

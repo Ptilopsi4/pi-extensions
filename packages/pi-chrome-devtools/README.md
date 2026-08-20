@@ -54,7 +54,7 @@ pi -e ./packages/pi-chrome-devtools
 
 The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 
-## 🚀 Browser startup
+## 🚀 Quick start
 
 Without unpacked extensions, the extension first tries `browser.endpoint`, defaulting to
 `http://127.0.0.1:9222`. If that local endpoint is unavailable and `browser.autoLaunch` is `true`, it
@@ -157,7 +157,7 @@ google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/pi-chrome-devtoo
 On session shutdown, the extension terminates only browser processes it started and best-effort
 removes their temporary profiles. It never closes user-started browsers or remote endpoints.
 
-## 🛠️ Pi tools
+## 🛠️ Tools
 
 - `chrome_devtools_load` — find and load browser capabilities relevant to a task.
 - `chrome_devtools_list_pages` — list inspectable Chrome tabs/pages.
@@ -211,7 +211,7 @@ replaced. The tool result includes the resolved path, byte count, and an inline 
 the active model/provider can consume images. If the model cannot inspect the inline image, ask it
 to read the saved path, for example `read({ path: "artifacts/homepage.png" })`.
 
-## 💬 Command
+## 💬 Commands
 
 ```text
 /chrome-devtools

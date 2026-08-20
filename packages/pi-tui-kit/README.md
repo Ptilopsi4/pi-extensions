@@ -11,6 +11,14 @@ standard rendering, navigation, mode adaptation, cancellation, and lifecycle beh
 provides standalone task, confirmation, and live-choice interactions plus lifecycle ownership for
 specialized custom components.
 
+## ✨ Features
+
+- Provides typed declarative action, detail, settings, choice, review, and document screens.
+- Adapts shared interaction flows across Pi TUI and RPC modes.
+- Owns standard navigation, cancellation, disposal, and width-safe rendering behavior.
+- Exposes focused helpers for tasks, confirmations, live choices, terminal text, interaction hints, and testing.
+- Publishes built ESM and TypeScript declarations for independently installable extensions.
+
 ## 📦 Install
 
 Add the library as a runtime dependency of the extension package:
@@ -64,7 +72,7 @@ node scripts/benchmark-tui-kit-runtime.mjs --runs 5
 The benchmark reports medians, median absolute deviations, resolved package URLs, and graph-presence
 flags so a fast import cannot hide the same dependency cost in the first interaction.
 
-## 🚀 Example
+## 🚀 Quick start
 
 ```ts
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
@@ -770,6 +778,10 @@ Consumer fixtures continue to own domain state, persistence, generation checks, 
 - `src/custom-interaction.ts` — lifecycle ownership for specialized public custom components
 - `dist/` — generated ESM and declarations included in the npm package
 - `test/` — contract, renderer, navigation, lifecycle, and public testing-entrypoint coverage
+
+## 🔎 Keywords
+
+Pi library, Pi extension development, terminal UI, declarative menus, lifecycle-safe interactions, TypeScript.
 
 ## 📄 License
 

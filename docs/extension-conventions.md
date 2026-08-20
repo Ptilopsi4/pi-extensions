@@ -263,6 +263,8 @@ restore the latest remaining activity rather than letting one completion clear i
 
 ### Documentation and verification
 
+[`docs/readme-conventions.md`](readme-conventions.md) owns the shared structure, labels, applicability rules, and verification checklist for active package READMEs.
+
 Package READMEs **SHOULD** remain practical and scannable: capabilities, installation, usage,
 commands/tools/settings, operational behavior, package layout, keywords, and license. Apply these
 shared presentation conventions:

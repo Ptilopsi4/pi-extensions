@@ -265,7 +265,7 @@ UI resource. A new TUI session then restores the remembered room. Explicit **Lea
 atomically removes resume state before disconnecting; if that save fails, the room stays connected
 and remembered with an actionable error.
 
-## 🧪 Experimental limitations
+## 🚧 Limitations
 
 The current experimental release intentionally omits:
 

@@ -38,6 +38,12 @@ Try this package locally from the repository root:
 pi -e ./packages/pi-caffeinate
 ```
 
+## 🚀 Quick start
+
+Load the extension and use Pi normally.
+During an agent run, pi-caffeinate uses the saved keep-awake mode and defaults to keeping both the system and display awake.
+Run `/caffeinate` to open the controls or `/caffeinate status` to inspect the current state.
+
 ## 🖥️ Supported platforms
 
 The default mode is `display` on every supported OS. That means pi-caffeinate prevents system sleep, suspend, or hibernate and keeps the screen/display awake.
@@ -66,7 +72,7 @@ closing its session-bus connection.
 
 If no supported inhibitor is available, the extension stays loaded and reports that caffeinate is unavailable.
 
-## 🚀 Commands
+## 💬 Commands
 
 ```text
 /caffeinate
@@ -105,7 +111,7 @@ Opens the standard keep-awake mode selector in TUI or RPC mode. Escape closes th
 
 Releases any active inhibitor until Pi starts another agent run.
 
-## ⚙️ Configuration
+## ⚙️ Settings
 
 ### Persisted settings
 
