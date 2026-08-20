@@ -1,17 +1,7 @@
 #!/usr/bin/env node
 
 import { randomUUID } from "node:crypto";
-import {
-	access,
-	mkdir,
-	mkdtemp,
-	readdir,
-	readFile,
-	realpath,
-	rename,
-	rm,
-	writeFile,
-} from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
@@ -67,7 +57,6 @@ export async function buildRuntime({
 			write: true,
 		});
 		validateEagerGraph(result.metafile);
-		await rewriteGeneratedSpecifiers(stagingDirectory);
 		await validateOutput(stagingDirectory);
 		await publishRuntime(stagingDirectory, resolvedOutputDirectory);
 		return result.metafile;
@@ -139,8 +128,8 @@ export async function validateGeneratedFiles(outputDirectory) {
 		if (!source.startsWith(GENERATED_BANNER)) {
 			throw new Error(`Generated marker is missing from ${runtimePath}`);
 		}
-		if (/["']\.\.?\/[^"']+\.ts["']/u.test(source)) {
-			throw new Error(`Generated runtime retains a .ts import specifier in ${runtimePath}`);
+		if (/["']\.\.?\/[^"']+\.js["']/u.test(source)) {
+			throw new Error(`Generated runtime retains a .js import specifier in ${runtimePath}`);
 		}
 		if (/["']\.\.?\/[^"']*src\//u.test(source)) {
 			throw new Error(`Generated runtime imports authoritative source from ${runtimePath}`);
@@ -193,20 +182,6 @@ function collectEagerOutputs(outputs, entryPath) {
 		}
 	}
 	return eager;
-}
-
-async function rewriteGeneratedSpecifiers(outputDirectory) {
-	for (const runtimePath of (await listFiles(outputDirectory)).filter((path) =>
-		path.endsWith(".ts"),
-	)) {
-		const path = join(outputDirectory, runtimePath);
-		const source = await readFile(path, "utf8");
-		const rewritten = source.replace(
-			/(["'])(\.\.?\/[^"']+)\.ts\1/gu,
-			(_match, quote, specifier) => `${quote}${specifier}.js${quote}`,
-		);
-		await writeFile(path, rewritten, "utf8");
-	}
 }
 
 export async function publishRuntime(
