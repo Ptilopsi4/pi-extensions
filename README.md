@@ -61,6 +61,10 @@ pi -e npm:@narumitw/pi-goal \
 | [`pi-workflow`](./packages/pi-workflow) | Combine `/plan` and `/goal` in one package with an integrated, recoverable Plan-to-Goal handoff. | `pi install npm:@narumitw/pi-workflow` |
 | [`pi-worktree`](./packages/pi-worktree) | Create, switch, remove, and prune Git worktrees while carrying the Pi session into another workspace. | `pi install npm:@narumitw/pi-worktree` |
 
+If you use both `pi-plan-mode` and `pi-goal`, consider replacing them with `pi-workflow` for one integrated Plan-to-Goal experience.
+Do not install `pi-workflow` together with either `pi-plan-mode` or `pi-goal`.
+`pi-workflow` includes the Plan and Goal interfaces from those packages and intentionally reuses their commands, tools, flags, event channels, and session-state names, so loading it with either package would register duplicate handlers and create competing state owners.
+
 ### Accounts and data
 
 | Package | Use it for | Install |
