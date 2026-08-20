@@ -47,8 +47,11 @@ pi -e npm:@narumitw/pi-accounts
 Try this package locally from the repository root:
 
 ```bash
+npm --workspace @narumitw/pi-accounts run build
 pi -e ./packages/pi-accounts
 ```
+
+The package declares `dist/index.ts`, so an unbuilt local checkout must be built before Pi loads the package directory.
 
 ## 🚀 Quick start
 
@@ -183,9 +186,13 @@ packages/pi-accounts/
 │   ├── oauth.ts
 │   ├── runtime-auth.ts
 │   └── storage.ts
+├── dist/               # Generated source-mapped Jiti runtime
+├── scripts/
+│   └── build-runtime.mjs
 ├── test/
 │   ├── accounts-storage.test.ts
-│   └── accounts.test.ts
+│   ├── accounts.test.ts
+│   └── build-runtime.test.ts
 ├── README.md
 ├── LICENSE
 ├── tsconfig.json
@@ -197,7 +204,7 @@ The package exposes its Pi extension through `package.json`:
 ```json
 {
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": ["./dist/index.ts"]
   }
 }
 ```

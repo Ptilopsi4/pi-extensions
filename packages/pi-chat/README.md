@@ -37,8 +37,11 @@ pi -e npm:@narumitw/pi-chat
 Try the extension from a local checkout:
 
 ```bash
+npm --workspace @narumitw/pi-chat run build
 pi --no-extensions --no-skills --no-session -e ./packages/pi-chat
 ```
+
+The package declares `dist/index.ts`, so an unbuilt local checkout must be built before Pi loads the package directory.
 
 Load the package only once per Pi process.
 Repeating `-e ./packages/pi-chat` creates duplicate extension instances and suffixed commands such as `/chat:1` and `/chat:2`.
@@ -295,8 +298,9 @@ packages/pi-chat/
 │   ├── chat-view.ts           # Loaded on the first composer request
 │   ├── widget.ts              # Loaded before the first room joins
 │   └── text.ts
-├── scripts/                  # Opt-in real local network smoke and child fixture
-├── test/                     # Deterministic tests with mocked network boundaries
+├── dist/                     # Generated source-mapped Jiti runtime and lazy feature chunks
+├── scripts/                  # Runtime builder plus opt-in real local network smoke and fixture
+├── test/                     # Deterministic behavior, builder, and mocked network coverage
 ├── README.md
 ├── LICENSE
 ├── package.json

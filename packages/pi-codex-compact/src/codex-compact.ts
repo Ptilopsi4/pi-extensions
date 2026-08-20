@@ -27,7 +27,6 @@ import {
 	type CodexCompactSettingsState,
 	createCodexCompactSettingsRuntime,
 } from "./settings.js";
-import { showCodexCompactMenu } from "./settings-menu.js";
 
 const STATUS_KEY = "codex-compact";
 
@@ -187,9 +186,12 @@ export function createCodexCompactExtension(
 			description: "Compact now or configure Codex Remote Compaction V2",
 			handler: async (_args, ctx) => {
 				const ownerGeneration = generation;
+				const controller = sessionController;
+				const { showCodexCompactMenu } = await import("./settings-menu.js");
+				if (ownerGeneration !== generation || controller.signal.aborted) return;
 				await showCodexCompactMenu(settingsRuntime, ctx, {
-					signal: sessionController.signal,
-					isCurrent: () => ownerGeneration === generation && !sessionController.signal.aborted,
+					signal: controller.signal,
+					isCurrent: () => ownerGeneration === generation && !controller.signal.aborted,
 				});
 			},
 		});

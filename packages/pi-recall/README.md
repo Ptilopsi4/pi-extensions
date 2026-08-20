@@ -37,8 +37,11 @@ pi -e npm:@narumitw/pi-recall
 Try this package from a local checkout:
 
 ```bash
+npm --workspace @narumitw/pi-recall run build
 pi -e ./packages/pi-recall
 ```
+
+The package declares `dist/index.ts`, so an unbuilt local checkout must be built before Pi loads the package directory.
 
 ## 🚀 Quick start
 
@@ -193,7 +196,11 @@ packages/pi-recall/
 │   ├── picker.ts      # Scoped TUI saved-message picker
 │   ├── recall.ts      # Command registration and session lifecycle ownership
 │   └── store.ts       # Locked, validated, atomic JSONL storage
+├── dist/               # Generated source-mapped Jiti runtime and lazy menu chunks
+├── scripts/
+│   └── build-runtime.mjs
 ├── test/
+│   ├── build-runtime.test.ts
 │   ├── menu.test.ts
 │   ├── messages.test.ts
 │   ├── picker.test.ts

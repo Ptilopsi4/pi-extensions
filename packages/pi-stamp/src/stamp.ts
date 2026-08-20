@@ -6,7 +6,6 @@ import {
 	formatStampLabel,
 	type StampSettings,
 } from "./format.js";
-import { showStampMenu } from "./menu.js";
 import {
 	type AssistantMetadataData,
 	captureAssistantMetadata,
@@ -278,6 +277,14 @@ export default function stampExtension(
 			}
 			const commandGeneration = generation;
 			const commandController = sessionController;
+			const { showStampMenu } = await import("./menu.js");
+			if (
+				commandGeneration !== generation ||
+				commandController !== sessionController ||
+				commandController.signal.aborted
+			) {
+				return;
+			}
 			await showStampMenu(ctx, settingsRuntime, {
 				signal: commandController.signal,
 				isCurrent: () =>

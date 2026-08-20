@@ -35,9 +35,11 @@ pi -e npm:@narumitw/pi-codex-compact
 Try a local checkout from the repository root:
 
 ```bash
+npm --workspace @narumitw/pi-codex-compact run build
 pi -e ./packages/pi-codex-compact
 ```
 
+The package declares `dist/index.ts`, so an unbuilt local checkout must be built before Pi loads the package directory.
 Loading the package enables Remote V2 with safe defaults.
 Avoid loading a global npm installation and the local workspace at the same time.
 
@@ -186,10 +188,12 @@ src/remote.ts         Provider stream invocation, auth payload, timeout, and ret
 src/protocol.ts       Bounded SSE parsing and Remote V2 payload/output validation
 src/checkpoint.ts     Replacement history, fingerprints, persistence, and replay projection
 src/settings.ts       Global settings validation and atomic persistence
-src/settings-menu.ts  Manual compaction and settings TUI
+src/settings-menu.ts  First-use manual compaction and settings TUI
 
+dist/                 Generated source-mapped Jiti runtime and lazy menu chunk
+scripts/              Runtime builder
 benchmark/            Three-arm compaction benchmark, self-test, and methodology
-test/                 Protocol, checkpoint, lifecycle, remote, settings, and menu coverage
+test/                 Protocol, checkpoint, lifecycle, remote, settings, menu, and builder coverage
 ```
 
 ## 📊 Benchmark

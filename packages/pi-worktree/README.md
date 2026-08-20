@@ -31,8 +31,11 @@ pi -e npm:@narumitw/pi-worktree
 Try this package locally from the repository root:
 
 ```bash
+npm --workspace @narumitw/pi-worktree run build
 pi -e ./packages/pi-worktree
 ```
+
+The package declares `dist/index.ts`, so an unbuilt local checkout must be built before Pi loads the package directory.
 
 ## 🚀 Quick start
 
@@ -189,10 +192,14 @@ packages/pi-worktree/
 │   ├── settings.ts
 │   ├── status.ts
 │   └── worktree.ts
+├── dist/                  # Generated source-mapped Jiti runtime
+├── scripts/
+│   └── build-runtime.mjs
 ├── test/
 │   ├── add-command.test.ts
 │   ├── command-test-support.ts
 │   ├── command.test.ts
+│   ├── build-runtime.test.ts
 │   ├── git.integration.test.ts
 │   ├── git.test.ts
 │   ├── remove-ignored-command.test.ts

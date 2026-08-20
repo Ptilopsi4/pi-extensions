@@ -27,8 +27,11 @@ pi -e npm:@narumitw/pi-caffeinate
 Try this package locally from the repository root:
 
 ```bash
+npm --workspace @narumitw/pi-caffeinate run build
 pi -e ./packages/pi-caffeinate
 ```
+
+The package declares `dist/index.ts`, so an unbuilt local checkout must be built before Pi loads the package directory.
 
 ## 🚀 Quick start
 
@@ -192,13 +195,20 @@ packages/pi-caffeinate/
 │   ├── index.ts       # Pi package entrypoint
 │   ├── caffeinate.ts  # Extension registration and lifecycle orchestration
 │   └── *.ts           # Package-local inhibitor and settings modules
+├── dist/              # Generated source-mapped Jiti runtime
+├── scripts/
+│   └── build-runtime.mjs
+├── test/
+│   ├── build-runtime.test.ts
+│   └── caffeinate.test.ts
 ├── README.md
 ├── LICENSE
 ├── tsconfig.json
 └── package.json
 ```
 
-`index.ts` is the Pi entrypoint and forwards to `caffeinate.ts`; the other source modules are internal.
+`src/index.ts` remains the thin authoritative forwarder, while Pi loads the generated `dist/index.ts` runtime.
+The other source modules are internal.
 
 ## 🔎 Keywords
 
