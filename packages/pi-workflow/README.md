@@ -15,7 +15,7 @@ Those packages intentionally share command, tool, event-channel, and session-sta
 ## ✨ Features
 
 - Provides `/workflow`, `/plan`, and `/goal` from one extension.
-- Registers required Plan and Goal lifecycle behavior eagerly while loading manager UI, Plan export writes, saved-plan authentication preflight, and fresh-session handoff code only when those routes are used.
+- Loads a generated split TypeScript runtime through Pi's Jiti loader, reducing startup module work while preserving first-use manager UI, Plan export, saved-plan preflight, and fresh-session handoff chunks.
 - Preserves Plan exploration, structured questions, completion, save, export, tool selection, and thinking-level control.
 - Supports an optional configurable global shortcut for toggling Plan mode, disabled by default.
 - Supports Plan alone, Goal alone, and approved Plan-to-Goal execution without adding a non-Goal implementation path.
@@ -45,11 +45,16 @@ Try without installing permanently:
 pi -e npm:@narumitw/pi-workflow
 ```
 
-Try the local package from this repository:
+Build the generated runtime and try the local package from this repository:
 
 ```bash
+npm --workspace @narumitw/pi-workflow run build
 pi -e ./packages/pi-workflow
 ```
+
+The package declares `dist/index.ts`, so the build command must finish before Pi loads the local package directory.
+
+An unbuilt checkout still declares `dist/index.ts`, but the generated entrypoint and chunks do not exist until the build completes.
 
 Pi extensions run with the same permissions as Pi.
 
@@ -348,8 +353,11 @@ Behavioral updates to either stable predecessor must be intentionally synchroniz
 
 ```text
 packages/pi-workflow/
+├── dist/              # Generated split TypeScript runtime loaded through Pi's Jiti loader
+├── scripts/
+│   └── build-runtime.mjs # Deterministic bundler and eager-boundary validator
 ├── src/
-│   ├── index.ts       # Thin Pi package entrypoint
+│   ├── index.ts       # Thin authoritative source entrypoint
 │   ├── workflow.ts    # Composition, lifecycle, and retryable first-use loaders
 │   ├── workflow-contract.ts # Lightweight shared handoff identity
 │   ├── handoff.ts     # First-use fresh linked-session Plan-to-Goal transfer
