@@ -8,7 +8,7 @@ the footer. Follow the useful intent of upstream Starship commands—especially 
 render, lifecycle, privacy, and settings boundaries.
 
 **Current roadmap status:** Phases 1–4 are delivered on `main` and available from the published package.
-Phase 5 has verified implementation in the current change but remains unchecked until merge evidence is recorded.
+Phase 5 has verified implementation in PR #863 but remains unchecked until merge evidence is recorded.
 Phases 6–8 remain planned and have no complete implementation.
 
 ## Objectives
