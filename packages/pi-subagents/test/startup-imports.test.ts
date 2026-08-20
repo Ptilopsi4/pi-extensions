@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { afterAll, test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import { createStatefulTransport } from "../src/create-stateful-transport.js";
+import subagents from "../src/index.js";
 import type { ManagedAgent, TurnOutcome } from "../src/registry.js";
-import subagents from "../src/subagents.js";
 import type { SubagentTransport } from "../src/transport.js";
 import { installSubagentsTestEnvironment } from "./subagents-test-helpers.js";
 

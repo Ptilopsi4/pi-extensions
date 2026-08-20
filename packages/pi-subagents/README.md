@@ -1064,7 +1064,8 @@ Downgrading is safe: older extension versions ignore this separate state directo
 packages/pi-subagents/
 ├── src/
 │   ├── index.ts                  # Pi package entrypoint
-│   ├── subagents.ts              # Lightweight extension composition and blocking registration
+│   ├── subagents-extension.ts    # Lightweight extension composition and blocking registration
+│   ├── subagents.ts              # Backward-compatible public utility exports
 │   ├── cached-module-loader.ts   # Retryable first-use code-module cache
 │   ├── inspect-registration.ts   # Lightweight inspection tool registration
 │   ├── inspect.ts                # First-use side-effect-free metadata inspection
@@ -1074,7 +1075,9 @@ packages/pi-subagents/
 │   ├── cwd-policy.ts             # Canonical target and saved-trust resolution
 │   ├── prompt-resources.ts       # Core-selected SYSTEM and APPEND_SYSTEM resources
 │   ├── safe-text.ts              # Shared byte/line/path sanitization
-│   ├── stateful.ts               # Detached lifecycle registration and dispatch
+│   ├── stateful-registration.ts  # Detached lifecycle registration and dispatch
+│   ├── stateful.ts               # Backward-compatible detached utility exports
+│   ├── settings-reader.ts        # Side-effect-free startup settings reads and inspection
 │   ├── create-stateful-transport.ts # First-turn selected transport loader
 │   ├── rpc-transport.ts          # Persistent strict-JSONL Pi RPC child transport
 │   ├── rpc-timeout-finalization.ts # RPC abort-settle-summary recovery
@@ -1132,7 +1135,8 @@ packages/pi-subagents/
 └── package.json
 ```
 
-`index.ts` is the Pi entrypoint and forwards to `subagents.ts`; the other source modules are internal.
+`index.ts` is the Pi entrypoint and forwards to `subagents-extension.ts`.
+`subagents.ts` and `stateful.ts` preserve existing source-level utility imports without making those utility graphs part of Pi startup.
 Workflow settings remain backward compatible: older files without `blocking.enabled` receive the eight-tool default, and an absent `blocking.maxParallelTasks` keeps the previous eight-worker limit.
 Existing `stateful.enabled: false` files expose blocking delegation plus inspection/consultation.
 Older package releases ignore and preserve the optional `blocking.maxParallelTasks`, `consult`, and `cwdPolicy` fields.
