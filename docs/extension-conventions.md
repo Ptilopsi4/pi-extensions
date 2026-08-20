@@ -55,8 +55,8 @@ it is not an API reference.
 - **MUST:** Treat installed extension code as fully privileged and load only trusted sources.
   **Verification:** `Review` of installation documentation and any code-loading path.
 
-A package may declare multiple entrypoints, but this repository deliberately uses one forwarding
-entrypoint per active package as described below.
+Pi packages may declare multiple entrypoints, but this repository deliberately declares exactly one entrypoint per active extension.
+The repository always keeps a source forwarder and may publish either that source entrypoint or a build-backed TypeScript bundle for Pi's Jiti loader, as described below.
 
 ### Factory and lifecycle
 
@@ -123,17 +123,16 @@ interactive work should expose cancellation.
 
 ### Package layout and boundaries
 
-- **MUST:** Keep every active extension and reusable publishable library under
-  `packages/<package>/`, and deprecated references under `deprecated/<package>/`. Give each extension
-  explicit `piExtension.lifecycle` metadata with value `stable` or `experimental`; omit that metadata
-  from libraries. The private root Pi manifest must list every stable extension entrypoint and no
-  experimental entrypoint so direct Git installation preserves the lifecycle boundary.
+- **MUST:** Keep every active extension and reusable publishable library under `packages/<package>/`, and deprecated references under `deprecated/<package>/`.
+  Give each extension explicit `piExtension.lifecycle` metadata with value `stable` or `experimental`; omit that metadata from libraries.
+  The private root Pi manifest must list every stable extension's `src/index.ts` repository entrypoint and no experimental entrypoint so direct Git installation preserves the lifecycle boundary without requiring generated package output.
   **Verification:** `Validator` via `npm run check:boundaries` plus `Review` of lifecycle moves.
-- **MUST:** Give every active extension a thin `src/index.ts` default-export forwarder and declare
-  exactly `"pi": { "extensions": ["./src/index.ts"] }`; keep implementation in descriptive modules.
-  Reusable libraries must not declare `pi.extensions` or `piExtension` and must publish built
-  JavaScript plus declarations. **Verification:** `Validator` via `npm run check:boundaries` and a
-  clean-build package smoke.
+- **MUST:** Give every active extension a thin `src/index.ts` default-export forwarder and keep authoritative implementation under `src/` in descriptive modules.
+  Declare exactly one package entrypoint: `"pi": { "extensions": ["./src/index.ts"] }` for direct source loading or `"pi": { "extensions": ["./dist/index.ts"] }` for a build-backed TypeScript bundle loaded by Pi's Jiti runtime.
+  A `dist/index.ts` entrypoint must be produced by the package build, must not forward back into `src/`, and must keep Pi-bundled peer dependencies external rather than embedding duplicate runtime copies.
+  A package that declares `dist/index.ts` must publish `dist`, run its build before packing, and document that an unbuilt local checkout must be built before loading the package directory.
+  Reusable libraries must not declare `pi.extensions` or `piExtension` and must publish built JavaScript plus declarations.
+  **Verification:** `Validator` via `npm run check:boundaries`, `Review` of the bundle boundary, and clean-build package and Pi load smokes.
 - **MUST:** Keep extension packages free of extension-to-extension dependencies. Extensions may
   depend on publishable helper libraries under `packages/`.
   **Verification:** `Validator` via `npm run check:boundaries`.
@@ -284,7 +283,7 @@ fragile regular expressions. Until then, label the real verification method hone
 
 - [ ] Place the package under `packages/`, declare the correct extension lifecycle when applicable,
       and keep it independently installable.
-- [ ] Add the thin `src/index.ts` forwarder and canonical `pi.extensions` manifest entry.
+- [ ] Add the thin `src/index.ts` forwarder and declare one supported `pi.extensions` entrypoint: direct `src/index.ts` or build-backed `dist/index.ts`.
 - [ ] Separate factory registration from session-owned startup and idempotent shutdown cleanup.
 - [ ] Choose the primary command and no-argument behavior from the extension's product role; use a
       menu-first manager unless a concrete reason supports another shape, and add direct routes only

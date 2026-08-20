@@ -58,12 +58,13 @@ Run commands from the repository root unless a command says otherwise.
 - Share code only through Pi's public extension-neutral APIs or reusable non-extension libraries.
 - Do not make reusable libraries coordinate specific extensions.
 - Consume shared Pi APIs without extension-specific branches.
-- Give every active extension a thin `src/index.ts` default-export forwarder.
-- Declare exactly `"pi": { "extensions": ["./src/index.ts"] }` in every active extension manifest.
-- Keep extension implementation in descriptively named modules.
+- Give every active extension a thin `src/index.ts` default-export forwarder and keep authoritative implementation under `src/`.
+- Declare exactly one extension entrypoint in each active extension manifest: `./src/index.ts`, or a build-backed `./dist/index.ts` TypeScript bundle loaded by Pi's Jiti runtime.
+- Require a `dist/index.ts` entrypoint to stay within `dist`, externalize Pi-bundled peer dependencies, publish `dist`, and be built before packing or loading the package directory.
+- Keep extension implementation in descriptively named source modules.
 - Build and publish reusable libraries as JavaScript with declarations through their own build configuration and without `pi.extensions`.
 - Run `npm run check:boundaries` to verify package boundaries.
-- List every stable extension entrypoint in the root `package.json` under `pi.extensions`.
+- List every stable extension's `src/index.ts` repository entrypoint in the root `package.json` under `pi.extensions`.
 - Do not list experimental extension entrypoints in the root `package.json` under `pi.extensions`.
 - Add a root workspace script or recipe only for a workflow users must run from the repository root.
 - Use `@narumitw/pi-tui-kit` for new standard action, detail, settings, and multi-select menus.
