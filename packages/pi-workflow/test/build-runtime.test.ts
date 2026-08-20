@@ -124,6 +124,20 @@ test("eager graph validation rejects eager Pi TUI Kit and bundled packages", asy
 		/Eager external dependency: @narumitw\/pi-tui-kit/u,
 	);
 
+	const eagerSubpath = validMetadata();
+	const eagerSubpathOutput = requireOutput(eagerSubpath, "dist/chunks/eager.ts");
+	const eagerSubpathImports = eagerSubpathOutput.imports ?? [];
+	eagerSubpathOutput.imports = eagerSubpathImports;
+	eagerSubpathImports.push({
+		path: "@narumitw/pi-tui-kit/terminal-text",
+		kind: "import-statement",
+		external: true,
+	});
+	assert.throws(
+		() => builder.validateEagerGraph(eagerSubpath),
+		/Eager external dependency: @narumitw\/pi-tui-kit\/terminal-text/u,
+	);
+
 	const bundledDependency = validMetadata();
 	const menuOutput = requireOutput(bundledDependency, "dist/chunks/menu.ts");
 	const menuInputs = menuOutput.inputs ?? {};

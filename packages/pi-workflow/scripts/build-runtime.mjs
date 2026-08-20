@@ -33,7 +33,7 @@ const FORBIDDEN_EAGER_INPUTS = [
 	"src/plan/plan-export.ts",
 	"src/plan/saved-plan-preflight.ts",
 ];
-const FORBIDDEN_EAGER_EXTERNALS = new Set(["@narumitw/pi-tui-kit"]);
+const FORBIDDEN_EAGER_EXTERNALS = ["@narumitw/pi-tui-kit"];
 
 export async function buildRuntime({
 	outputDirectory = distDirectory,
@@ -102,7 +102,13 @@ export function validateEagerGraph(metadata) {
 			eagerInputs.add(normalizePath(inputPath));
 		}
 		for (const imported of output.imports ?? []) {
-			if (imported.external && FORBIDDEN_EAGER_EXTERNALS.has(imported.path)) {
+			if (
+				imported.external &&
+				FORBIDDEN_EAGER_EXTERNALS.some(
+					(dependency) =>
+						imported.path === dependency || imported.path.startsWith(`${dependency}/`),
+				)
+			) {
 				throw new Error(
 					`Eager external dependency: ${imported.path} from ${normalizePath(outputPath)}`,
 				);
