@@ -4,7 +4,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 default:
     @just --list
 
-# Run the CI-equivalent verification gate
+# Run build, formatting, boundary, and type checks
 check:
     npm run check
 
@@ -30,6 +30,7 @@ verify-update:
     # Rebuild generated web assets only in workspaces that provide build:web
     npm --workspaces --if-present run build:web
     npm run check
+    npm test
     npm pack --workspaces --dry-run
 
 # Update, clean-install, rebuild, test, and pack all npm workspaces

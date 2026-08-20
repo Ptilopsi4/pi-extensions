@@ -106,7 +106,9 @@ Run commands from the repository root unless a command says otherwise.
 
 - Keep active tests under `packages/<package>/test/*.test.ts` and run them with `npm test`.
 - Keep archived tests under `deprecated/` and outside active checks.
-- Use `npm run check` or `just check` as the CI-equivalent gate for Biome, boundaries, typechecks, and tests.
+- Run `npm run check` or `just check` for the build, Biome, boundaries, and workspace typechecks.
+- Run `npm test` or `just test` separately for active tests.
+- CI and release verification must run both gates.
 - Run `just pack <unscoped-name>` and inspect the tarball after package metadata or publishing changes.
 - Run `just try <unscoped-name>` or an equivalent `pi -e` smoke after extension runtime-loading changes; record why and what remains unverified if the smoke is impractical.
 - Start subprocess timing deadlines only after a child readiness handshake.

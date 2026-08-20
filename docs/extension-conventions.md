@@ -271,9 +271,10 @@ to use the extension safely.
   requires a real Pi runtime or external service, record and run the smallest representative smoke
   instead. **Verification:** `Test` through root `npm test`, `Smoke` for the stated runtime path, and
   `Review` of any intentionally untested behavior.
-- **MUST:** Run the repository CI-equivalent gate before completing a change, and add an npm pack dry
-  run or local Pi load when package metadata or runtime loading changed. **Verification:** `Validator`
-  via `npm run check`; applicable `Smoke` evidence in the change handoff.
+- **MUST:** Run both repository verification gates before completing a change, and add an npm pack
+  dry run or local Pi load when package metadata or runtime loading changed. **Verification:**
+  `Validator` via `npm run check`, `Test` via `npm test`, and applicable `Smoke` evidence in the change
+  handoff.
 
 Do not create a validator merely because a convention is written down. Add one when a new or touched
 area has a stable, low-false-positive rule that can be checked without encoding product semantics in
@@ -293,7 +294,7 @@ fragile regular expressions. Until then, label the real verification method hone
 - [ ] Follow `docs/extension-settings.md` for every user or project setting.
 - [ ] Bound tool output, cancellation, state persistence, and file mutation where applicable.
 - [ ] Document installation, behavior, settings, security, limitations, and source responsibilities.
-- [ ] Add deterministic tests and run `npm run check`.
+- [ ] Add deterministic tests, run `npm run check`, and run `npm test`.
 - [ ] Inspect `npm pack --workspace <name> --dry-run --json` and load the declared entrypoint with Pi.
 
 ## Touched-area checklist
@@ -304,6 +305,6 @@ fragile regular expressions. Until then, label the real verification method hone
 - [ ] For command-surface changes, preserve established routes or explicitly own an approved breaking
       migration, and test every claimed execution mode.
 - [ ] Update focused tests and run the verification method named by each relevant MUST.
-- [ ] Run `npm run check`; add pack or Pi runtime smokes when metadata or loading changed.
+- [ ] Run `npm run check` and `npm test`; add pack or Pi runtime smokes when metadata or loading changed.
 - [ ] Report any skipped check, accepted exception, or follow-up validator opportunity in the change
       handoff.
