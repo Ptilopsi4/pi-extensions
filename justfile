@@ -97,12 +97,12 @@ benchmark-subagents samples="7":
 benchmark-codex-compact *args:
     node packages/pi-codex-compact/benchmark/run.mjs {{ args }}
 
-# Install dependencies, build the shared TUI library, and start every local extension package
+# Install dependencies, build local package artifacts, and start every local extension package
 # pi-statusline and pi-tui-kit are intentionally excluded from Pi extension loading
 # PI_TIMING reports startup timing and PI_CODING_AGENT_DIR isolates local development state
 dev:
     npm install
-    npm --workspace @narumitw/pi-tui-kit run build
+    npm run build
     PI_TIMING=1 PI_CODING_AGENT_DIR=./.pi/agent pi \
         -e ./packages/pi-accounts \
         -e ./packages/pi-analytics \
