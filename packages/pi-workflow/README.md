@@ -45,15 +45,14 @@ Try without installing permanently:
 pi -e npm:@narumitw/pi-workflow
 ```
 
-Build and try the local package from this repository:
+Build the generated runtime and try the local package from this repository:
 
 ```bash
-just try workflow
+npm --workspace @narumitw/pi-workflow run build
+pi -e ./packages/pi-workflow
 ```
 
-The published package declares `dist/index.ts`, and `just try` runs its build before loading the package directory.
-
-For an explicit local flow, run `npm --workspace @narumitw/pi-workflow run build` before `pi -e ./packages/pi-workflow`.
+The package declares `dist/index.ts`, so the build command must finish before Pi loads the local package directory.
 
 An unbuilt checkout intentionally has no declared generated entrypoint.
 
