@@ -219,9 +219,10 @@ scripts/                 Shared checks, tests, versioning, and release helpers
 test/                    Root integration and repository tests
 ```
 
-Each active package contains its own `package.json`, `README.md`, `LICENSE`, `tsconfig.json`, and
-TypeScript source under `src/`. Extension `src/index.ts` files are thin Pi entrypoints and declare a
-stable or experimental lifecycle; reusable libraries publish built ESM and declarations from `dist/`.
+Each active package contains its own `package.json`, `README.md`, `LICENSE`, `tsconfig.json`, and TypeScript source under `src/`.
+Every extension keeps a thin `src/index.ts` source forwarder and declares a stable or experimental lifecycle.
+An extension package may load that source entrypoint directly or publish a build-backed `dist/index.ts` bundle for Pi's Jiti runtime.
+Reusable libraries publish built ESM and declarations from `dist/`.
 
 <details>
 <summary>Deprecated packages</summary>
