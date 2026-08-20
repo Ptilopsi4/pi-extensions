@@ -15,20 +15,23 @@
 	],
 	"files": [
 		"src",
+		"dist",
 		"README.md",
 		"LICENSE"
 	],
 	"pi": {
 		"extensions": [
-			"./src/index.ts"
+			"./dist/index.ts"
 		]
 	},
 	"piExtension": {
 		"lifecycle": "stable"
 	},
 	"scripts": {
-		"check": "biome check --vcs-use-ignore-file=false src test package.json tsconfig.json README.md && npm run typecheck",
-		"format": "biome check --write --vcs-use-ignore-file=false src test package.json tsconfig.json README.md",
+		"build": "node scripts/build-runtime.mjs",
+		"prepack": "npm run build",
+		"check": "npm run build && biome check --vcs-use-ignore-file=false src scripts test package.json tsconfig.json README.md",
+		"format": "biome check --write --vcs-use-ignore-file=false src scripts test package.json tsconfig.json README.md",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
@@ -41,7 +44,8 @@
 		"@biomejs/biome": "2.5.9",
 		"@earendil-works/pi-coding-agent": "0.84.2",
 		"@types/node": "26.2.0",
-		"typescript": "7.0.2"
+		"typescript": "7.0.2",
+		"esbuild": "0.28.2"
 	},
 	"repository": {
 		"type": "git",

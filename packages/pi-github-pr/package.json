@@ -15,19 +15,22 @@
 	],
 	"files": [
 		"src",
+		"dist",
 		"README.md",
 		"LICENSE"
 	],
 	"pi": {
 		"extensions": [
-			"./src/index.ts"
+			"./dist/index.ts"
 		]
 	},
 	"piExtension": {
 		"lifecycle": "stable"
 	},
 	"scripts": {
-		"check": "biome check . && npm run typecheck",
+		"build": "node scripts/build-runtime.mjs",
+		"prepack": "npm run build",
+		"check": "npm run build && biome check .",
 		"format": "biome check --write .",
 		"typecheck": "tsc --noEmit"
 	},
@@ -35,7 +38,8 @@
 		"@biomejs/biome": "2.5.9",
 		"@earendil-works/pi-coding-agent": "0.84.2",
 		"@types/node": "26.2.0",
-		"typescript": "7.0.2"
+		"typescript": "7.0.2",
+		"esbuild": "0.28.2"
 	},
 	"repository": {
 		"type": "git",

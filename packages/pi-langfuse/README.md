@@ -29,9 +29,11 @@ pi -e npm:@narumitw/pi-langfuse
 Try a local checkout:
 
 ```bash
+npm --workspace @narumitw/pi-langfuse run build
 pi -e ./packages/pi-langfuse
 ```
 
+An unbuilt local checkout must be built before loading the package directory.
 The Langfuse v4 SDK requires Node.js 20 or newer.
 
 ## 🚀 Quick start
@@ -228,12 +230,14 @@ Compaction summaries, tool partial results, opaque continuation signatures, auth
 ```txt
 packages/pi-langfuse/
 ├── src/
-│   ├── index.ts     # Pi package entrypoint
+│   ├── index.ts     # Thin repository entrypoint
 │   ├── langfuse.ts  # Pi lifecycle integration and slash command
 │   ├── tracing.ts   # Observation lifecycle, outcomes, and bounded metadata
 │   ├── sanitizer.ts # Content bounding and opaque-signature removal
-│   ├── runtime.ts   # Langfuse/OpenTelemetry runtime
+│   ├── runtime.ts   # Lazy Langfuse/OpenTelemetry runtime
 │   └── config.ts    # Private pi-langfuse.json loading and validation
+├── dist/            # Generated Jiti runtime and lazy chunks
+├── scripts/build-runtime.mjs
 ├── test/
 ├── README.md
 ├── LICENSE
@@ -241,7 +245,8 @@ packages/pi-langfuse/
 └── package.json
 ```
 
-`index.ts` is the Pi entrypoint and forwards to `langfuse.ts`; the other source modules are internal.
+The package build generates the published Pi entrypoint at `dist/index.ts` and preserves `runtime.ts` as a first-use chunk.
+The source modules remain authoritative.
 
 ## 🔎 Keywords
 
