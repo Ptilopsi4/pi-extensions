@@ -42,8 +42,11 @@ pi -e npm:@narumitw/pi-github-pr
 Try this package locally from the repository root:
 
 ```bash
+npm --workspace @narumitw/pi-github-pr run build
 pi -e ./packages/pi-github-pr
 ```
+
+An unbuilt local checkout must be built before loading the package directory.
 
 ## ⚙️ Prerequisites
 
@@ -91,7 +94,10 @@ The extension runs passively:
 packages/pi-github-pr/
 ├── src/index.ts
 ├── src/github-pr.ts
+├── dist/index.ts
+├── scripts/build-runtime.mjs
 ├── test/github-pr.test.ts
+├── test/build-runtime.test.ts
 ├── package.json
 ├── README.md
 ├── LICENSE

@@ -30,9 +30,11 @@ pi -e npm:@narumitw/pi-tool
 Try this package from a local checkout:
 
 ```bash
+npm --workspace @narumitw/pi-tool run build
 pi -e ./packages/pi-tool
 ```
 
+An unbuilt local checkout must be built before loading the package directory.
 Extensions run with the same permissions as Pi.
 Only install packages from sources you trust.
 
@@ -70,9 +72,11 @@ Pi does not expose a tool's implementation, runtime secrets, or label through th
 ```text
 packages/pi-tool/
 ├── src/
-│   ├── index.ts         # Thin Pi package entrypoint
+│   ├── index.ts         # Thin repository entrypoint
 │   ├── tool.ts          # Command and session lifecycle ownership
-│   └── tool-catalog.ts  # Standard browse menu and exact detail projection
+│   └── tool-catalog.ts  # Lazy browse menu and exact detail projection
+├── dist/                # Generated Jiti runtime and lazy catalog chunk
+├── scripts/build-runtime.mjs
 ├── test/
 ├── README.md
 ├── LICENSE

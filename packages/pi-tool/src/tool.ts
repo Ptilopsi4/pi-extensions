@@ -1,5 +1,4 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createToolCatalog, createToolMenu } from "./tool-catalog.js";
 
 const COMMAND_NAME = "tool";
 
@@ -32,7 +31,10 @@ export default function toolExtension(pi: ExtensionAPI) {
 			const commandGeneration = generation;
 			const signal = sessionController.signal;
 			const isCurrent = () => commandGeneration === generation && !signal.aborted;
-			const { runMenu } = await import("@narumitw/pi-tui-kit");
+			const [{ runMenu }, { createToolCatalog, createToolMenu }] = await Promise.all([
+				import("@narumitw/pi-tui-kit"),
+				import("./tool-catalog.js"),
+			]);
 			if (!isCurrent()) return;
 			const catalog = createToolCatalog(
 				pi.getAllTools(),
