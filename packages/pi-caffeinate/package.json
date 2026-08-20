@@ -35,7 +35,7 @@
 		"@earendil-works/pi-coding-agent": "*"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "2.5.8",
+		"@biomejs/biome": "2.5.9",
 		"@earendil-works/pi-coding-agent": "0.84.2",
 		"@types/node": "26.2.0",
 		"typescript": "7.0.2"
@@ -47,6 +47,6 @@
 	},
 	"dependencies": {
 		"@narumitw/pi-tui-kit": "^0.49.1",
-		"dbus-native": "^0.15.1"
+		"dbus-native": "^0.15.2"
 	}
 }

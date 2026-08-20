@@ -37,7 +37,7 @@
 		"@earendil-works/pi-coding-agent": "*"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "2.5.8",
+		"@biomejs/biome": "2.5.9",
 		"@earendil-works/pi-coding-agent": "0.84.2",
 		"@narumitw/pi-tui-kit": "^0.56.0",
 		"typescript": "7.0.2"
