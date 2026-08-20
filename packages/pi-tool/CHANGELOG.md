@@ -1,5 +1,11 @@
 # @narumitw/pi-tool
 
+## 0.2.3
+
+### Patch Changes
+
+- dc4f90e: Load each extension from a generated source-mapped Jiti runtime while preserving first-use feature boundaries.
+
 ## 0.2.2
 
 ### Patch Changes

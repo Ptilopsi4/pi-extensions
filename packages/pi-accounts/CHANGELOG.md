@@ -1,5 +1,11 @@
 # @narumitw/pi-accounts
 
+## 0.49.8
+
+### Patch Changes
+
+- dc4f90e: Load each extension from a generated source-mapped Jiti runtime while preserving first-use feature boundaries.
+
 ## 0.49.7
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
 	"name": "@narumitw/pi-recall",
-	"version": "0.50.2",
+	"version": "0.50.3",
 	"description": "Experimental Pi extension for saving and recalling messages across sessions.",
 	"type": "module",
 	"license": "MIT",
