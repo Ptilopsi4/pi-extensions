@@ -4,7 +4,7 @@ import {
 	type ExtensionContext,
 	getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { type RecallMenuSource, showRecallMenu } from "./menu.js";
+import type { RecallMenuSource } from "./menu.js";
 import { extractMessageCandidates, normalizeCwd } from "./messages.js";
 import { RecallStore } from "./store.js";
 
@@ -65,6 +65,8 @@ export function createRecallExtension(
 					save: (candidate, signal) => store.save(candidate, signal),
 					delete: (id, signal) => store.delete(id, signal),
 				};
+				const { showRecallMenu } = await import("./menu.js");
+				if (!isCurrent()) return;
 				await showRecallMenu(ctx, source, { signal: controller.signal, isCurrent });
 			},
 		});

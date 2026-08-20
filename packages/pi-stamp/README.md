@@ -33,8 +33,11 @@ pi -e npm:@narumitw/pi-stamp
 Try this package from a local checkout:
 
 ```bash
+npm --workspace @narumitw/pi-stamp run build
 pi -e ./packages/pi-stamp
 ```
+
+The package declares `dist/index.ts`, so an unbuilt local checkout must be built before Pi loads the package directory.
 
 ## 🚀 Quick start
 
@@ -243,7 +246,11 @@ packages/pi-stamp/
 │   ├── menu.ts        # /stamp presentation menu
 │   ├── settings.ts    # Validation and atomic user settings
 │   └── stamp.ts       # Entry compatibility, rendering, and lifecycle ownership
+├── dist/               # Generated source-mapped Jiti runtime and lazy menu chunk
+├── scripts/
+│   └── build-runtime.mjs
 ├── test/
+│   ├── build-runtime.test.ts
 │   ├── format.test.ts
 │   ├── metadata.test.ts
 │   ├── menu.test.ts
