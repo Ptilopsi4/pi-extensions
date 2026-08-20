@@ -1,5 +1,11 @@
 # @narumitw/pi-workflow
 
+## 0.5.0
+
+### Minor Changes
+
+- 5532cda: Promote the extension to stable, include it in root Git installations, and remove its experimental startup warning.
+
 ## 0.4.2
 
 ### Patch Changes
