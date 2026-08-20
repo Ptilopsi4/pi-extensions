@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
-import piStarship from "../src/index.js";
+import piStarship from "../dist/index.js";
 
 async function emit(
 	events: ReadonlyMap<string, Array<(...args: unknown[]) => unknown>>,
@@ -14,7 +14,7 @@ async function emit(
 	for (const handler of events.get(name) ?? []) await handler(...args);
 }
 
-test("declared source entry preserves registration and lifecycle behavior", async () => {
+test("declared generated entry preserves registration and lifecycle behavior", async () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-starship-generated-entry-"));
 	const agentDir = join(root, "agent");
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -31,6 +31,9 @@ test("declared source entry preserves registration and lifecycle behavior", asyn
 		await emit(mock.events, "session_start", {}, context.ctx);
 		assert.equal(existsSync(agentDir), false);
 		assert.equal(typeof context.footer, "function");
+
+		await mock.commands.get("starship")?.handler("help", context.ctx);
+		assert.match(context.notifications.at(-1)?.message ?? "", /\/starship settings/u);
 
 		await emit(mock.events, "session_shutdown", {}, context.ctx);
 		assert.equal(context.footer, undefined);
