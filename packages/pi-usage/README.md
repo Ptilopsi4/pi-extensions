@@ -1,24 +1,21 @@
-# 📊 pi-usage — Provider Usage for Pi
+# 📊 pi-usage — Check Provider Usage and Codex Fast Mode
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-usage)](https://www.npmjs.com/package/@narumitw/pi-usage) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-`@narumitw/pi-usage` is a native [Pi coding agent](https://pi.dev) extension that adds an interactive `/usage` command for reading usage from the account Pi is actually using and a `/fast` shortcut for supported OpenAI Codex models. It supports Codex ChatGPT subscription windows, GitHub Copilot allowances, and OpenRouter API-key spend limits without pretending those limits have the same semantics.
+Check the limits and usage for the provider account Pi is actually using, and toggle Fast mode for supported OpenAI Codex models.
+
+The extension reports each provider's native semantics instead of presenting unlike quotas as equivalent.
 
 ## ✨ Features
 
-- Opens one interactive `/usage` menu with current state and next actions.
-- Automatically queries the selected model provider and active runtime account.
-- Supports OpenAI Codex subscription windows, resets, credits, and model-specific buckets.
-- Toggles persistent Codex Fast routing through `/fast` or the contextual `/usage` action.
-- Redeems earned Codex usage-limit resets for the active, matching Pi OAuth account with fresh availability, explicit confirmation, and idempotent retry.
-- Supports GitHub Copilot AI Credits, legacy premium requests, Free chat quota, additional usage, percentage, and reset time.
-- Supports OpenRouter per-key credit limits plus daily, weekly, monthly, and all-time spend.
-- Provides explicit refresh, another-provider, and all-configured-provider actions.
-- Runs manually requested all-provider queries with concurrency limited to two and preserves partial results.
-- Labels only the selected model provider as `Current`; other results are `Configured`.
-- Keeps the compact statusline scoped to the current provider and runtime account.
-- Isolates its five-minute in-memory cache by provider and a process-salted credential fingerprint.
-- Resolves runtime credentials through Pi; for Copilot only, reads Pi's stored OAuth credential through Pi's public credential API and verifies that it matches the active runtime account.
+- Shows current-account usage and next actions through `/usage`.
+- Supports OpenAI Codex subscription windows, credits, resets, and model-specific buckets.
+- Supports GitHub Copilot allowances and OpenRouter per-key limits and spend windows.
+- Toggles persistent Codex Fast routing through `/fast` or the contextual usage menu.
+- Redeems eligible Codex resets only after fresh account matching and explicit confirmation.
+- Refreshes one or all configured providers with bounded concurrency and partial-result preservation.
+- Keeps statusline and cache data scoped to the current provider and runtime account.
+- Resolves credentials through Pi and validates the effective provider endpoint before sending them.
 
 ## 📦 Install
 
@@ -56,8 +53,7 @@ Run:
 /usage
 ```
 
-In TUI or RPC mode, the standard menu first queries the current model provider and presents its state
-with these actions:
+In TUI or RPC mode, the standard menu first queries the current model provider and presents its state with these actions:
 
 ```text
 Refresh current usage
@@ -69,19 +65,16 @@ Close
 ```
 
 There are intentionally no `/usage --refresh`, `/usage <provider>`, or `/usage --all` argument paths.
-Cross-provider traffic requires an explicit interactive choice. Escape returns from provider selection
-and closes the root menu. Print and JSON modes reject `/usage` observably because they cannot host the
-interactive flow. The cancellable live-query progress view remains extension-owned because it streams
-provider work and supports in-flight abort rather than presenting a standard menu screen.
+Cross-provider traffic requires an explicit interactive choice.
+Escape returns from provider selection and closes the root menu.
+Print and JSON modes reject `/usage` observably because they cannot host the interactive flow.
+The cancellable live-query progress view remains extension-owned because it streams provider work and supports in-flight abort rather than presenting a standard menu screen.
 
-For the current OpenAI Codex provider, **Redeem usage limit reset…** checks fresh earned-reset
-details, lets you select a reset when details are available, and shows the exact reset before asking
-for confirmation. **No, go back** is the safe default and cancellation before confirmation sends no
-mutation. After confirmation, the reset operation cannot be cancelled from its progress view; session
-replacement or shutdown still aborts owned work. A transport failure offers **Try again** with the
-same redemption request ID so the backend can treat an uncertain retry idempotently. Successful,
-already-completed, not-needed, and no-credit outcomes are reported separately, then usage and the
-statusline are refreshed for the still-current account.
+For the current OpenAI Codex provider, **Redeem usage limit reset…** checks fresh earned-reset details, lets you select a reset when details are available, and shows the exact reset before asking for confirmation.
+**No, go back** is the safe default and cancellation before confirmation sends no mutation.
+After confirmation, the reset operation cannot be cancelled from its progress view; session replacement or shutdown still aborts owned work.
+A transport failure offers **Try again** with the same redemption request ID so the backend can treat an uncertain retry idempotently.
+Successful, already-completed, not-needed, and no-credit outcomes are reported separately, then usage and the statusline are refreshed for the still-current account.
 
 ## ⚙️ Settings
 
@@ -115,13 +108,13 @@ Repair or remove an invalid file, then run `/reload` before trying the toggle ag
 - Reset mutation: `POST /wham/rate-limit-reset-credits/consume` with a unique redemption request ID and, when available, the selected opaque credit ID
 - Statusline examples: `codex 59% 5h 61% wk`, `codex fast 59% 5h`, or `codex spark 100% 5h`
 
-The statusline selects a returned bucket that matches the current Codex model when one is available. Unlike `pi-codex-usage`, this successor intentionally has no Codex CLI fallback because the CLI may be logged into a different account than Pi's active runtime account.
+The statusline selects a returned bucket that matches the current Codex model when one is available.
+Unlike `pi-codex-usage`, this successor intentionally has no Codex CLI fallback because the CLI may be logged into a different account than Pi's active runtime account.
 
-Reset redemption is available only when Codex is the current provider and Pi's freshly resolved access
-token exactly matches its stored OpenAI Codex OAuth credential. `pi-usage` forwards only the bearer
-authorization and matching `chatgpt-account-id` to the official ChatGPT origin. API-key credentials,
-configured-but-not-current Codex accounts, account changes during the flow, and custom/proxy origins
-fail before mutation. Backend-provided titles and descriptions are sanitized for terminal display;
+Reset redemption is available only when Codex is the current provider and Pi's freshly resolved access token exactly matches its stored OpenAI Codex OAuth credential.
+`pi-usage` forwards only the bearer authorization and matching `chatgpt-account-id` to the official ChatGPT origin.
+API-key credentials, configured-but-not-current Codex accounts, account changes during the flow, and custom/proxy origins fail before mutation.
+Backend-provided titles and descriptions are sanitized for terminal display;
 opaque credit and account IDs are never shown or persisted by the extension.
 
 ### GitHub Copilot
@@ -132,7 +125,10 @@ opaque credit and account IDs are never shown or persisted by the extension.
 - Displayed data: entitlement, remaining allowance, percentage, reset time, plan, and any additional usage beyond the included allowance
 - Statusline examples: `copilot credits 1200/1500 80%`, `copilot 245/300 82%`, or `copilot chat 40/50 80%`
 
-GitHub's quota endpoint requires the original GitHub OAuth token rather than the short-lived Copilot inference token exposed by runtime auth. `pi-usage` therefore supports Copilot accounts created through Pi's `/login` flow, reads that stored credential through Pi's public API, and uses it only when its short-lived access token matches the active runtime credential. API-key credentials, account mismatches, GitHub Enterprise accounts, and proxy/custom provider origins fail closed. The detailed report follows the endpoint's `token_based_billing` marker so AI credits are not mislabeled as legacy premium requests, and it reports overage without treating a negative included balance as a malformed response.
+GitHub's quota endpoint requires the original GitHub OAuth token rather than the short-lived Copilot inference token exposed by runtime auth.
+`pi-usage` therefore supports Copilot accounts created through Pi's `/login` flow, reads that stored credential through Pi's public API, and uses it only when its short-lived access token matches the active runtime credential.
+API-key credentials, account mismatches, GitHub Enterprise accounts, and proxy/custom provider origins fail closed.
+The detailed report follows the endpoint's `token_based_billing` marker so AI credits are not mislabeled as legacy premium requests, and it reports overage without treating a negative included balance as a malformed response.
 
 ### OpenRouter
 
@@ -142,7 +138,8 @@ GitHub's quota endpoint requires the original GitHub OAuth token rather than the
 - Displayed data: key label when safely returned, optional per-key limit and remaining amount, reset period, and daily/weekly/monthly/all-time spend
 - Statusline examples: `openrouter $74.50 left` or `openrouter $25.50 used`
 
-The extension does not call OpenRouter's account-level `/credits` endpoint because that operation requires a separate management key. OpenRouter documents the distinction between credit and rate limits in its [API limits guide](https://openrouter.ai/docs/api_reference/limits).
+The extension does not call OpenRouter's account-level `/credits` endpoint because that operation requires a separate management key.
+OpenRouter documents the distinction between credit and rate limits in its [API limits guide](https://openrouter.ai/docs/api_reference/limits).
 
 ### OpenCode Go (Zen)
 
@@ -156,19 +153,25 @@ The usage endpoint is derived from the model's base URL (`…/zen/go/v1/usage`) 
 
 ## 🧭 Current and configured accounts
 
-`Current` means the provider and credential used by Pi's selected model. `Configured` means Pi reports runtime auth for another supported provider; it does not mean that provider is active.
+`Current` means the provider and credential used by Pi's selected model.
+`Configured` means Pi reports runtime auth for another supported provider; it does not mean that provider is active.
 
-The extension does not enumerate multiple accounts inside one provider and does not switch accounts. Account selection remains owned by Pi or an account-management extension. After the active runtime credential changes, the next command, turn, or scheduled refresh resolves auth again and cannot reuse another account's cached report.
+The extension does not enumerate multiple accounts inside one provider and does not switch accounts.
+Account selection remains owned by Pi or an account-management extension.
+After the active runtime credential changes, the next command, turn, or scheduled refresh resolves auth again and cannot reuse another account's cached report.
 
 ## 📊 Statusline behavior
 
-The `usage` status item is active only for the selected model provider. It refreshes every five minutes while the session remains on a supported provider and is cleared when the model changes to an unsupported provider.
+The `usage` status item is active only for the selected model provider.
+It refreshes every five minutes while the session remains on a supported provider and is cleared when the model changes to an unsupported provider.
 
-Manual another-provider and all-provider queries never publish to the statusline. `@narumitw/pi-statusline` supplies the default `📊` icon; `pi-usage` publishes text-only values.
+Manual another-provider and all-provider queries never publish to the statusline.
+`@narumitw/pi-statusline` supplies the default `📊` icon; `pi-usage` publishes text-only values.
 
 ## 🔄 Migrating from pi-codex-usage
 
-`pi-codex-usage` is deprecated and its source is archived under `deprecated/`. To migrate one installation:
+`pi-codex-usage` is deprecated and its source is archived under `deprecated/`.
+To migrate one installation:
 
 ```bash
 pi remove npm:@narumitw/pi-codex-usage
@@ -192,7 +195,8 @@ Behavior changes:
 - Credentials resolved for custom provider base URLs are never forwarded to the providers' official usage endpoints; effective auth origin validation requires Pi 0.81.0 or newer.
 - Provider reports are snapshots and may themselves be delayed by the provider.
 - OpenRouter successful inference responses do not expose proactive request-rate counters; `/usage` reports the documented per-key credit/spend fields instead.
-- A provider may not return a safe human-readable account identity. In that case the provider and runtime credential state remain visible without exposing secrets.
+- A provider may not return a safe human-readable account identity.
+  In that case the provider and runtime credential state remain visible without exposing secrets.
 - Immediate account-change events are not available from Pi; auth is re-resolved before commands, turns, and scheduled refreshes.
 - Fast model support is intentionally conservative and may require an extension update when Codex adds or removes service tiers.
 - Another later-loaded extension can replace the final provider payload, so arbitrary third-party payload-rewrite conflicts cannot be prevented.
@@ -234,4 +238,5 @@ Pi extension, Pi coding agent, usage, quota, OpenAI Codex usage, ChatGPT subscri
 
 ## 📄 License
 
-MIT. See [`LICENSE`](./LICENSE).
+MIT.
+See [`LICENSE`](./LICENSE).

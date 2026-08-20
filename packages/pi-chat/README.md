@@ -1,35 +1,24 @@
-# 💬 Pi Chat — Experimental P2P Developer Chat for Pi
+# 💬 Pi Chat — Talk to Peers Without Leaving Pi
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-chat)](https://www.npmjs.com/package/@narumitw/pi-chat) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 > [!WARNING]
-> Pi Chat is experimental. Its protocol, identity format, networking behavior, and interaction flow
-> may change between releases. It is not an anonymous or reliable messaging service.
+> Pi Chat is experimental.
+> Its protocol, identity format, networking behavior, and interaction flow may change between releases.
+> It is not an anonymous or reliable messaging service.
 
-`@narumitw/pi-chat` adds an ephemeral peer-to-peer chat room beside your Pi coding workflow. It uses
-Hyperswarm and HyperDHT to discover peers and opens encrypted Noise streams directly between them.
-Chat messages remain separate from Pi sessions, prompts, model context, repositories, and agent
-output.
+Join ephemeral peer-to-peer chat rooms beside your Pi workflow without putting chat messages into prompts, model context, repositories, or agent output.
+
+Pi Chat discovers peers with Hyperswarm and HyperDHT and connects them through encrypted Noise streams.
 
 ## ✨ Features
 
-- Creates random private rooms shared through bearer invite codes.
-- Browses currently discovered public rooms by estimated active participants, or joins a known
-  lowercase slug directly.
-- Shows every nickname with a stable public-key fingerprint such as
-  `Mika~7K2P-9D4M-HQ3T`.
-- Relays signed chat and presence events through a sparse P2P gossip overlay and suppresses duplicate
-  display and forwarding inside a bounded deduplication window.
-- Keeps an adaptive joined-room dock visible above the Pi editor with explicit input-target status.
-- Opens a focused, scrollable full-size chat composer with multiline IME support.
-- Preserves chat drafts when returning to Pi or when no direct neighbor can accept a message.
-- Restores a remembered room and the last intentional chat/Pi surface when Pi restarts.
-- Uses authenticated direct streams, origin signatures, and an invite-derived private-room handshake.
-- Limits neighbors, participants, frames, messages, hops, catalogs, transcript entries, reconnect
-  work, and per-neighbor/per-origin message rates.
-- Keeps identity settings local with private permissions and atomic publication.
-- Cleans up discovery, sockets, timers, status, and widgets on leave, reload, session replacement,
-  or shutdown.
+- Creates private rooms with bearer invites or joins discoverable public rooms by slug.
+- Shows stable public-key fingerprints beside nicknames so peers can verify identities.
+- Keeps chat in a dedicated composer and visible dock beside the normal Pi editor.
+- Preserves drafts and optionally restores a remembered room and the last selected surface.
+- Signs and relays bounded events over authenticated encrypted peer connections.
+- Stores identity settings privately and cleans up all networking and UI resources on leave or shutdown.
 
 ## 📦 Install
 
@@ -51,43 +40,37 @@ Try the extension from a local checkout:
 pi --no-extensions --no-skills --no-session -e ./packages/pi-chat
 ```
 
-Load the package only once per Pi process. Repeating `-e ./packages/pi-chat` creates duplicate
-extension instances and suffixed commands such as `/chat:1` and `/chat:2`.
+Load the package only once per Pi process.
+Repeating `-e ./packages/pi-chat` creates duplicate extension instances and suffixed commands such as `/chat:1` and `/chat:2`.
 
-Pi extensions execute with your user permissions. Review source before installing third-party
-packages.
+Pi extensions execute with your user permissions.
+Review source before installing third-party packages.
 
 ## 🚀 Quick start
 
-Run:
+Run `/chat`, choose a public or private room, set a nickname, and start chatting.
+Press `Escape` or `Ctrl+C` to return to the Pi editor without leaving the room or losing the chat draft.
 
-```text
-/chat
-```
+## 🧭 Rooms and composer
 
-Then choose one of these actions:
+The `/chat` menu offers these entry actions:
 
-- **Browse public rooms** queries a best-effort P2P directory, sorts discovered rooms by estimated
-  active participants and then slug, and keeps Refresh plus manual slug entry available.
-- **Join public room** accepts a lowercase slug such as `pi-dev`, remembers it after the public-room
-  warning is confirmed, and opens the chat composer.
-- **Join with invite** accepts a private-room invite, then offers **Join and remember**, **Join once**,
-  or **Cancel** before networking starts.
-- **Create private room** generates a random `pichat:v2:…` bearer invite and uses the same explicit
-  persistence choice. Existing `pichat:v1` invite text remains accepted as v2 room input.
+- **Browse public rooms** queries a best-effort P2P directory, sorts discovered rooms by estimated active participants and then slug, and keeps Refresh plus manual slug entry available.
+- **Join public room** accepts a lowercase slug such as `pi-dev`, remembers it after the public-room warning is confirmed, and opens the chat composer.
+- **Join with invite** accepts a private-room invite, then offers **Join and remember**, **Join once**, or **Cancel** before networking starts.
+- **Create private room** generates a random `pichat:v2:…` bearer invite and uses the same explicit persistence choice.
+  Existing `pichat:v1` invite text remains accepted as v2 room input.
 
-The first join asks for a nickname and joined-room display mode, then previews the generated
-identity fingerprint and display choice before one atomic save. Pi Chat does not read your OS
-username, Git identity, cwd, repository, or Pi session to fill these values. Cancelling creates
-neither identity settings nor network activity.
+The first join asks for a nickname and joined-room display mode, then previews the generated identity fingerprint and display choice before one atomic save.
+Pi Chat does not read your OS username, Git identity, cwd, repository, or Pi session to fill these values.
+Cancelling creates neither identity settings nor network activity.
 
-A successful remembered join stores the room and `chat` surface atomically. On the next Pi start,
-Pi Chat reconnects and reopens the full composer without another command. If you intentionally press
-Escape or Ctrl+C to return to Pi, it remembers the `pi` surface instead: the next start reconnects in
-the background and leaves the Pi editor focused.
+A successful remembered join stores the room and `chat` surface atomically.
+On the next Pi start, Pi Chat reconnects and reopens the full composer without another command.
+If you intentionally press Escape or Ctrl+C to return to Pi, it remembers the `pi` surface instead: the next start reconnects in the background and leaves the Pi editor focused.
 
-While connected, `/chat` opens the state-aware manager. **Open chat in <room>** is selected first,
-followed by participants, private invite, settings, status, help, and **Leave and forget room** last.
+While connected, `/chat` opens the state-aware manager.
+**Open chat in <room>** is selected first, followed by participants, private invite, settings, status, help, and **Leave and forget room** last.
 The persistent dock continues showing room state while the normal Pi editor targets Pi/LLM.
 
 Inside the dedicated chat composer:
@@ -98,11 +81,10 @@ Inside the dedicated chat composer:
 - `PageUp` and `PageDown` scroll transcript history.
 - `Escape` or `Ctrl+C` returns to Pi/LLM without leaving the room or discarding the chat draft.
 
-The composer retains the draft when no authenticated direct neighbor is available or a relay reaches
-zero neighbors. A successful local message reports how many direct neighbors accepted the first
-relay; it does not claim room-wide delivery. Signed events may arrive over multiple paths, but each
-client displays and forwards one `originPublicKey:eventId` only once while it remains in the bounded
-deduplication window. Pi Chat never claims exactly-once delivery, delivery receipts, or offline retry.
+The composer retains the draft when no authenticated direct neighbor is available or a relay reaches zero neighbors.
+A successful local message reports how many direct neighbors accepted the first relay; it does not claim room-wide delivery.
+Signed events may arrive over multiple paths, but each client displays and forwards one `originPublicKey:eventId` only once while it remains in the bounded deduplication window.
+Pi Chat never claims exactly-once delivery, delivery receipts, or offline retry.
 
 ## 💬 Commands
 
@@ -123,18 +105,18 @@ The display format is:
 nickname~7K2P-9D4M-HQ3T
 ```
 
-The nickname is editable. The 12-character identity tag is the first 60 bits of the SHA-256 digest
-of the authenticated DHT public key, encoded with Crockford Base32 and grouped `4-4-4`. The complete
-public key remains the protocol identity. If short tags collide in one room, the UI can extend them;
+The nickname is editable.
+The 12-character identity tag is the first 60 bits of the SHA-256 digest of the authenticated DHT public key, encoded with Crockford Base32 and grouped `4-4-4`.
+The complete public key remains the protocol identity.
+If short tags collide in one room, the UI can extend them;
 the short tag is never an authorization boundary.
 
-A fingerprint establishes continuity for one pseudonymous key. It does **not** prove a person's
-real-world identity, prevent a user from creating many identities, or recover trust after the local
-identity is reset or lost.
+A fingerprint establishes continuity for one pseudonymous key.
+It does **not** prove a person's real-world identity, prevent a user from creating many identities, or recover trust after the local identity is reset or lost.
 
-Nicknames are NFKC-normalized, trimmed, and limited to 24 grapheme clusters. Terminal, C0/C1, and
-bidirectional control characters are rejected. Remote display text is sanitized again before
-wrapping or rendering.
+Nicknames are NFKC-normalized, trimmed, and limited to 24 grapheme clusters.
+Terminal, C0/C1, and bidirectional control characters are rejected.
+Remote display text is sanitized again before wrapping or rendering.
 
 ## ⚙️ Settings
 
@@ -144,8 +126,8 @@ Pi Chat uses this user-owned file:
 <getAgentDir()>/pi-chat.json
 ```
 
-The usual location is `~/.pi/agent/pi-chat.json`. Pi Chat does not add environment variables or read
-project-local settings because the identity material is user-owned and secret.
+The usual location is `~/.pi/agent/pi-chat.json`.
+Pi Chat does not add environment variables or read project-local settings because the identity material is user-owned and secret.
 
 Example with a remembered public room:
 
@@ -168,9 +150,10 @@ Example with a remembered public room:
 }
 ```
 
-`resume.rooms` is a bounded catalog designed to permit future multi-room expansion. This release
-connects only `activeRoomId`. `surface` is `chat` when the user last kept the composer open and `pi`
-after an intentional return to Pi/LLM. Transcripts, drafts, peers, and unread counts are never stored.
+`resume.rooms` is a bounded catalog designed to permit future multi-room expansion.
+This release connects only `activeRoomId`.
+`surface` is `chat` when the user last kept the composer open and `pi` after an intentional return to Pi/LLM.
+Transcripts, drafts, peers, and unread counts are never stored.
 
 `widgetMode` accepts:
 
@@ -179,26 +162,24 @@ after an intentional return to Pi/LLM. Transcripts, drafts, peers, and unread co
 - `count`: room, direct-peer, and unread status only, without message text.
 - `off`: hides the persistent widget.
 
-New identities choose a mode before confirmation, with **Room dock** listed first. Existing settings
-retain their stored mode; an older document without `widgetMode` continues to default to `count`, so
-an upgrade does not expose message text unexpectedly.
+New identities choose a mode before confirmation, with **Room dock** listed first.
+Existing settings retain their stored mode; an older document without `widgetMode` continues to default to `count`, so an upgrade does not expose message text unexpectedly.
 
-Public rooms are remembered only after their existing risk confirmation. A private room is remembered
-only when **Join and remember** is selected; this stores its bearer invite in `pi-chat.json`.
-**Join once** stores no room material, and Cancel starts neither persistence nor networking. An older
-file without `resume` remains disconnected until the next confirmed remembered join. Stored v1 public
-or private room ids are normalized to v2 in memory without rewriting the file during load; the next
-explicit resume save publishes v2 ids while preserving unknown room and resume fields.
+Public rooms are remembered only after their existing risk confirmation.
+A private room is remembered only when **Join and remember** is selected; this stores its bearer invite in `pi-chat.json`.
+**Join once** stores no room material, and Cancel starts neither persistence nor networking.
+An older file without `resume` remains disconnected until the next confirmed remembered join.
+Stored v1 public or private room ids are normalized to v2 in memory without rewriting the file during load; the next explicit resume save publishes v2 ids while preserving unknown room and resume fields.
 
 The identity seed and stored private invites are redacted from UI, notifications, status, and errors.
-On POSIX, settings are published with `0600` permissions. A missing file is a side-effect-free read;
-it is created only after an explicit first-use confirmation or settings change. Saves are ordered
-within one Pi process, preserve unknown top-level and nested resume fields, and use a same-directory
-temporary file plus rename. Malformed, invalid, symlinked, non-regular, invalid UTF-8, or oversized
-files fail closed and remain unchanged.
+On POSIX, settings are published with `0600` permissions.
+A missing file is a side-effect-free read;
+it is created only after an explicit first-use confirmation or settings change.
+Saves are ordered within one Pi process, preserve unknown top-level and nested resume fields, and use a same-directory temporary file plus rename.
+Malformed, invalid, symlinked, non-regular, invalid UTF-8, or oversized files fail closed and remain unchanged.
 
-**Reset identity** previews the old and candidate fingerprints and requires confirmation. Resetting
-changes your fingerprint everywhere, forgets startup restore, and leaves the active room.
+**Reset identity** previews the old and candidate fingerprints and requires confirmation.
+Resetting changes your fingerprint everywhere, forgets startup restore, and leaves the active room.
 
 ## 🌐 Network and protocol behavior
 
@@ -208,62 +189,56 @@ Pi Chat protocol v2 uses one versioned 32-byte discovery topic per room:
 - A public topic is deterministically derived from the public room slug.
 - A separate global topic carries only bounded public-room directory presence.
 
-Each peer announces and looks up its topics through HyperDHT. Hyperswarm establishes authenticated,
-encrypted Noise streams. The room handshake binds the room proof, nickname, and both neighbor public
-keys. Each client keeps at most **8 direct neighbors** instead of completing a full mesh.
+Each peer announces and looks up its topics through HyperDHT.
+Hyperswarm establishes authenticated, encrypted Noise streams.
+The room handshake binds the room proof, nickname, and both neighbor public keys.
+Each client keeps at most **8 direct neighbors** instead of completing a full mesh.
 
-Chat and presence payloads carry the room id, origin public key, event id, issued time, content, and an
-Ed25519 signature from the origin identity. A mutable hop budget is decremented at each relay. After
-validation, the first copy updates local state and is forwarded to authenticated neighbors other than
-the ingress connection; later copies with the same `originPublicKey:eventId` are dropped. Deduplication,
-rate-limit, participant, and presence state are all bounded and expire locally.
+Chat and presence payloads carry the room id, origin public key, event id, issued time, content, and an Ed25519 signature from the origin identity.
+A mutable hop budget is decremented at each relay.
+After validation, the first copy updates local state and is forwarded to authenticated neighbors other than the ingress connection; later copies with the same `originPublicKey:eventId` are dropped.
+Deduplication, rate-limit, participant, and presence state are all bounded and expire locally.
 
-The active-participant catalog supports up to **256 remote identities** and expires presence that has
-not refreshed for 90 seconds. This is an approximate local view: sparse-overlay partitions, churn,
-clock differences, and Sybil identities can change it. Messages are limited to 4 KiB, protocol frames
-to 16 KiB, gossip to 8 hops, and the local transcript to 256 entries.
+The active-participant catalog supports up to **256 remote identities** and expires presence that has not refreshed for 90 seconds.
+This is an approximate local view: sparse-overlay partitions, churn, clock differences, and Sybil identities can change it.
+Messages are limited to 4 KiB, protocol frames to 16 KiB, gossip to 8 hops, and the local transcript to 256 entries.
 
-Public-room browsing uses signed room-scoped pseudonyms so honest clients do not expose one stable chat
-identity across directory rooms. Directory nodes gossip bounded recent presence and browsers sort
-unique scoped origins by estimated count descending, then slug ascending. Results can be empty,
-stale, or partial; HyperDHT cannot enumerate every unknown topic, so the UI never calls the list or
-count authoritative.
+Public-room browsing uses signed room-scoped pseudonyms so honest clients do not expose one stable chat identity across directory rooms.
+Directory nodes gossip bounded recent presence and browsers sort unique scoped origins by estimated count descending, then slug ascending.
+Results can be empty, stale, or partial; HyperDHT cannot enumerate every unknown topic, so the UI never calls the list or count authoritative.
 
-`pichat:v1` invite text and stored v1 secrets are accepted and mapped to a v2 private room. Newly
-created invites use `pichat:v2`. Protocol-v1 full-mesh clients do not interoperate with the v2 gossip
-overlay.
+`pichat:v1` invite text and stored v1 secrets are accepted and mapped to a v2 private room.
+Newly created invites use `pichat:v2`.
+Protocol-v1 full-mesh clients do not interoperate with the v2 gossip overlay.
 
-Hyperswarm's default DHT depends on public bootstrap infrastructure. “P2P” does not mean
-infrastructure-free. NAT, UDP blocking, enterprise firewalls, bootstrap availability, peer churn, or
-a partitioned sparse overlay can prevent connectivity or delivery. Pi Chat performs bounded refresh
-and reconnect work but cannot promise a connection or room-wide delivery.
+Hyperswarm's default DHT depends on public bootstrap infrastructure. “P2P” does not mean infrastructure-free.
+NAT, UDP blocking, enterprise firewalls, bootstrap availability, peer churn, or a partitioned sparse overlay can prevent connectivity or delivery.
+Pi Chat performs bounded refresh and reconnect work but cannot promise a connection or room-wide delivery.
 
 ## 🔒 Privacy, security, and recovery
 
-- Noise encrypts direct transport, but DHT infrastructure and direct peers may observe IP addresses,
-  timing, and topic participation metadata. Pi Chat does not provide anonymity.
-- Anyone holding a private invite can join. There is no member revocation in the initial protocol;
+- Noise encrypts direct transport, but DHT infrastructure and direct peers may observe IP addresses, timing, and topic participation metadata.
+  Pi Chat does not provide anonymity.
+- Anyone holding a private invite can join.
+  There is no member revocation in the initial protocol;
   create a new room after an invite leak.
-- Public slugs are guessable. Anyone may join, record, or repost public-room content.
-- A local session mute hides one signed origin while still forwarding valid events so a local
-  preference does not partition the room. It does not stop Sybil identities.
-- Remote peers can save or copy messages. Leaving or clearing the local transcript cannot withdraw
-  copies from their devices.
-- Pi Chat never sends cwd, repository data, Git remotes, Pi sessions, prompts, models, files, or agent
-  output unless a user manually types that information into chat.
+- Public slugs are guessable.
+  Anyone may join, record, or repost public-room content.
+- A local session mute hides one signed origin while still forwarding valid events so a local preference does not partition the room.
+  It does not stop Sybil identities.
+- Remote peers can save or copy messages.
+  Leaving or clearing the local transcript cannot withdraw copies from their devices.
+- Pi Chat never sends cwd, repository data, Git remotes, Pi sessions, prompts, models, files, or agent output unless a user manually types that information into chat.
 - Chat messages never call Pi message APIs and never enter model context or the main transcript.
-- Deleting `pi-chat.json` loses identity continuity and produces a new fingerprint on the next
-  confirmed join.
+- Deleting `pi-chat.json` loses identity continuity and produces a new fingerprint on the next confirmed join.
 
-If an ordinary join fails, Pi Chat tears down partially opened discovery and sockets and preserves
-the previous valid settings. If startup restore fails, the remembered room is kept and `/chat` shows
-Retry, Join another room, and Forget recovery actions instead of retrying forever. Invalid settings
-must be fixed manually before a save can proceed.
+If an ordinary join fails, Pi Chat tears down partially opened discovery and sockets and preserves the previous valid settings.
+If startup restore fails, the remembered room is kept and `/chat` shows Retry, Join another room, and Forget recovery actions instead of retrying forever.
+Invalid settings must be fixed manually before a save can proceed.
 
-Reloading, replacing the Pi session, or shutting down still releases every session-owned network and
-UI resource. A new TUI session then restores the remembered room. Explicit **Leave and forget room**
-atomically removes resume state before disconnecting; if that save fails, the room stays connected
-and remembered with an actionable error.
+Reloading, replacing the Pi session, or shutting down still releases every session-owned network and UI resource.
+A new TUI session then restores the remembered room.
+Explicit **Leave and forget room** atomically removes resume state before disconnecting; if that save fails, the room stays connected and remembered with an actionable error.
 
 ## 🚧 Limitations
 
@@ -279,19 +254,18 @@ The current experimental release intentionally omits:
 - more than 256 tracked remote participants or 8 direct neighbors per client;
 - automatic transfer of chat content into the Pi editor, transcript, or model context.
 
-The joined room uses a persistent read-only widget while the normal Pi view is active. Selecting
-**Reply in <room>** temporarily opens the full custom chat view instead of a small floating window.
-Closing it returns to Pi and the dock without leaving the room. The dock and composer reduce message
-rows before hiding room, connectivity, or input-target status.
+The joined room uses a persistent read-only widget while the normal Pi view is active.
+Selecting **Reply in <room>** temporarily opens the full custom chat view instead of a small floating window.
+Closing it returns to Pi and the dock without leaving the room.
+The dock and composer reduce message rows before hiding room, connectivity, or input-target status.
 
-Pi's public extension widget API does not provide generic mouse hit-testing, so the dock is not
-clickable and Pi Chat registers no global shortcut. `/chat` remains the menu-first entrypoint.
+Pi's public extension widget API does not provide generic mouse hit-testing, so the dock is not clickable and Pi Chat registers no global shortcut.
+`/chat` remains the menu-first entrypoint.
 
 ## 🧪 Local network smoke
 
 The normal repository test suite mocks Pi Chat's network transports and does not open DHT sockets.
-Run the opt-in smoke from a local checkout to exercise real local DHT nodes, sparse relay, retries,
-process-boundary discovery and delivery, public-room discovery, and resource cleanup:
+Run the opt-in smoke from a local checkout to exercise real local DHT nodes, sparse relay, retries, process-boundary discovery and delivery, public-room discovery, and resource cleanup:
 
 ```bash
 npm run smoke:chat-network
@@ -332,9 +306,9 @@ packages/pi-chat/
 
 ## 🔎 Keywords
 
-Pi extension, Pi coding agent, peer-to-peer chat, P2P developer chat, Hyperswarm, HyperDHT, terminal
-chat, TypeScript Pi package.
+Pi extension, Pi coding agent, peer-to-peer chat, P2P developer chat, Hyperswarm, HyperDHT, terminal chat, TypeScript Pi package.
 
 ## 📄 License
 
-MIT. See [`LICENSE`](./LICENSE).
+MIT.
+See [`LICENSE`](./LICENSE).

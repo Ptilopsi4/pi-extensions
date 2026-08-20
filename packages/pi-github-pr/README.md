@@ -1,21 +1,18 @@
-# 🔎 pi-github-pr — GitHub Pull Request Statusline for Pi Agents
+# 🔎 pi-github-pr — See Current Pull Request Status in Pi
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-github-pr)](https://www.npmjs.com/package/@narumitw/pi-github-pr) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-`@narumitw/pi-github-pr` is a passive [Pi coding agent](https://pi.dev) extension that shows the current branch GitHub pull request status in Pi's statusline.
+See the current branch's GitHub pull request number, checks, review state, and discussion count directly in Pi's statusline.
 
-It only reads PR metadata for the current branch. It counts comments and reviews, but does not fetch or display comment bodies, review text, or review-thread content.
-
-It is intentionally ambient: no slash command, no custom tool, no widget, and no comment injection.
+The extension reads only PR metadata and remains passive, with no command, model tool, widget, or injected content.
 
 ## ✨ Features
 
-- Automatically shows compact PR status in Pi's statusline.
-- Refreshes the current branch PR every minute and after agent turns.
-- Shows PR number, GitHub checks state, review state, and comment/review count.
-- Does not read or expose PR discussion text; use `gh pr view --comments` or GitHub directly when you need the conversation.
-- Uses GitHub CLI auth and repository resolution; the extension stores no GitHub token.
-- No slash commands, LLM tools, widgets, webhook server, or separate runtime service.
+- Shows compact PR number, checks, review state, and combined comment/review count.
+- Refreshes once per minute and after agent turns.
+- Uses GitHub CLI authentication and repository resolution without storing a token.
+- Never reads or displays discussion bodies, review text, or review threads.
+- Runs without commands, model tools, widgets, webhooks, or a separate service.
 
 Example statusline text:
 
@@ -26,9 +23,9 @@ PR #123: checks pending (5), commented, 12 comments
 PR #123: no checks, draft, no comments
 ```
 
-The check wording follows GitHub's Checks terminology. The trailing comment count is the
-combined comments + reviews count. When rendered by `pi-statusline`, the `github-pr` icon comes
-from pi-statusline icon settings.
+The check wording follows GitHub's Checks terminology.
+The trailing comment count is the combined comments + reviews count.
+When rendered by `pi-statusline`, the `github-pr` icon comes from pi-statusline icon settings.
 
 ## 📦 Install
 
@@ -59,7 +56,8 @@ gh auth login
 gh auth login --hostname github.example.com:8443
 ```
 
-The extension shells out to `gh`; GitHub Enterprise hosts and credential storage are delegated to `gh`. It uses the PR URL host (including any port) for follow-up API calls, so no manual `GH_HOST` is required.
+The extension shells out to `gh`; GitHub Enterprise hosts and credential storage are delegated to `gh`.
+It uses the PR URL host (including any port) for follow-up API calls, so no manual `GH_HOST` is required.
 
 ## 🚀 Quick start
 

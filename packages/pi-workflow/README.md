@@ -1,33 +1,25 @@
-# 🧭 pi-workflow — Integrated Plan and Goal Workflow for Pi
+# 🧭 pi-workflow — Plan First, Then Execute with Goal Mode
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-workflow)](https://www.npmjs.com/package/@narumitw/pi-workflow) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-`@narumitw/pi-workflow` is a Pi extension that combines Codex-like Plan mode and persistent Goal execution in one independently installable package.
+Explore and approve an implementation plan, then hand the exact plan to persistent Goal execution in the same session or a fresh linked session.
 
-It keeps the established `/plan` and `/goal` command surfaces while making the approved Plan-to-Goal handoff one owned, recoverable transition.
+The extension combines the established `/plan` and `/goal` workflows into one recoverable Plan-to-Goal transition.
 
-Do not load this package together with `@narumitw/pi-plan-mode` or `@narumitw/pi-goal`.
-
-Those packages intentionally share command, tool, event-channel, and session-state compatibility names with this combined replacement.
+> [!IMPORTANT]
+> Do not load this package with `@narumitw/pi-plan-mode` or `@narumitw/pi-goal` because they intentionally share commands, tools, event channels, and session-state names.
 
 ## ✨ Features
 
-- Provides `/workflow`, `/plan`, and `/goal` from one extension.
-- Loads a generated split TypeScript runtime through Pi's Jiti loader, reducing startup module work while preserving first-use manager UI, Plan export, saved-plan preflight, and fresh-session handoff chunks.
-- Preserves Plan exploration, structured questions, completion, save, export, tool selection, and thinking-level control.
-- Supports an optional configurable global shortcut for toggling Plan mode, disabled by default.
-- Supports Plan alone, Goal alone, and approved Plan-to-Goal execution without adding a non-Goal implementation path.
-- Preserves Goal completion, blocking, external waits, pause, resume, edit, clear, token budgets, continuation guards, optional ordered queues, and managed-run RPC.
-- Uses review-first handoff by default, matching Codex's authoritative-plan and explicit-approval workflow.
-- Offers **Run with Goal** and **Start fresh with Goal** as the primary completed-plan actions.
-- Supports explicitly pre-authorized automatic handoff from Plan completion to Goal execution.
-- Sends one current-session implementation request containing the exact approved plan and Goal stale-turn contract.
-- Creates linked Plan and Goal state before a fresh-session kickoff.
-- Restores a ready Plan and clears provisional Goal state when current-session activation or delivery fails.
-- Leaves the source Plan resumable when fresh-session creation is cancelled or partially fails.
-- Prevents Plan and Goal from competing for active tools or automatic turns in one session.
-- Uses one optional, atomically published `pi-workflow.json` settings file.
-- Shows independent `workflow:plan` and `workflow:goal` status channels.
+- Provides `/workflow`, `/plan`, and `/goal` from one independently installable extension.
+- Supports planning alone, Goal execution alone, or an explicit approved Plan-to-Goal handoff.
+- Preserves structured Plan questions, completion, save, export, tool selection, and thinking-level control.
+- Preserves Goal completion, blockers, external waits, pause, resume, edit, clear, budgets, queues, and managed-run RPC.
+- Reviews handoffs by default and offers execution in the current conversation or a fresh linked session.
+- Restores the ready Plan when activation, delivery, or fresh-session creation fails or is cancelled.
+- Prevents Plan and Goal from competing for tools or automatic turns.
+- Stores optional settings atomically and reports Plan and Goal status independently.
+- Loads a generated split runtime while preserving lazy manager, export, preflight, and handoff chunks.
 
 ## 📦 Install
 
@@ -325,7 +317,7 @@ Fresh-session handoff serializes both states before sending the implementation r
 
 Session replacement, reload, and shutdown abort owned menus and release timers, statuses, widgets, pending prompts, and continuation work.
 
-## ⚠️ Safety and limitations
+## 🔒 Security and privacy
 
 Plan mode's shell policy reduces accidental mutation but is not an operating-system sandbox.
 
@@ -336,6 +328,8 @@ Goal completion relies on the model's evidence audit plus stale-ID and contradic
 Automatic Goal work can consume substantial tokens and provider cost.
 
 Keep finite safety limits unless unlimited execution is an informed choice.
+
+## 🚧 Limitations
 
 This package owns source snapshots of the stable Plan and Goal implementations so it remains independently installable.
 

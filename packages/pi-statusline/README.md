@@ -1,9 +1,8 @@
-# ✨ pi-statusline — A Beautiful, Practical Footer for Pi
+# ✨ pi-statusline — Add a Ready-to-Use Powerline Footer to Pi
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-statusline)](https://www.npmjs.com/package/@narumitw/pi-statusline) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-`@narumitw/pi-statusline` gives [Pi](https://pi.dev) an opinionated powerline footer that looks good
-without setup and keeps useful context visible as the terminal narrows.
+Add an opinionated Powerline-style footer that works without setup and keeps the most useful Pi, workspace, Git, usage, and time context visible as the terminal narrows.
 
 A representative uncolored layout:
 
@@ -13,20 +12,19 @@ A representative uncolored layout:
 
 ## ✨ Features
 
-- **Fast package startup:** Pi's Jiti loader reads a generated split TypeScript runtime.
-- **Zero-config default:** model, thinking, workspace, Git/PR state, context use, and local time.
-- **Responsive:** removes lower-priority segments before important information gets clipped.
-- **Quiet when idle:** activity appears only while Pi is streaming or running tools.
-- **Native-aligned usage:** optional token, prompt-cache, subscription, and cost details.
-- **Easy choices:** three information levels and seven previewable color presets.
-- **Still flexible:** custom layouts, multiline rows, colors, labels, separators, and status icons stay
-  available under **Advanced**.
+- Works immediately with a balanced default for model, thinking, workspace, Git, context, activity, and time.
+- Removes lower-priority segments before important information is clipped.
+- Shows activity only while Pi is streaming or running tools.
+- Adds optional token, prompt-cache, provider usage, and cost details.
+- Offers three information levels, seven previewable palettes, and advanced custom layouts.
+- Loads a generated split runtime to reduce Pi package startup work.
 
-> **Need more customization?** See
-> [`pi-starship`](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-starship)
-> ([npm](https://www.npmjs.com/package/@narumitw/pi-starship)). It uses a
-> [Starship-inspired](https://starship.rs/) TOML format and style syntax for deeper control over
-> layout, modules, and colors. Choose `pi-statusline` for practical defaults and quick setup.
+> **Need more customization?**
+> See
+> [`pi-starship`](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-starship) ([npm](https://www.npmjs.com/package/@narumitw/pi-starship)).
+> It uses a
+> [Starship-inspired](https://starship.rs/) TOML format and style syntax for deeper control over layout, modules, and colors.
+> Choose `pi-statusline` for practical defaults and quick setup.
 >
 > Do not enable both extensions at the same time because both own Pi's footer.
 
@@ -55,10 +53,10 @@ For the best result, use a terminal font that includes Powerline glyphs and emoj
 
 ## 🚀 Quick start
 
-1. Install the extension and start Pi.
-2. Run `/statusline`.
-3. Use the standard Main/Advanced navigation, then choose an appearance or information level;
-   appearance previews update the extension-owned footer before you apply a choice.
+Install the extension and start Pi to use the balanced default immediately.
+Run `/statusline` to preview and apply an appearance or information level.
+
+## 🎛️ Menu and information levels
 
 ```text
 Appearance (tokyo-night)
@@ -78,8 +76,8 @@ Help
 
 ### Information levels
 
-Selecting a level replaces only the `segments` array. Unknown and unrelated JSON fields are
-preserved.
+Selecting a level replaces only the `segments` array.
+Unknown and unrelated JSON fields are preserved.
 
 | Level | Included segments |
 | --- | --- |
@@ -88,8 +86,8 @@ preserved.
 | **Detailed** | `provider model thinking cwd branch tools context tokens cache cost time` |
 | **Custom** | Any other segment order, including explicit line breaks |
 
-The `tools` segment takes no space while idle. `cache` takes no space when Pi has reported no cache
-reads or writes.
+The `tools` segment takes no space while idle.
+`cache` takes no space when Pi has reported no cache reads or writes.
 
 ## 💬 Commands
 
@@ -100,34 +98,33 @@ reads or writes.
 | `/statusline status` | Show the effective settings and diagnostics |
 | `/statusline help` | Show command and schema guidance |
 
-The direct `settings`, `status`, and `help` routes remain for compatibility. The root standard menu
-is TUI-only; Escape returns from Advanced or closes Main. RPC receives observable notifications
-instead of TUI-only controls. Unknown subcommands and trailing arguments are rejected. The standard
-palette picker owns navigation and cleanup while pi-statusline still owns footer previews, settings,
-and rollback. The width-aware layout editor and JSON editor remain specialized UI.
+The direct `settings`, `status`, and `help` routes remain for compatibility.
+The root standard menu is TUI-only; Escape returns from Advanced or closes Main.
+RPC receives observable notifications instead of TUI-only controls.
+Unknown subcommands and trailing arguments are rejected.
+The standard palette picker owns navigation and cleanup while pi-statusline still owns footer previews, settings, and rollback.
+The width-aware layout editor and JSON editor remain specialized UI.
 
 ## 📐 Runtime behavior
 
 ### Responsive fitting
 
-Each row keeps its configured segment order. If it is too wide, pi-statusline removes the
-lowest-priority segment, recomputes the powerline transitions, and repeats until the row fits.
+Each row keeps its configured segment order.
+If it is too wide, pi-statusline removes the lowest-priority segment, recomputes the powerline transitions, and repeats until the row fits.
 Retention priority is highest to lowest:
 
 ```text
 context model branch tools cwd thinking cost provider cache tokens time turn brand
 ```
 
-Explicit `line_break` entries remain row boundaries. If the last remaining segment is itself wider
-than the row, that row renders empty rather than emitting an over-width line.
+Explicit `line_break` entries remain row boundaries.
+If the last remaining segment is itself wider than the row, that row renders empty rather than emitting an over-width line.
 
 ### Directory, activity, Git, and PR state
 
-- `cwd` uses Starship's directory presentation defaults: contract the home directory to `~`, contract
-  to the Git repository root when available, then retain at most the last three path components. This
-  changes display only; the configured segment list and Pi working directory are untouched.
-- Repository-root discovery is cached with Git status outside footer rendering; a failed root query
-  falls back to home/path-component contraction without hiding the segment.
+- `cwd` uses Starship's directory presentation defaults: contract the home directory to `~`, contract to the Git repository root when available, then retain at most the last three path components.
+  This changes display only; the configured segment list and Pi working directory are untouched.
+- Repository-root discovery is cached with Git status outside footer rendering; a failed root query falls back to home/path-component contraction without hiding the segment.
 - During active work, `tools` shows `💭 thinking` or `⚙ <tool>` with parallel counts.
 - Activity disappears after the agent settles and resets across session replacement or shutdown.
 - Clean repositories show no Git counters.
@@ -139,17 +136,15 @@ than the row, that row renders empty rather than emitting an over-width line.
 
 ### Usage and context
 
-- `context` renders one-decimal current usage and the model window, such as `2.4%/272k`. After
-  compaction it can temporarily render `?/272k` until the next valid assistant response.
+- `context` renders one-decimal current usage and the model window, such as `2.4%/272k`.
+  After compaction it can temporarily render `?/272k` until the next valid assistant response.
 - `tokens`, `cache`, and `cost` total every usage-bearing session entry, matching Pi's native footer:
-  assistant messages, nested-LLM tool results, compactions, and branch summaries, including abandoned
-  branches retained in the session.
-- Cache tokens are `R<read>`, `W<write>`, and `CH<rate>`. `R` and `W` are cumulative; `CH` uses only
-  the latest assistant prompt: `cacheRead / (input + cacheRead + cacheWrite) * 100`.
-- Subscription-backed OAuth models and `kimi-coding` append `(sub)` to cost. The dollar value is
-  usage cost, not proof of an amount billed under a subscription.
-- Pi's public extension API does not expose the current auto-compaction toggle, so this footer cannot
-  reliably show the native `(auto)` marker.
+  assistant messages, nested-LLM tool results, compactions, and branch summaries, including abandoned branches retained in the session.
+- Cache tokens are `R<read>`, `W<write>`, and `CH<rate>`.
+  `R` and `W` are cumulative; `CH` uses only the latest assistant prompt: `cacheRead / (input + cacheRead + cacheWrite) * 100`.
+- Subscription-backed OAuth models and `kimi-coding` append `(sub)` to cost.
+  The dollar value is usage cost, not proof of an amount billed under a subscription.
+- Pi's public extension API does not expose the current auto-compaction toggle, so this footer cannot reliably show the native `(auto)` marker.
 
 ## ⚙️ Settings
 
@@ -159,13 +154,14 @@ The extension uses one user-level file:
 <getAgentDir()>/pi-statusline.json
 ```
 
-There are no project or environment overrides. When the file is absent, pi-statusline uses its
-built-in defaults without creating the file or parent directory. The first successful settings save
-creates a complete editable document atomically. Malformed or unreadable settings are never
-overwritten. Settings reload on startup, `/reload`, and session replacement.
+There are no project or environment overrides.
+When the file is absent, pi-statusline uses its built-in defaults without creating the file or parent directory.
+The first successful settings save creates a complete editable document atomically.
+Malformed or unreadable settings are never overwritten.
+Settings reload on startup, `/reload`, and session replacement.
 
-A valid legacy `pi-statusline-settings.json` remains readable with a warning and is never modified
-automatically; rename it to `pi-statusline.json`. If both files exist, `pi-statusline.json` wins.
+A valid legacy `pi-statusline-settings.json` remains readable with a warning and is never modified automatically; rename it to `pi-statusline.json`.
+If both files exist, `pi-statusline.json` wins.
 
 ### Settings reference
 
@@ -179,9 +175,10 @@ automatically; rename it to `pi-statusline.json`. If both files exist, `pi-statu
 | `segmentText` | Per-segment `prefix` and `suffix`; model truncation fields | Format Pi-owned dynamic values |
 | `extensionStatusIcons` | Raw status key or `namespace:*` to icon string | Customize extension status icons |
 
-All fields are optional in an existing document. Missing fields use defaults. Unknown fields produce a
-warning but are preserved by menu saves. Invalid recognized values block saving, leaving the previous
-file and live footer unchanged.
+All fields are optional in an existing document.
+Missing fields use defaults.
+Unknown fields produce a warning but are preserved by menu saves.
+Invalid recognized values block saving, leaving the previous file and live footer unchanged.
 
 A compact customization example:
 
@@ -206,13 +203,12 @@ A compact customization example:
 }
 ```
 
-Use **Advanced → Edit settings JSON** or `/statusline settings` to edit, validate, atomically save, and
-apply the file.
+Use **Advanced → Edit settings JSON** or `/statusline settings` to edit, validate, atomically save, and apply the file.
 
 ## 🎨 Appearance
 
-Named palettes provide contrast-checked color ramps. Appearance previews update while the picker
-moves, but save only when Enter is pressed; Escape restores the saved palette.
+Named palettes provide contrast-checked color ramps.
+Appearance previews update while the picker moves, but save only when Enter is pressed; Escape restores the saved palette.
 
 When `palettePreset` is `custom`, `palette` maps segment names to foreground/background colors:
 
@@ -234,8 +230,8 @@ When `palettePreset` is `custom`, `palette` maps segment names to foreground/bac
 - Missing custom colors remain unstyled instead of inheriting Tokyo Night.
 - Adjacent segments with identical colors share one block; transitions use ``.
 
-`segmentText` values must be single-line text without terminal control characters. Use `line_break`
-for another row rather than inserting a newline into a prefix or suffix.
+`segmentText` values must be single-line text without terminal control characters.
+Use `line_break` for another row rather than inserting a newline into a prefix or suffix.
 
 ### Model truncation
 
@@ -253,20 +249,19 @@ Long model IDs are truncated out of the box so the balanced footer can retain us
 }
 ```
 
-`truncationLength` counts model grapheme clusters retained before the symbol. The built-in value is
-`36`; set it to `0` to display the complete ID. The direction names the removed portion:
+`truncationLength` counts model grapheme clusters retained before the symbol.
+The built-in value is `36`; set it to `0` to display the complete ID.
+The direction names the removed portion:
 
-- `start` retains the suffix and is the default, which is useful for long llama.cpp paths and model
-  variants.
+- `start` retains the suffix and is the default, which is useful for long llama.cpp paths and model variants.
 - `middle` retains both ends.
 - `end` retains the prefix.
 
-Truncation runs after the built-in Claude/GPT shortening rules but before the configured model prefix
-and suffix. It changes display only—the provider model ID is untouched. Terminal control sequences
-in model IDs are removed at render time, and unsafe configured symbols are rejected. An empty
-`truncationSymbol` truncates without a marker. pi-statusline treats model IDs as opaque strings and
-does not parse paths, repositories, GGUF suffixes, or quantization names. At very narrow widths, the
-existing responsive priorities may still omit the model rather than overflow the terminal.
+Truncation runs after the built-in Claude/GPT shortening rules but before the configured model prefix and suffix.
+It changes display only—the provider model ID is untouched.
+Terminal control sequences in model IDs are removed at render time, and unsafe configured symbols are rejected.
+An empty `truncationSymbol` truncates without a marker. pi-statusline treats model IDs as opaque strings and does not parse paths, repositories, GGUF suffixes, or quantization names.
+At very narrow widths, the existing responsive priorities may still omit the model rather than overflow the terminal.
 
 ## 🧩 Advanced layout
 
@@ -291,10 +286,11 @@ Available data segments:
 brand provider model thinking cwd branch tools context tokens cache cost time turn
 ```
 
-Data segments must be unique. `line_break` may repeat when data segments separate occurrences, but
-consecutive breaks are invalid. It has no `segmentText` entry. The menu cleans up leading, trailing,
-and newly consecutive breaks after visibility changes. Manually authored leading/trailing breaks
-represent empty rows.
+Data segments must be unique.
+`line_break` may repeat when data segments separate occurrences, but consecutive breaks are invalid.
+It has no `segmentText` entry.
+The menu cleans up leading, trailing, and newly consecutive breaks after visibility changes.
+Manually authored leading/trailing breaks represent empty rows.
 
 ```json
 {
@@ -302,13 +298,13 @@ represent empty rows.
 }
 ```
 
-An empty `segments` array hides the main powerline while extension statuses can still render. The
-extension intentionally has no variable or format language; use `pi-starship` when you need one.
+An empty `segments` array hides the main powerline while extension statuses can still render.
+The extension intentionally has no variable or format language; use `pi-starship` when you need one.
 
 ## 🔌 Extension statuses and icons
 
-Other extension statuses appear below the main powerline, wrap to terminal width, and are limited to
-five items. Icons resolve in this order:
+Other extension statuses appear below the main powerline, wrap to terminal width, and are limited to five items.
+Icons resolve in this order:
 
 1. Exact configured raw key, such as `goal` or `foo:server`.
 2. Longest configured colon wildcard, such as `foo:*` or `foo:server:*`.
@@ -317,9 +313,10 @@ five items. Icons resolve in this order:
 5. Built-in icon.
 6. Generic `🔌` fallback.
 
-Set an icon to `""` to hide only the icon. Wildcards match colon namespaces, not slash-delimited keys;
-configure slash keys exactly. Compatibility fallbacks retain `codex-usage`, `pisync`, and
-`unknown-error-retry`; an explicit canonical key wins.
+Set an icon to `""` to hide only the icon.
+Wildcards match colon namespaces, not slash-delimited keys;
+configure slash keys exactly.
+Compatibility fallbacks retain `codex-usage`, `pisync`, and `unknown-error-retry`; an explicit canonical key wins.
 
 For interoperable extensions, prefer one aggregated key or a stable coexistence slot:
 
@@ -333,12 +330,9 @@ Put transient activity in the value and always clear the same complete key.
 ## 🛠️ Troubleshooting
 
 - **Powerline symbols look wrong:** use a font with Powerline glyphs; emoji support is also recommended.
-- **The footer reports settings warnings:** run `/statusline status`, then `/statusline settings` to fix
-  invalid recognized fields.
-- **The footer appears to be replaced:** disable `pi-starship` or another extension that also calls
-  Pi's `setFooter()`.
-- **A custom segment disappears on a narrow terminal:** check the responsive priority above or add an
-  explicit `line_break`.
+- **The footer reports settings warnings:** run `/statusline status`, then `/statusline settings` to fix invalid recognized fields.
+- **The footer appears to be replaced:** disable `pi-starship` or another extension that also calls Pi's `setFooter()`.
+- **A custom segment disappears on a narrow terminal:** check the responsive priority above or add an explicit `line_break`.
 
 ## 🗂️ Package layout
 
@@ -375,9 +369,9 @@ The package build emits the sole declared Pi entrypoint at `dist/index.ts` witho
 
 ## 🔎 Keywords
 
-Pi extension, Pi coding agent, statusline, Tokyo Night, powerline, responsive terminal footer,
-context usage, prompt cache, cache hit rate, model status.
+Pi extension, Pi coding agent, statusline, Tokyo Night, powerline, responsive terminal footer, context usage, prompt cache, cache hit rate, model status.
 
 ## 📄 License
 
-MIT. See [`LICENSE`](./LICENSE).
+MIT.
+See [`LICENSE`](./LICENSE).
