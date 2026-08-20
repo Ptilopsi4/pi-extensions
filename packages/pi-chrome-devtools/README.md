@@ -51,6 +51,10 @@ Try this package locally from the repository root:
 pi -e ./packages/pi-chrome-devtools
 ```
 
+The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-chrome-devtools run build` before Pi loads the package directory.
+
+`just try chrome-devtools` runs that build automatically.
+
 ## 🚀 Browser startup
 
 Without unpacked extensions, the extension first tries `browser.endpoint`, defaulting to
@@ -313,6 +317,9 @@ filename is deprecated and will be removed in a future major release.
 
 ```txt
 packages/pi-chrome-devtools/
+├── dist/                  # Generated TypeScript runtime loaded by Jiti
+├── scripts/
+│   └── build-runtime.mjs  # Deterministic runtime builder and boundary validator
 ├── src/
 │   ├── index.ts            # Pi package entrypoint
 │   ├── chrome-devtools.ts  # Extension registration and command orchestration
@@ -329,10 +336,12 @@ packages/pi-chrome-devtools/
 ```json
 {
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": ["./dist/index.ts"]
   }
 }
 ```
+
+The generated runtime is built from the authoritative `src/index.ts` graph and does not import back into `src`.
 
 ## 🔎 Keywords
 

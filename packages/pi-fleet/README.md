@@ -52,6 +52,10 @@ Install Pi Fleet persistently before testing the complete split-and-auto-join fl
 Pi extensions execute with your user permissions.
 Review extension source before installing it.
 
+The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-fleet run build` before Pi loads the package directory.
+
+`just try fleet` runs that build automatically.
+
 ## 🚀 Quick start
 
 Run:
@@ -271,6 +275,10 @@ Enabling them permits trusted invite holders to start paid model turns that may 
 
 ```text
 packages/pi-fleet/
+├── dist/                  # Generated TypeScript runtime loaded by Jiti
+├── scripts/
+│   ├── build-runtime.mjs  # Deterministic runtime builder and boundary validator
+│   └── ghostty-smoke.ts   # Opt-in Ghostty process smoke
 ├── src/
 │   ├── index.ts
 │   ├── pi-fleet.ts
@@ -292,8 +300,6 @@ packages/pi-fleet/
 │   ├── reload-handoff.ts
 │   ├── renderer.ts
 │   └── text.ts
-├── scripts/
-│   └── ghostty-smoke.ts
 ├── test/
 ├── README.md
 ├── LICENSE
@@ -301,6 +307,8 @@ packages/pi-fleet/
 ├── tsconfig.json
 └── tsconfig.process-smoke.json
 ```
+
+The generated runtime is built from the authoritative `src/index.ts` graph and does not import back into `src`.
 
 ## 🔎 Keywords
 

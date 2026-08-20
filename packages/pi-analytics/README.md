@@ -41,6 +41,10 @@ pi -e ./packages/pi-analytics
 
 The storage implementation uses Node's built-in filesystem APIs and has no native database dependency.
 
+The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-analytics run build` before Pi loads the package directory.
+
+`just try analytics` runs that build automatically.
+
 ## 🚀 Quick start
 
 Complete at least one Pi response, then run:
@@ -151,6 +155,9 @@ If legacy history matters, stop every old Pi process first and preserve both fil
 
 ```text
 packages/pi-analytics/
+├── dist/                  # Generated TypeScript runtime loaded by Jiti
+├── scripts/
+│   └── build-runtime.mjs  # Deterministic runtime builder and boundary validator
 ├── src/
 │   ├── index.ts              # Thin Pi entrypoint
 │   ├── analytics.ts          # Pi lifecycle, command, and session ownership
@@ -170,6 +177,8 @@ packages/pi-analytics/
 ├── package.json
 └── tsconfig.json
 ```
+
+The generated runtime is built from the authoritative `src/index.ts` graph and does not import back into `src`.
 
 ## 🔎 Keywords
 
