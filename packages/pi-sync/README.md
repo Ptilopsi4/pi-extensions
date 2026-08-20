@@ -6,6 +6,7 @@
 
 ## ✨ Features
 
+- A generated split TypeScript runtime that reduces Pi's Jiti startup work while preserving first-use UI and backend chunks.
 - A goal-oriented `/sync` manager with symmetric **Sync setups** and **Storage connections** list/detail flows.
 - S3-compatible storage, a Cloudflare R2 setup preset, Git, and WebDAV.
 - Immutable snapshots, secret scanning, local locks, conflict checks, pull backups, transactional apply, and recovery journals.
@@ -27,11 +28,16 @@ Try without installing permanently:
 pi -e npm:@narumitw/pi-sync
 ```
 
-Try a local checkout:
+Build the generated runtime and try a local checkout:
 
 ```bash
+npm --workspace @narumitw/pi-sync run build
 pi -e ./packages/pi-sync
 ```
+
+The package declares `dist/index.ts`, so the build command must finish before Pi loads the local package directory.
+
+An unbuilt checkout still declares `dist/index.ts`, but the generated entrypoint and chunks do not exist until the build completes.
 
 ## 🚀 Quick start
 
@@ -349,6 +355,9 @@ Pi exposes terminal components rather than a semantic/ARIA tree. Release validat
 
 ```text
 packages/pi-sync/
+├── dist/                    # Generated split TypeScript runtime loaded through Pi's Jiti loader
+├── scripts/
+│   └── build-runtime.mjs    # Deterministic bundler and eager-boundary validator
 ├── src/
 │   ├── index.ts
 │   ├── sync-extension.ts      # Lightweight Pi entry runtime and cached lazy loaders
