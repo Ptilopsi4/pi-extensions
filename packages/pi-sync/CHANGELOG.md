@@ -1,5 +1,11 @@
 # @narumitw/pi-sync
 
+## 0.49.12
+
+### Patch Changes
+
+- 806eada: Reduce extension startup time by letting generated TypeScript chunks reference their emitted `.ts` files directly.
+
 ## 0.49.11
 
 ### Patch Changes

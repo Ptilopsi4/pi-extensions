@@ -1,5 +1,11 @@
 # @narumitw/pi-subagents
 
+## 2.0.3
+
+### Patch Changes
+
+- 806eada: Reduce extension startup time by letting generated TypeScript chunks reference their emitted `.ts` files directly.
+
 ## 2.0.2
 
 ### Patch Changes
