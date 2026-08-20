@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
-import statusline from "../src/index.js";
 
 async function emit(
 	events: ReadonlyMap<string, Array<(...args: unknown[]) => unknown>>,
@@ -14,12 +13,13 @@ async function emit(
 	for (const handler of events.get(name) ?? []) await handler(...args);
 }
 
-test("declared source entry preserves registration and lifecycle behavior", async () => {
+test("declared generated entry preserves registration and lifecycle behavior", async () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-statusline-generated-entry-"));
 	const agentDir = join(root, "agent");
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 	try {
+		const { default: statusline } = await import("../dist/index.js");
 		const mock = createMockPi();
 		statusline(mock.pi);
 		assert.ok(mock.commands.has("statusline"));
