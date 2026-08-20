@@ -33,7 +33,7 @@
 		"check": "npm run build && biome check . && npm run typecheck",
 		"format": "biome check --write .",
 		"prepack": "npm run build",
-		"test:runtime": "node test/workflow-runtime-smoke.mjs",
+		"test:runtime": "npm run build && node test/workflow-runtime-smoke.mjs",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {

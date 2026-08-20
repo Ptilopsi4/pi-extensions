@@ -54,7 +54,7 @@ pi -e ./packages/pi-workflow
 
 The package declares `dist/index.ts`, so the build command must finish before Pi loads the local package directory.
 
-An unbuilt checkout intentionally has no declared generated entrypoint.
+An unbuilt checkout still declares `dist/index.ts`, but the generated entrypoint and chunks do not exist until the build completes.
 
 Pi extensions run with the same permissions as Pi.
 
