@@ -34,15 +34,14 @@ Try without installing permanently:
 FIRECRAWL_API_KEY=fc-... pi -e npm:@narumitw/pi-firecrawl
 ```
 
-Try this package locally from the repository root:
+Build and try this package locally from the repository root:
 
 ```bash
+npm --workspace @narumitw/pi-firecrawl run build
 FIRECRAWL_API_KEY=fc-... pi -e ./packages/pi-firecrawl
 ```
 
-The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-firecrawl run build` before Pi loads the package directory.
-
-`just try firecrawl` runs that build automatically.
+The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 
 ## ⚙️ Configuration
 

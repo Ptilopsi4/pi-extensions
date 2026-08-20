@@ -57,11 +57,11 @@ pi -e npm:@narumitw/pi-subagents
 Build and try this package locally from the repository root:
 
 ```bash
-just try subagents
+npm --workspace @narumitw/pi-subagents run build
+pi -e ./packages/pi-subagents
 ```
 
-The published package declares `dist/index.ts`, and `just try` runs its build before loading the package directory.
-For an explicit local flow, run `npm --workspace @narumitw/pi-subagents run build` before `pi -e ./packages/pi-subagents`.
+The published package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 An unbuilt checkout intentionally has no declared generated entrypoint.
 
 ## 🚀 Quick start

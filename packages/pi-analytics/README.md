@@ -33,17 +33,16 @@ Try the published package without installing:
 pi -e npm:@narumitw/pi-analytics
 ```
 
-Try a local checkout from the repository root:
+Build and try a local checkout from the repository root:
 
 ```bash
+npm --workspace @narumitw/pi-analytics run build
 pi -e ./packages/pi-analytics
 ```
 
+The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
+
 The storage implementation uses Node's built-in filesystem APIs and has no native database dependency.
-
-The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-analytics run build` before Pi loads the package directory.
-
-`just try analytics` runs that build automatically.
 
 ## 🚀 Quick start
 

@@ -37,12 +37,11 @@ pi -e npm:@narumitw/pi-starship
 Build the generated runtime and try the local package from this repository:
 
 ```bash
-just try starship
+npm --workspace @narumitw/pi-starship run build
+pi -e ./packages/pi-starship
 ```
 
-The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-starship run build` before Pi loads the package directory.
-
-`just try starship` runs that build automatically.
+The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 
 Do not enable this together with `@narumitw/pi-statusline`: both own Pi's footer, and Pi does not arbitrate that conflict.
 

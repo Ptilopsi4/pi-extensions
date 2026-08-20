@@ -44,8 +44,6 @@ Try a local checkout from the repository root:
 
 ```bash
 pi -e ./packages/pi-codex-compact
-# or
-just try codex-compact
 ```
 
 Loading the package enables Remote V2 with safe defaults. Avoid loading a global npm installation

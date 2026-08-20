@@ -46,11 +46,10 @@ Build the generated runtime and try the local package from this repository:
 
 ```bash
 npm --workspace @narumitw/pi-statusline run build
-just try statusline
+pi -e ./packages/pi-statusline
 ```
 
 The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
-`just try statusline` runs that build automatically.
 
 For the best result, use a terminal font that includes Powerline glyphs and emoji.
 

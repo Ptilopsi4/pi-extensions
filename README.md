@@ -156,14 +156,16 @@ npm run check
 
 `npm test` typechecks the test sources and runs the root and workspace suites with Vitest.
 
-Use the generic Just recipes with an unscoped extension name:
+Build generated entries before loading local packages, and use the generic Just pack recipe with an unscoped package name:
 
 ```bash
-just try goal
+npm --workspace @narumitw/pi-goal run build --if-present
+pi -e ./packages/pi-goal
 just pack goal
 
-# Experimental packages use the same recipes
-just try file-context
+# Experimental packages use the same local flow and pack recipe
+npm --workspace @narumitw/pi-file-context run build --if-present
+pi -e ./packages/pi-file-context
 just pack file-context
 
 # Libraries use the same generic pack recipe
