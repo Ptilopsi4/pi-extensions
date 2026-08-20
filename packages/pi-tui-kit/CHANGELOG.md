@@ -1,5 +1,11 @@
 # @narumitw/pi-tui-kit
 
+## 0.56.1
+
+### Patch Changes
+
+- f47364f: Defer syntax highlighter initialization until a code review first requests it.
+
 ## 0.56.0
 
 ### Minor Changes

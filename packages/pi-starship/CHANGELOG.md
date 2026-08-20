@@ -1,5 +1,16 @@
 # @narumitw/pi-starship
 
+## 0.52.0
+
+### Minor Changes
+
+- 7a61fe5: Add nested configuration views for effective public TOML and the exact loaded settings document, plus a validated preview-and-confirm reload workflow for external edits and file removal.
+
+### Patch Changes
+
+- Updated dependencies [f47364f]
+  - @narumitw/pi-tui-kit@0.56.1
+
 ## 0.51.5
 
 ### Patch Changes
