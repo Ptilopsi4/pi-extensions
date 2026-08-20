@@ -1,5 +1,12 @@
 # @narumitw/pi-subagents
 
+## 2.0.2
+
+### Patch Changes
+
+- 1fa501f: Reduce idle startup work by separating Pi registration and read-only settings modules from backward-compatible utility exports and settings mutations.
+- 9224800: Load the extension from a generated split TypeScript runtime to reduce Jiti startup work while preserving existing first-use boundaries.
+
 ## 2.0.1
 
 ### Patch Changes

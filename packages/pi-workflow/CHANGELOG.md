@@ -1,5 +1,12 @@
 # @narumitw/pi-workflow
 
+## 0.4.1
+
+### Patch Changes
+
+- 9224800: Load the extension from a generated split TypeScript runtime to reduce Jiti startup work while preserving existing first-use boundaries.
+- 5e27096: Reduce idle startup work by loading Plan export writes, saved-plan authentication preflight, and fresh-session implementation support only when their actions are used.
+
 ## 0.4.0
 
 ### Minor Changes
