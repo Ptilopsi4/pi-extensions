@@ -1,5 +1,11 @@
 # @narumitw/pi-workflow
 
+## 0.4.2
+
+### Patch Changes
+
+- 806eada: Reduce extension startup time by letting generated TypeScript chunks reference their emitted `.ts` files directly.
+
 ## 0.4.1
 
 ### Patch Changes
