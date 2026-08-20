@@ -8,6 +8,7 @@ A native Pi footer configured with Starship-style TOML. It parses and renders fo
 
 ## ✨ Features
 
+- Loads a generated split TypeScript runtime through Pi's Jiti loader to reduce package startup work.
 - Uses a readable, palette-free Starship-style built-in configuration until settings are saved.
 - Starship-style root/module formats, conditional groups, `$all`, styles, and opt-in palettes.
 - Pi modules for model, thinking, activity, context, tokens, prompt cache, cost, turn, and extension statuses.
@@ -27,11 +28,21 @@ A native Pi footer configured with Starship-style TOML. It parses and renders fo
 pi install npm:@narumitw/pi-starship
 ```
 
-Try it directly from a checkout:
+Try the published package without installing it permanently:
+
+```bash
+pi -e npm:@narumitw/pi-starship
+```
+
+Build the generated runtime and try the local package from this repository:
 
 ```bash
 just try starship
 ```
+
+The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-starship run build` before Pi loads the package directory.
+
+`just try starship` runs that build automatically.
 
 Do not enable this together with `@narumitw/pi-statusline`: both own Pi's footer, and Pi does not arbitrate that conflict.
 
@@ -724,7 +735,9 @@ Keep `extension_status` last in the catalog so arbitrary third-party statuses fo
 
 ## 🗂️ Package layout
 
-- `src/index.ts` — thin Pi package entrypoint forwarding to the source runtime.
+- `dist/` — generated split TypeScript runtime loaded through Pi's Jiti loader.
+- `scripts/build-runtime.mjs` — deterministic runtime bundler and eager-boundary validator.
+- `src/index.ts` — thin authoritative source entrypoint.
 - `src/pi-starship.ts` — authoritative extension lifecycle, cached refresh binding, live preview, and footer.
 - `src/usage.ts` — native-aligned session usage and cache aggregation.
 - `src/command-contract.ts` — lightweight command routes and completions loaded at startup.
