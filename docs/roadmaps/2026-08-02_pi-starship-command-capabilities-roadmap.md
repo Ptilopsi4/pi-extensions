@@ -7,8 +7,9 @@ the footer. Follow the useful intent of upstream Starship commands—especially 
 `print-config`, `toggle`, and `bug-report`—without cloning shell-only commands or weakening Pi's
 render, lifecycle, privacy, and settings boundaries.
 
-**Current roadmap status:** Phases 1–4 are delivered on `main` and available from the published
-package. Phases 5–7 remain planned and have no complete implementation.
+**Current roadmap status:** Phases 1–4 are delivered on `main` and available from the published package.
+Phase 5 has verified implementation in the current change but remains unchecked until merge evidence is recorded.
+Phases 6–8 remain planned and have no complete implementation.
 
 ## Objectives
 
@@ -18,16 +19,14 @@ package. Phases 5–7 remain planned and have no complete implementation.
 - **Make all supported modules discoverable** — Success after Phase 3: every catalog module appears
   once with a non-color state, current preview when available, and an accurate reason when it is not
   showing.
-- **Make configuration state transparent** — Success after Phase 5: users can distinguish overview,
-  raw document, and computed public configuration; every read-only path creates zero files, and a
-  failed reload preserves the last valid effective footer.
+- **Make configuration state transparent** — Success after Phase 5: users can distinguish overview, the exact loaded settings text, and effective public configuration.
+  Every read-only path creates zero files, deleting the settings document can be previewed as a valid transition to built-in defaults, and every failed or cancelled reload preserves the last valid effective footer.
 - **Keep mutations truthful and recoverable** — Success after Phase 6: no action conflates module
   `disabled` state with root-format reachability, and every approved mutation retains preview,
   confirmation, atomic publication, rollback, and unknown-field protection.
-- **Improve support without collecting telemetry** — Success after Phase 7: users can review a
-  bounded, sanitized diagnostic report locally; performance data appears only if collector timing
-  can be measured and labelled accurately. Adoption targets remain TBD because the repository has no
-  telemetry or grounded usage baseline.
+- **Improve support without collecting telemetry** — Success after Phase 7: users can review a bounded, sanitized diagnostic report locally without an automatic network request.
+- **Keep performance claims truthful** — Success after Phase 8: an evidence-backed decision either delivers accurately labelled asynchronous collector health measurements or rejects the view as non-actionable.
+  Adoption targets remain TBD because the repository has no telemetry or grounded usage baseline.
 
 ## Current State
 
@@ -44,9 +43,8 @@ package. Phases 5–7 remain planned and have no complete implementation.
 - The renderer's grouped output feeds a catalog that owns module names, descriptions, variables,
   defaults, options, and ordering. One pure inspection model combines those entries with effective
   config, root reachability, and the current immutable runtime snapshot for Explain and Modules.
-- Configuration currently presents state, source, path, health, and bounded diagnostics.
-  Loading retains both normalized effective config and the original document, but there is no public
-  computed-config projection, raw-document viewer, or safe reload-from-disk workflow.
+- Configuration now separates Overview, Effective configuration, Settings document, and Reload from disk on one nested level.
+  The effective projection is catalog-ordered public TOML, the loaded UTF-8 document stays separate and terminal-safe at the display boundary, and reload previews a final revalidated disk snapshot without writing files.
 - `/starship settings`, `/starship status`, and `/starship help` remain the only direct routes.
   Print and JSON modes intentionally emit no ad hoc command output; RPC uses notifications rather
   than custom terminal UI.
@@ -131,44 +129,39 @@ that absence means disabled. The state model provides the prerequisite for hones
 **Outcome:** Users can safely start from recognizable visual styles without shell integration,
 remote data, hidden writes during browsing, or weaker recovery behavior.
 
-### Phase 5: Make configuration transparent
+### Phase 5: Separate written and effective configuration
 
-- [ ] **Configuration** becomes one coherent section containing Overview, Computed configuration,
-  Settings document, and Reload from disk while the top-level menu remains at seven or fewer goals.
-- [ ] Computed configuration deterministically projects only public TOML fields from normalized
-  effective state and clearly excludes comments and unknown fields; Settings document presents the
-  byte-preserving raw source through a terminal-safe read-only view and explains a healthy
-  missing-file state.
-- [ ] Reload from disk validates and previews external changes, applies only a valid current
-  generation, creates no file, and preserves the prior effective footer on absence, invalid input,
-  cancellation, replacement, shutdown, or apply failure.
+- [ ] **Configuration** becomes one coherent section containing Overview, Effective configuration, Settings document, and Reload from disk while the top-level menu remains at seven or fewer goals.
+- [ ] Effective configuration deterministically projects every recognized public TOML field from normalized effective state in stable catalog order and excludes comments, unknown fields, ASTs, and private runtime selectors.
+- [ ] Settings document presents the exact loaded UTF-8 text through a terminal-safe read-only view, sanitizes only at the display boundary, and explains the healthy state in which no settings document exists.
+- [ ] Reload from disk validates and previews the current external state, applies only after confirmation in a valid current generation, and creates no file.
+  A missing document is a valid previewable transition to built-in defaults, while read or parse failure, cancellation, replacement, shutdown, or apply failure preserves the prior effective footer.
 
-**Outcome:** Users can distinguish what they wrote from what pi-starship is using and can safely apply
-external edits without reloading the whole Pi session.
+**Outcome:** Users can distinguish what they wrote from what pi-starship is using and can safely apply external edits or deliberate file removal without reloading the whole Pi session.
 
-### Phase 6: Make module changes unambiguous
+### Phase 6: Decide whether module changes can be safe
 
-- [ ] A documented module-action contract decides separately how `disabled` and root-format
-  reachability change, including what happens to `$all`, duplicate references, comments, custom root
-  expressions, and modules whose collectors have lifecycle cost.
-- [ ] Only actions approved by that contract are exposed from module detail, with accurate resulting
-  state, adaptive preview, explicit confirmation, atomic publication, runtime apply, rollback,
-  cancellation, and stale-session protection.
+- [ ] A documented go/no-go module-action contract decides separately how `disabled` and root-format reachability change, including what happens to `$all`, duplicate references, comments, document layout, unknown fields, custom root expressions, and modules whose collectors have lifecycle cost.
+  The decision approves only actions supported by a verified lossless TOML mutation path or records that module browsing remains read-only.
+- [ ] Every approved action is exposed from module detail with accurate resulting state, adaptive preview, explicit confirmation, serialized atomic publication, runtime apply, rollback, cancellation, and stale-session protection.
+  If no action is approved, the phase closes with the documented no-go evidence instead of weakening document preservation.
 
-**Outcome:** Structured module actions can be trusted to produce the visible result they promise
-rather than copying upstream `toggle` into a different format/reachability model.
+**Outcome:** pi-starship either offers module actions that produce the visible result they promise without damaging the settings document or retains an explicitly read-only module browser.
 
 ### Phase 7: Make support evidence safe and actionable
 
-- [ ] **Help & support** can produce a local preview of a bounded diagnostic report containing only
-  allowlisted version, configuration-state, sanitized diagnostic, module-state, and collector-health
-  fields; sharing or opening an issue always requires a separate explicit user action.
-- [ ] A performance view is either delivered from bounded collector duration/age/failure
-  instrumentation or explicitly rejected after measurement proves it non-actionable; it is never
-  labelled as upstream-style module timings when it measures asynchronous Pi collectors.
+- [ ] **Help & support** can produce a local preview of a bounded diagnostic report containing only allowlisted version, configuration-state, sanitized diagnostic, module-state, and collector-health fields.
+- [ ] Sharing, opening documentation, or opening an issue always requires a separate explicit user action, and report generation makes no automatic network request.
 
-**Outcome:** Users can diagnose and report problems with useful local evidence without hidden
-telemetry, accidental disclosure, or misleading timing semantics.
+**Outcome:** Users can diagnose and report problems with useful local evidence without hidden telemetry or accidental disclosure.
+
+### Phase 8: Decide whether collector performance evidence is actionable
+
+- [ ] A demand and measurement review decides whether bounded collector duration, age, and failure instrumentation would produce actionable support evidence without adding render-time work.
+- [ ] The resulting decision either delivers accurately labelled asynchronous collector health measurements or records why the view is rejected.
+  Delivered measurements are never labelled as upstream-style module timings.
+
+**Outcome:** Performance information is either trustworthy and useful or deliberately absent rather than misleading.
 
 ## Proposed Information Architecture
 
@@ -180,7 +173,7 @@ telemetry, accidental disclosure, or misleading timing semantics.
 ├─ Modules
 ├─ Configuration
 │  ├─ Overview
-│  ├─ Computed configuration
+│  ├─ Effective configuration
 │  ├─ Settings document
 │  └─ Reload from disk
 ├─ Help & support
@@ -200,10 +193,10 @@ Prompt preview is not planned because Pi already displays the footer continuousl
 | `config` | Keep transactional Customize; add safe external reload | Existing / Phase 5 |
 | `explain` | Explain currently rendered Pi modules | Phase 2 |
 | `module` | Search, inspect, and preview one Pi module | Phase 3 |
-| `print-config` | Show a read-only public computed-config projection | Phase 5 |
+| `print-config` | Show a read-only public effective-config projection | Phase 5 |
 | `toggle` | Separate disabled state from root-format reachability | Phase 6 |
 | `bug-report` | Preview a sanitized local support report | Phase 7 |
-| `timings` | Measure Pi collectors only if instrumentation is actionable | Phase 7 gate |
+| `timings` | Decide whether asynchronous Pi collector measurements are actionable | Phase 8 gate |
 | `prompt` | Integrate current preview into Explain footer | Phase 2 |
 | `preset` | Browse and transactionally apply bundled Pi-native adaptations | Phase 4 |
 | `completions`, `init`, `session`, `statusline` | Exclude shell/provider lifecycle commands | Non-goal |
@@ -217,7 +210,8 @@ Prompt preview is not planned because Pi already displays the footer continuousl
 | I/O started by footer/explanation rendering | 0 | 0 | Source audit and collector-spy tests |
 | Files created by read-only command paths | 0 | 0 | Missing-directory/filesystem tests |
 | Files changed by preset browsing or cancellation | 0 | 0 | Preset UX and lifecycle tests |
-| Public computed-config fields | No projection | Public TOML fields only; no AST/private runtime data | Serialization contract tests |
+| Public effective-config fields | No projection | Every recognized public TOML field in stable catalog order; no AST/private runtime data | Serialization contract tests |
+| Missing-document reload | Not available | Previewable built-in transition with 0 files created | Settings/lifecycle tests |
 | Invalid/cancelled reload changes | Not available | 0 file bytes and 0 effective-state changes | Settings/lifecycle tests |
 | Sensitive or raw content in diagnostic report | No report | 0 excluded fields; 0 automatic network requests | Allowlist/redaction tests |
 | Adoption and task-completion rate | Unknown; no telemetry | TBD only if privacy-compatible evidence exists | No current measurement source |
@@ -228,9 +222,10 @@ Prompt preview is not planned because Pi already displays the footer continuousl
 | --- | --- | --- |
 | Catalog descriptions or state semantics drift from rendering | Explain and Modules could become inconsistent with the footer | Keep metadata catalog-owned and retain render/inspection parity plus exhaustive catalog tests. |
 | Per-module chunks do not alone explain root reachability or empty values | A browser could mislabel modules | Keep the shared inspection model derived from effective config, root variables, and the same rendered result. |
-| Computed config contains ASTs or private selectors internally | Output could expose invalid/non-public schema | Serialize through an explicit public projection; keep raw document as a separate byte-preserving view. |
+| Effective config contains ASTs or private selectors internally | Output could expose invalid/non-public schema | Serialize through an explicit public projection; keep the exact loaded UTF-8 settings text as a separate read-only view. |
 | `disabled` and explicit root format are independent | A copied `toggle` action could promise visibility without producing it | Gate Phase 6 on a documented two-axis action contract and preview the resulting footer. |
-| Collectors have asynchronous cost while rendering is pure | Upstream `timings` semantics would be misleading | Instrument collector age/duration separately or reject the feature. |
+| The current TOML parser does not provide lossless document mutation | Structured actions could erase comments, layout, or unknown fields | Require a verified lossless mutation path for every approved Phase 6 action; otherwise keep Modules read-only. |
+| Collectors have asynchronous cost while rendering is pure | Upstream `timings` semantics would be misleading | Use the Phase 8 demand and measurement gate to instrument collector health separately or reject the feature. |
 | Diagnostic context can contain paths, remotes, config, or terminal controls | Support output could leak data or inject terminal content | Use bounded allowlisted fields, sanitize at the display boundary, and preview before sharing. |
 | Applying a complete preset replaces custom settings, unknown fields, and comments | Users could lose document-specific customization | Preview the resulting footer, disclose complete replacement, require separate confirmation, and retain rollback on failure. |
 | Zero-major pi-tui-kit ranges intentionally do not follow workspace minors | Consumers can miss newer shared lifecycle and keybinding behavior | Raise each consumer's compatibility floor only through a manually reviewed dependency change and verify its resolved package. |
@@ -250,6 +245,8 @@ Prompt preview is not planned because Pi already displays the footer continuousl
 - **2026-08-08 — Deliver presets and release:** PR #629 adds the full bundled preset catalog and live
   preview workflow. The subsequent release publishes the current command surface, removing the prior
   source-versus-registry availability gap.
+- **2026-08-21 — Clarify the remaining gates:** Phase 5 now treats deliberate settings-file removal as a previewable transition to built-in defaults and describes the raw view as exact loaded UTF-8 text rather than byte-preserving storage.
+  Phase 6 requires verified lossless TOML mutation or an explicit no-go decision, and collector performance evidence moves to its own Phase 8 gate so safe local diagnostics do not depend on speculative instrumentation.
 
 ## Non-Goals
 
@@ -275,6 +272,6 @@ Prompt preview is not planned because Pi already displays the footer continuousl
 - Explainability and discovery are assumed to be more valuable and lower risk than immediate module
   mutation because they build on existing renderer/catalog data and do not write settings.
 - Demand for structured toggles, collector performance diagnostics, and issue creation is unknown.
-  Their scope must remain gated rather than inferred from upstream Starship's CLI.
+  Their scope must remain gated rather than inferred from upstream Starship's CLI; as of 2026-08-21, the repository has no open starship issue establishing those capabilities as urgent.
 - New direct routes such as `/starship explain` or `/starship module` are not assumed. Menu-first TUI
   delivery should precede any RPC/non-TUI protocol decision with a concrete automation use case.
