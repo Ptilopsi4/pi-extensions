@@ -29,6 +29,9 @@ Run commands from the repository root unless a command says otherwise.
 - Run `npm run format` or `just format` to format with Biome.
 - Run `npm run typecheck` to typecheck every workspace.
 - Run `just --list` before adding or documenting a workflow command.
+- Put repository workflows intended for manual use in `justfile`, and keep recipes as thin command entrypoints.
+- Put complex Bash or TypeScript workflow implementations under `scripts/`, then invoke them from recipes or automation.
+- Keep npm scripts as composable package and automation primitives.
 
 ## Tooling and dependency safety
 
