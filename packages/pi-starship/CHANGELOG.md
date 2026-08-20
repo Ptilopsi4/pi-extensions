@@ -1,5 +1,11 @@
 # @narumitw/pi-starship
 
+## 0.51.5
+
+### Patch Changes
+
+- 37bf862: Load the extension from a generated split TypeScript runtime to reduce Jiti package startup work while preserving lazy command and collector boundaries.
+
 ## 0.51.4
 
 ### Patch Changes
