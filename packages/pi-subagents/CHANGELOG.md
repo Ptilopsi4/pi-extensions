@@ -1,5 +1,13 @@
 # @narumitw/pi-subagents
 
+## 2.0.4
+
+### Patch Changes
+
+- 0ffd80d: Preserve accurate cumulative RPC usage telemetry during streaming, interruption, and timeout finalization.
+- Updated dependencies [f47364f]
+  - @narumitw/pi-tui-kit@0.56.1
+
 ## 2.0.3
 
 ### Patch Changes

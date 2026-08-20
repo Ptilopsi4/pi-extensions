@@ -1,6 +1,6 @@
 {
 	"name": "@narumitw/pi-starship",
-	"version": "0.51.5",
+	"version": "0.52.0",
 	"description": "Native Starship-style TOML statusline for the Pi coding agent.",
 	"type": "module",
 	"license": "MIT",
@@ -37,7 +37,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@narumitw/pi-tui-kit": "^0.56.0",
+		"@narumitw/pi-tui-kit": "^0.56.1",
 		"smol-toml": "^1.8.0",
 		"yaml": "^2.9.0"
 	},
