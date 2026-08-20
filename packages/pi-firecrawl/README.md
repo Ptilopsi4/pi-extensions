@@ -40,6 +40,10 @@ Try this package locally from the repository root:
 FIRECRAWL_API_KEY=fc-... pi -e ./packages/pi-firecrawl
 ```
 
+The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-firecrawl run build` before Pi loads the package directory.
+
+`just try firecrawl` runs that build automatically.
+
 ## ⚙️ Configuration
 
 Set a Firecrawl API key before running Pi:
@@ -211,6 +215,9 @@ Start a crawl with markdown extraction:
 
 ```txt
 packages/pi-firecrawl/
+├── dist/                  # Generated TypeScript runtime loaded by Jiti
+├── scripts/
+│   └── build-runtime.mjs  # Deterministic runtime builder and boundary validator
 ├── src/
 │   ├── index.ts       # Pi package entrypoint
 │   ├── firecrawl.ts   # Extension registration and command orchestration
@@ -223,6 +230,8 @@ packages/pi-firecrawl/
 ```
 
 `index.ts` is the Pi entrypoint and forwards to `firecrawl.ts`; the other source modules are internal.
+
+The generated runtime is built from the authoritative `src/index.ts` graph and does not import back into `src`.
 
 ## 🔎 Keywords
 

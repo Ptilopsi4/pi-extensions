@@ -41,6 +41,10 @@ Try the local working tree from this repository checkout:
 pi -e ./packages/pi-file-context
 ```
 
+The package declares `dist/index.ts`, so an unbuilt local checkout must run `npm --workspace @narumitw/pi-file-context run build` before Pi loads the package directory.
+
+`just try file-context` runs that build automatically.
+
 ## 🚀 Quick start
 
 1. Run `/file-context` and choose **Add context snippet**. Press `F8` or run `/file-context browse` to open the browser directly. Every route shows the same cancellable project scan before browsing.
@@ -127,6 +131,8 @@ Unknown and trailing arguments are rejected. RPC receives an observable warning.
 ## 🗂️ Package layout
 
 ```text
+dist/                         Generated TypeScript runtime loaded by Jiti
+scripts/build-runtime.mjs      Deterministic runtime builder and boundary validator
 src/index.ts                   Thin Pi entrypoint
 src/file-context.ts            Lifecycle, routes, filesystem boundaries, selected state, prompt injection
 src/file-context-menu.ts       Standard Add, selected-context review, Help, and removal flow
@@ -150,6 +156,8 @@ test/pending-quotes.test.ts     Exact selected-context removal, cancellation, an
 test/file-context-settings.test.ts  Shortcut settings defaults and validation tests
 test/git-context.test.ts        Git repository behavior and parser tests
 ```
+
+The generated runtime is built from the authoritative `src/index.ts` graph and does not import back into `src`.
 
 ## 🔎 Keywords
 
