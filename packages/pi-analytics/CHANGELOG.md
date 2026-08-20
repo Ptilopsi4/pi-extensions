@@ -1,5 +1,11 @@
 # @narumitw/pi-analytics
 
+## 0.49.7
+
+### Patch Changes
+
+- 30bc076: Load each extension from a generated TypeScript runtime to reduce Jiti package startup work while preserving existing first-use boundaries.
+
 ## 0.49.6
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @narumitw/pi-statusline
 
+## 0.49.11
+
+### Patch Changes
+
+- e7ae16e: Load the extension from a generated split TypeScript runtime to reduce Jiti package startup work while preserving the lazy command boundary.
+
 ## 0.49.10
 
 ### Patch Changes
