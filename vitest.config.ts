@@ -12,6 +12,7 @@ export default defineConfig({
 		include: ["test/**/*.test.ts", "packages/*/test/**/*.test.ts"],
 		globalSetup: ["./test/vitest.global-setup.ts"],
 		pool: "forks",
+		runner: "./test/vitest.runner.ts",
 		setupFiles: ["./test/vitest.setup.ts"],
 		teardownTimeout: 10_000,
 		testTimeout: 5_000,
