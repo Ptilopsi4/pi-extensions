@@ -28,6 +28,28 @@ A breaking lifecycle or envelope change requires another protocol identifier.
 
 Raw prompts, chain-of-thought, credentials, headers, environment values, full stderr, and raw tool arguments never enter the envelope.
 
+## Usage accounting
+
+Pi 0.84.2 RPC `message_update.usage` values are cumulative for the current assistant message.
+
+RPC v1 keeps the latest validated update as one replaceable in-flight snapshot instead of adding successive updates together.
+
+A valid `message_end.message.usage` is authoritative for the finalized assistant message.
+
+When final usage has no valid token or total-cost field, RPC v1 commits the latest valid in-flight snapshot instead.
+
+A new assistant `message_start` commits usage from an interrupted prior attempt before tracking the new cumulative stream.
+
+Timeout finalization commits the interrupted work snapshot before clearing captured output and starting the bounded summary attempt.
+
+Progress and terminal outcomes expose the safe sum of committed usage plus the current in-flight snapshot.
+
+Only non-negative finite values no larger than `Number.MAX_SAFE_INTEGER` enter telemetry, and `totalTokens` is derived from valid components only when no valid reported total exists.
+
+The `turns` field continues to count finalized assistant messages only, so interrupted attempts and tool-result messages do not increment it.
+
+Usage progress contains only normalized token counts, total cost, and finalized-turn count, and never adds raw RPC events, prompts, content, reasoning, credentials, headers, or environment values to the envelope.
+
 ## Lifecycle
 
 One retained `agentId` lazily owns at most one RPC child.

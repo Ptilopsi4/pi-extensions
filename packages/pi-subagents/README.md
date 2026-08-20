@@ -819,7 +819,12 @@ Stateful execution uses a transport boundary:
 - Agent model strings use Pi core's CLI resolver, including provider/model patterns, fuzzy matching, custom provider model IDs, and `:<thinking>` suffixes. Thinking level and built-in tool allow-list overrides are applied when the child is created. Parent model/thinking changes are snapshotted for subsequently created children; an existing child keeps its own session configuration.
 - Extension/custom tool names are rejected by in-process and RPC v1 before child creation; automatic mode selects `subprocess` for them, and permissions are never silently widened.
 - Timeout, parent abort, close, expiry, and session shutdown abort/dispose owned child sessions or process groups. A child that does not settle after abort grace is discarded rather than reused.
-- RPC progress uses `pi-subagents:v1` metadata and reports only bounded phase, queue, timing, effective model/thinking, and validated usage fields; it never exposes raw prompts, reasoning, credentials, environment values, or full RPC events.
+- RPC progress uses `pi-subagents:v1` metadata and reports only bounded phase, queue, timing, effective model/thinking, and validated usage fields.
+  Successive Pi 0.84.2 `message_update.usage` values replace one cumulative in-flight snapshot, while a valid final `message_end.message.usage` remains authoritative.
+  Missing or invalid final usage falls back to the latest valid streaming snapshot, and an interrupted attempt is committed before retry or timeout-summary usage is added.
+  Usage progress and terminal outcomes therefore retain partial token and total-cost evidence without double counting cumulative updates.
+  The `turns` field still counts finalized assistant messages only, not interrupted attempts or tool-result messages.
+  Telemetry never exposes raw prompts, assistant content, reasoning, credentials, headers, environment values, or full RPC events.
 - A successful RPC prompt response is never treated as completion, and accepted or ambiguously accepted work is never replayed automatically.
 - In-process startup failures do not silently retry through subprocesses, preventing duplicate side effects. If the loaded Pi core lacks public `createAgentSessionServices()`, `createAgentSessionFromServices()`, or `resolveCliModel()` support, startup fails with an actionable instruction to select `stateful.transport: "subprocess"`.
 
@@ -1022,7 +1027,14 @@ An explicit spawn value is retained for the agent lifecycle and wins over every 
 
 Omit `thinkingLevel` to preserve existing behavior. Reported stateful details show the requested level, not a guarantee of the provider's effective value. Pi still owns model capability clamping; `pi-subagents` does not duplicate capability detection.
 
-When any execution budget expires, the extension aborts the active run first and creates a versioned, bounded, redacted checkpoint containing partial assistant notes, completed tool evidence, changed-file hints, and whether side effects may already have occurred. After authoritative settlement it may make one concise summary attempt over that checkpoint without replaying the stopped task. The summary attempt has its own extension-owned model-work deadline of at most 45 seconds, followed only by bounded abort and process-cleanup grace. Fresh subprocess summaries run with no tools or project resources. Retained RPC and in-process summaries reuse their child context and are explicitly instructed not to call tools; the current child APIs do not support replacing an existing session's tool set for one turn, so their separate deadline and abort path remain the enforcement boundary. The deterministic checkpoint remains available when finalization or the provider fails, and results retain exit `124` plus a structured termination reason and finalization status. Explicit parent or user abort stops immediately, never starts finalization, and is not mislabeled as a budget stop.
+When any execution budget expires, the extension aborts the active run first and creates a versioned, bounded, redacted checkpoint containing partial assistant notes, completed tool evidence, changed-file hints, and whether side effects may already have occurred.
+After authoritative settlement it may make one concise summary attempt over that checkpoint without replaying the stopped task.
+The summary attempt has its own extension-owned model-work deadline of at most 45 seconds, followed only by bounded abort and process-cleanup grace.
+Fresh subprocess summaries run with no tools or project resources.
+Retained RPC and in-process summaries reuse their child context and are explicitly instructed not to call tools; the current child APIs do not support replacing an existing session's tool set for one turn, so their separate deadline and abort path remain the enforcement boundary.
+Before a retained RPC summary starts, validated in-flight usage from the interrupted work attempt is committed so the summary adds to it exactly once.
+The deterministic checkpoint remains available when finalization or the provider fails, and results retain exit `124` plus a structured termination reason and finalization status.
+Explicit parent or user abort stops immediately, never starts finalization, and is not mislabeled as a budget stop.
 
 This release does not claim a cooperative soft-wrap-up phase because print-mode subprocess children cannot receive steering while they are running. It also does not retry budget-stopped work automatically because file or external side effects may already have occurred.
 
