@@ -482,6 +482,8 @@ test("Configuration combines state, source, path, health, and diagnostics", asyn
 		for (let index = 0; index < 4; index += 1) tui.press("tui.select.down");
 		tui.press("tui.select.confirm");
 		await tui.waitForOpen();
+		tui.press("tui.select.confirm");
+		await tui.waitForOpen();
 		const frame = tui.render().join("\n");
 		assert.match(frame, /Configuration/u);
 		assert.match(frame, /State: Custom configuration/u);

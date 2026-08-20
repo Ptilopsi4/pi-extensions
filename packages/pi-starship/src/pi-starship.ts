@@ -85,6 +85,7 @@ interface PiStarshipOptions {
 
 export default function piStarship(pi: ExtensionAPI, options: PiStarshipOptions = {}) {
 	let loaded: LoadedStarshipConfig | undefined;
+	let loadedRevision = 0;
 	let previewLoaded: LoadedStarshipConfig | undefined;
 	const runtime: RuntimeState = {
 		activeTools: new Map(),
@@ -348,6 +349,7 @@ export default function piStarship(pi: ExtensionAPI, options: PiStarshipOptions 
 	const commandOptions: StarshipCommandOptions = {
 		settingsPath: configPath,
 		getLoaded: () => loaded ?? loadStarshipConfig(configPath),
+		getLoadedRevision: () => loadedRevision,
 		getInspection: () => {
 			const current = loaded ?? loadStarshipConfig(configPath);
 			return runtime.inspect?.(current);
@@ -365,6 +367,7 @@ export default function piStarship(pi: ExtensionAPI, options: PiStarshipOptions 
 			}
 			previewLoaded = undefined;
 			loaded = next;
+			loadedRevision += 1;
 			const target = activeTarget;
 			if (target) {
 				restartLocalControllers(target);
@@ -399,6 +402,7 @@ export default function piStarship(pi: ExtensionAPI, options: PiStarshipOptions 
 
 	pi.on("session_start", (_event, ctx) => {
 		loaded = loadStarshipConfig(configPath);
+		loadedRevision += 1;
 		if (loaded.diagnostics.length > 0 && (ctx.mode === "tui" || ctx.hasUI)) {
 			ctx.ui.notify(formatDiagnostics(loaded), "warning");
 		}

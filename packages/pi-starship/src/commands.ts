@@ -1,5 +1,15 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { defineMenu, runMenu } from "@narumitw/pi-tui-kit";
+import {
+	type ConfigurationCommandOptions,
+	configurationMenuScreen,
+	configurationOverviewScreen,
+	configurationPresentation,
+	effectiveConfigurationScreen,
+	reloadConfiguration,
+	settingsDocumentScreen,
+	type WorkflowOwner,
+} from "./command-configuration.js";
 import { completeStarshipArguments, STARSHIP_SUBCOMMANDS } from "./command-contract.js";
 import { formatFooterExplanation } from "./command-inspector.js";
 import { showPresetPicker } from "./command-preset-picker.js";
@@ -36,26 +46,13 @@ const PREVIEW_ACTIONS = {
 	cancel: "cancel",
 } as const;
 
-export interface StarshipCommandOptions {
-	getLoaded(): LoadedStarshipConfig;
+export interface StarshipCommandOptions extends ConfigurationCommandOptions {
 	getInspection?(): StatuslineInspection | undefined;
-	apply(loaded: LoadedStarshipConfig, ctx: ExtensionCommandContext): void;
 	preview?(loaded: LoadedStarshipConfig | undefined, ctx: ExtensionCommandContext): void;
-	settingsPath: string;
-	renderPreview?(
-		loaded: LoadedStarshipConfig,
-		width: number,
-		ctx: ExtensionCommandContext,
-	): string[];
 	save?: (settingsPath: string, rawDocument: string) => LoadedStarshipConfig;
 	restore?: (settingsPath: string, rawDocument: string) => void;
 	validate?: (settingsPath: string, rawDocument: string) => LoadedStarshipConfig;
-	getMenuOwner?(): { signal: AbortSignal; isCurrent(): boolean };
-}
-
-interface WorkflowOwner {
-	signal: AbortSignal;
-	isCurrent(): boolean;
+	getMenuOwner?(): WorkflowOwner;
 }
 
 type ReviewIntent =
@@ -114,8 +111,16 @@ async function showMainMenu(ctx: ExtensionCommandContext, options: StarshipComma
 		signal: fallbackController.signal,
 		isCurrent: () => !fallbackController.signal.aborted,
 	};
-	type Screen = "main" | "explain" | "modules" | "configuration" | "help";
-	type Action = "customize" | "presets" | "restore";
+	type Screen =
+		| "main"
+		| "explain"
+		| "modules"
+		| "configuration"
+		| "configuration-overview"
+		| "configuration-effective"
+		| "configuration-document"
+		| "help";
+	type Action = "customize" | "presets" | "configuration-reload" | "restore";
 	const menu = defineMenu<undefined, Screen, Action, ExtensionCommandContext>({
 		start: "main",
 		screens: {
@@ -210,21 +215,12 @@ async function showMainMenu(ctx: ExtensionCommandContext, options: StarshipComma
 					hint: "back",
 				};
 			},
-			configuration: () => {
-				const loaded = options.getLoaded();
-				const presentation = configurationPresentation(loaded);
-				return {
-					kind: "detail",
-					title: "Configuration",
-					lines: [
-						`State: ${presentation.state}`,
-						`Source: ${presentation.source}`,
-						`Path: ${safeText(options.settingsPath)}`,
-						...diagnosticLines(loaded, true),
-					],
-					hint: "back",
-				};
-			},
+			configuration: () => configurationMenuScreen(options.getLoaded()),
+			"configuration-overview": () =>
+				configurationOverviewScreen(options.getLoaded(), options.settingsPath),
+			"configuration-effective": () => effectiveConfigurationScreen(options.getLoaded()),
+			"configuration-document": () =>
+				settingsDocumentScreen(options.getLoaded(), options.settingsPath),
 			help: () => ({
 				kind: "detail",
 				title: "pi-starship help",
@@ -233,7 +229,7 @@ async function showMainMenu(ctx: ExtensionCommandContext, options: StarshipComma
 					"Presets live-previews the cursor in the footer; Enter confirms apply and e customizes first.",
 					"Explain footer breaks down the modules currently showing from the existing snapshot.",
 					"Modules searches every supported module and explains its current read-only state.",
-					"Configuration explains state, source, path, and warnings without changing the footer.",
+					"Configuration separates overview, effective TOML, loaded settings text, and safe disk reload.",
 					`Settings: ${safeText(options.settingsPath)}`,
 					"Docs: https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-starship",
 				],
@@ -248,6 +244,10 @@ async function showMainMenu(ctx: ExtensionCommandContext, options: StarshipComma
 			presets: async () => {
 				const result = await choosePreset(ctx, options, owner);
 				return result === "applied" || result === "close" ? { kind: "close" } : { kind: "stay" };
+			},
+			"configuration-reload": async () => {
+				const result = await reloadConfiguration(ctx, options, owner);
+				return result === "close" ? { kind: "close" } : { kind: "stay" };
 			},
 			restore: async () => {
 				const presentation = configurationPresentation(options.getLoaded());
@@ -672,70 +672,6 @@ function selectedPreviewAction<Value extends string>(
 	result: PreviewMenuResult<Value> | undefined,
 ): Value | null {
 	return result?.kind === "selected" ? result.value : null;
-}
-
-function diagnosticLines(loaded: LoadedStarshipConfig, includeSummary: boolean): string[] {
-	const diagnostics = loaded.diagnostics
-		.slice(0, 8)
-		.map((item) => `${safeText(item.path || "root")}: ${safeText(item.message)}`);
-	const remaining = loaded.diagnostics.length - diagnostics.length;
-	return [
-		...(includeSummary ? [`Health: ${configurationHealth(loaded)}`] : []),
-		...(diagnostics.length > 0 ? diagnostics : ["No configuration warnings."]),
-		...(remaining > 0 ? [`${remaining} additional warnings not shown.`] : []),
-	];
-}
-
-interface ConfigurationPresentation {
-	state: string;
-	source: string;
-	health: string;
-	restoreDisabled: boolean;
-	restoreDescription: string;
-}
-
-function configurationPresentation(loaded: LoadedStarshipConfig): ConfigurationPresentation {
-	const healthyMissing =
-		loaded.source === "built-in" &&
-		loaded.rawDocument === undefined &&
-		loaded.diagnostics.length === 0;
-	const savedBuiltIn = loaded.source === "user" && loaded.rawDocument === BUILT_IN_EXAMPLE;
-	const activePreset = presetForDocument(loaded.rawDocument);
-	const fallback = loaded.source === "built-in" && loaded.diagnostics.length > 0;
-	return {
-		state: healthyMissing
-			? "Built-in defaults"
-			: savedBuiltIn
-				? "Saved built-in configuration"
-				: activePreset
-					? `${activePreset.label} preset`
-					: fallback
-						? "Built-in fallback"
-						: "Custom configuration",
-		source: healthyMissing
-			? "No settings file"
-			: activePreset
-				? "Bundled preset"
-				: loaded.source === "user"
-					? "User file"
-					: "Built-in fallback",
-		health: configurationHealth(loaded),
-		restoreDisabled: healthyMissing || savedBuiltIn,
-		restoreDescription: healthyMissing
-			? "Already using defaults · no file to replace"
-			: savedBuiltIn
-				? "Built-in configuration already saved"
-				: fallback
-					? "Preview before replacing invalid settings"
-					: "Preview before replacing the document",
-	};
-}
-
-function configurationHealth(loaded: LoadedStarshipConfig): string {
-	const errors = loaded.diagnostics.filter((item) => item.severity === "error").length;
-	if (errors > 0) return `${errors} error${errors === 1 ? "" : "s"}`;
-	const warnings = loaded.diagnostics.length;
-	return warnings === 0 ? "Healthy" : `${warnings} warning${warnings === 1 ? "" : "s"}`;
 }
 
 function showStatus(ctx: ExtensionCommandContext, options: StarshipCommandOptions) {
