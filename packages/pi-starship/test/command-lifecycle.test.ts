@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTuiHarness } from "@narumitw/pi-tui-kit/testing";
@@ -310,6 +310,100 @@ test("session shutdown disposes an open preset preview without saving", async ()
 	}
 });
 
+test("session replacement disposes an open reload preview without applying stale work", async () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-starship-replace-reload-preview-"));
+	const path = join(root, "pi-starship.toml");
+	const previous = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = root;
+	writeFileSync(path, "format = '$model'\n");
+	try {
+		const mock = createMockPi();
+		(mock.rawPi as typeof mock.rawPi & { exec: () => Promise<ExecResult> }).exec = async () =>
+			gitResult();
+		piStarship(mock.pi);
+		const tui = createTuiHarness({ width: 52, rows: 18 });
+		const oldContext = createMockContext({ mode: "tui", custom: tui.custom });
+		await emit(mock.events, "session_start", {}, oldContext.ctx);
+		const external = "format = '$provider'\nfuture = true\n";
+		writeFileSync(path, external);
+		const command = Promise.resolve(mock.commands.get("starship")?.handler("", oldContext.ctx));
+		await tui.waitForOpen();
+		for (let index = 0; index < 4; index += 1) tui.press("tui.select.down");
+		tui.press("tui.select.confirm");
+		await tui.waitForOpen();
+		for (let index = 0; index < 3; index += 1) tui.press("tui.select.down");
+		tui.press("tui.select.confirm");
+		await tui.waitForOpen();
+		assert.match(tui.render().join("\n"), /Reload preview/u);
+
+		const newContext = createMockContext({ mode: "tui", cwd: "/work/replacement" });
+		await emit(mock.events, "session_start", {}, newContext.ctx);
+		await command;
+		assert.equal(tui.isOpen, false);
+		assert.equal(readFileSync(path, "utf8"), external);
+		assert.doesNotMatch(
+			oldContext.notifications.map((item) => item.message).join("\n"),
+			/reloaded and applied/u,
+		);
+		await emit(mock.events, "session_shutdown", {}, newContext.ctx);
+	} finally {
+		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previous;
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("session shutdown rejects a reload confirmation that resolves after ownership ends", async () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-starship-shutdown-reload-confirm-"));
+	const path = join(root, "pi-starship.toml");
+	const previous = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = root;
+	writeFileSync(path, "format = '$model'\n");
+	try {
+		const mock = createMockPi();
+		(mock.rawPi as typeof mock.rawPi & { exec: () => Promise<ExecResult> }).exec = async () =>
+			gitResult();
+		piStarship(mock.pi);
+		const confirmation = deferred<boolean>();
+		const confirmationStarted = deferred<void>();
+		const tui = createTuiHarness({ width: 52, rows: 18 });
+		const context = createMockContext({
+			mode: "tui",
+			custom: tui.custom,
+			confirm: async () => {
+				confirmationStarted.resolve();
+				return confirmation.promise;
+			},
+		});
+		await emit(mock.events, "session_start", {}, context.ctx);
+		const external = "format = '$provider'\n";
+		writeFileSync(path, external);
+		const command = Promise.resolve(mock.commands.get("starship")?.handler("", context.ctx));
+		await tui.waitForOpen();
+		for (let index = 0; index < 4; index += 1) tui.press("tui.select.down");
+		tui.press("tui.select.confirm");
+		await tui.waitForOpen();
+		for (let index = 0; index < 3; index += 1) tui.press("tui.select.down");
+		tui.press("tui.select.confirm");
+		await tui.waitForOpen();
+		tui.press("tui.select.confirm");
+		await confirmationStarted.promise;
+
+		await emit(mock.events, "session_shutdown", {}, context.ctx);
+		confirmation.resolve(true);
+		await command;
+		assert.equal(readFileSync(path, "utf8"), external);
+		assert.doesNotMatch(
+			context.notifications.map((item) => item.message).join("\n"),
+			/reloaded and applied/u,
+		);
+	} finally {
+		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previous;
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 async function emit(
 	events: ReadonlyMap<string, Array<(...args: unknown[]) => unknown>>,
 	name: string,
@@ -338,4 +432,12 @@ async function flushAsync() {
 	await Promise.resolve();
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	await Promise.resolve();
+}
+
+function deferred<T>() {
+	let resolve!: (value: T | PromiseLike<T>) => void;
+	const promise = new Promise<T>((next) => {
+		resolve = next;
+	});
+	return { promise, resolve };
 }

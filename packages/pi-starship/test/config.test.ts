@@ -10,6 +10,7 @@ import fs, {
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse } from "smol-toml";
 import { test } from "vitest";
 import {
 	atomicSaveConfigDocument,
@@ -22,6 +23,8 @@ import {
 	settingsFilePath,
 	validateConfigDocument,
 } from "../src/config.js";
+import { projectEffectiveConfig, serializeEffectiveConfig } from "../src/effective-config.js";
+import { MODULE_DEFINITIONS } from "../src/modules/catalog.js";
 import { reachableModuleRequirements } from "../src/modules/index.js";
 import { presetForDocument, STARSHIP_PRESETS } from "../src/presets/catalog.js";
 
@@ -81,6 +84,46 @@ test("bundled presets are distinct, valid, and limited to local core modules", (
 		assert.equal(presetForDocument(`${preset.rawDocument}\n`), undefined);
 	}
 	assert.equal(presetForDocument(undefined), undefined);
+});
+
+test("effective configuration projects every public catalog field in stable order", () => {
+	const projected = projectEffectiveConfig(BUILT_IN_CONFIG);
+	assert.deepEqual(Object.keys(projected), ["format", "palettes", ...MODULE_NAMES]);
+	for (const definition of MODULE_DEFINITIONS) {
+		const table = projected[definition.name];
+		assert.equal(typeof table, "object", definition.name);
+		assert.equal(Array.isArray(table), false, definition.name);
+		assert.equal(Object.hasOwn(table as object, "formatAst"), false, definition.name);
+		assert.equal(Object.hasOwn(table as object, "format"), true, definition.name);
+		assert.equal(Object.hasOwn(table as object, "symbol"), true, definition.name);
+		assert.equal(Object.hasOwn(table as object, "disabled"), true, definition.name);
+		for (const option of Object.keys(definition.options ?? {})) {
+			assert.equal(Object.hasOwn(table as object, option), true, `${definition.name}.${option}`);
+		}
+	}
+	const serialized = serializeEffectiveConfig(BUILT_IN_CONFIG);
+	assert.equal(serialized, serializeEffectiveConfig(BUILT_IN_CONFIG));
+	assert.doesNotMatch(serialized, /formatAst|styleSelectors|maxStatuses/u);
+	assert.ok(serialized.indexOf("[brand]") < serialized.indexOf("[provider]"));
+	assert.ok(serialized.indexOf("[provider]") < serialized.indexOf("[model]"));
+	assert.deepEqual(normalizeConfig(parse(serialized)).config, BUILT_IN_CONFIG);
+});
+
+test("effective configuration normalizes custom public values without document-only data", () => {
+	const loaded = validateConfigDocument(
+		"/effective/pi-starship.toml",
+		`format = '$model$git_metrics$context$extension_status'\npalette = 'demo'\nfuture = 'document only'\n\n[palettes.demo]\nz = '#654321'\naccent = '#123456'\n\n[model]\nformat = '[$symbol$model]($style)'\nsymbol = 'M '\nstyle = 'bold accent'\ndisabled = false\ntruncation_length = 12\nmodel_aliases = { z = 'last', a = 'first' }\n\n[git_metrics]\nadded_style = 'green'\ndeleted_style = 'red'\ndisabled = false\n\n[[context.display]]\nthreshold = 0\nstyle = 'accent'\nhidden = false\n\n[extension_status]\nseparator = ' / '\nmax_statuses = 3\nicons = { demo = 'D' }\n`,
+	);
+	const serialized = serializeEffectiveConfig(loaded.config);
+	const reparsed = normalizeConfig(parse(serialized));
+	assert.deepEqual(reparsed.diagnostics, []);
+	assert.deepEqual(reparsed.config, loaded.config);
+	assert.doesNotMatch(serialized, /future|document only/u);
+	assert.match(serialized, /palette = "demo"/u);
+	assert.match(serialized, /max_statuses = 3/u);
+	assert.match(serialized, /truncation_length = 12/u);
+	assert.ok(serialized.indexOf('accent = "#123456"') < serialized.indexOf('z = "#654321"'));
+	assert.ok(serialized.indexOf('a = "first"') < serialized.indexOf('z = "last"'));
 });
 
 test("config path uses the agent directory and missing settings use built-in defaults", () => {

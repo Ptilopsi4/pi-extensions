@@ -635,7 +635,11 @@ test("main and Configuration menus expose current state and a clear Back path", 
 		hasUI: true,
 		custom: async (factory: unknown) => {
 			const inputs =
-				call === 0 ? ["\u001b[B", "\u001b[B", "\u001b[B", "\u001b[B", "\r"] : ["\u001b"];
+				call === 0
+					? ["\u001b[B", "\u001b[B", "\u001b[B", "\u001b[B", "\r"]
+					: call === 1
+						? ["\r"]
+						: ["\u001b"];
 			const driven = await driveTuiCustom(factory, inputs, 26);
 			screens[call++] = driven.renders.flat().join("\n");
 			assert.ok(driven.renders.flat().every((line) => visibleWidth(line) <= 26));
@@ -643,11 +647,11 @@ test("main and Configuration menus expose current state and a clear Back path", 
 		},
 	});
 	await mock.commands.get("starship")?.handler("", context.ctx);
-	assert.equal(call, 3);
+	assert.equal(call, 5);
 	assert.match(screens[1] ?? "", /Configuration/u);
-	assert.match(screens[1] ?? "", /State: Built-in defaults/u);
-	assert.match(screens[1] ?? "", /Source: No settings file/u);
-	assert.match(screens[2] ?? "", /Customize footer/u);
+	assert.match(screens[2] ?? "", /State: Built-in defaults/u);
+	assert.match(screens[2] ?? "", /Source: No settings file/u);
+	assert.match(screens[4] ?? "", /Customize footer/u);
 });
 
 test("Restore previews, confirms, and atomically applies the built-in footer", async () => {
@@ -798,7 +802,15 @@ test("Configuration and Help stay shallow and fit narrow terminals", async () =>
 			apply() {},
 			settingsPath: path,
 		});
-		const choices = ["Configuration", undefined, "Help", undefined, undefined];
+		const choices = [
+			"Configuration",
+			"Overview",
+			undefined,
+			undefined,
+			"Help",
+			undefined,
+			undefined,
+		];
 		const screens: string[] = [];
 		const context = createMockContext({
 			mode: "tui",
@@ -809,7 +821,7 @@ test("Configuration and Help stay shallow and fit narrow terminals", async () =>
 			},
 		});
 		await mock.commands.get("starship")?.handler("", context.ctx);
-		assert.equal(screens.length, 5);
+		assert.equal(screens.length, 7);
 		assert.match(screens.join("\n"), /1 warning/u);
 		assert.match(screens.join("\n"), /Configuration/u);
 		assert.match(screens.join("\n"), /pi-starship help/u);

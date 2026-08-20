@@ -82,8 +82,15 @@ Its textual states distinguish **Showing**, **Empty**, **Disabled**, **Not in fo
 Module detail shows the current preview when available, description, root reference and reachability, format variables, style fields, display rules, and the known reason for absent output.
 Both views are read-only and never create or update the settings document.
 
-Configuration combines state, source, path, health, and diagnostics.
+Configuration contains **Overview**, **Effective configuration**, **Settings document**, and **Reload from disk** on one nested level.
+Overview combines state, source, path, health, and bounded diagnostics.
+Effective configuration shows deterministic catalog-ordered public TOML from the normalized state currently in use; comments, unknown fields, parser ASTs, and private runtime selectors are excluded.
+Settings document shows the exact loaded UTF-8 text through a terminal-safe, cell-aware read-only review without changing the raw payload.
 A healthy missing file is shown as **Built-in defaults**, an exact bundled document is shown as its named preset, and **Built-in fallback** is reserved for read or parse errors.
+Reload from disk reads only after the explicit action, validates and previews the current external state from the existing runtime snapshot, and asks for separate confirmation before changing the active session.
+A deleted document is a valid previewable transition to built-in defaults and creates no file.
+An unchanged document is a no-op, while read or parse failure, cancellation, disposal, external changes after preview, session replacement, shutdown, or runtime apply failure preserves the prior effective footer and every file byte.
+Reload re-reads immediately after confirmation and rejects a different external snapshot; it does not claim cross-process locking or continuing synchronization with later edits.
 Restore is disabled when no settings document exists or the exact built-in document is already saved.
 For a custom or invalid document, Restore previews the result and warns that the complete document, including custom settings, unknown fields, and comments, will be replaced without a post-success backup before asking for confirmation.
 
@@ -655,11 +662,11 @@ Package's explicitly documented Cargo lookup is the only ancestor walk and is ca
 
 The standard main menu keeps seven goals on one level: **Customize footer**, **Presets**, **Explain footer**, **Modules**, **Configuration**, **Help**, and **Restore built-in…**.
 It shows whether the footer uses built-in defaults, a saved built-in document, a named preset, a custom document, or an error-driven fallback, together with the current health.
-Presets, Explain, and Modules are menu-only paths; they do not add textual subcommands or change RPC, print, or JSON protocols.
+Presets, Explain, Modules, and the nested Configuration capabilities are menu-only paths; they do not add textual subcommands or change RPC, print, or JSON protocols.
 Restore remains last and unavailable when there is no document to replace.
 
-The TOML editor, adaptive live footer previews, Explain view, and searchable module inspector remain specialized extension UI.
-Their hints follow Pi's injected keybindings; list and detail content stay bounded across terminal resize.
+The TOML editor, adaptive live footer previews, Explain view, searchable module inspector, and Configuration document reviews remain specialized extension UI.
+Their hints follow Pi's injected keybindings; list, detail, and exact-document content stay bounded across terminal resize.
 Escape returns from detail or to the main menu, while Ctrl+C closes the whole workflow.
 
 The direct routes accept no trailing arguments.
@@ -692,7 +699,9 @@ Keep `extension_status` last in the catalog so arbitrary third-party statuses fo
 - `src/pi-starship.ts` — authoritative extension lifecycle, cached refresh binding, live preview, and footer.
 - `src/usage.ts` — native-aligned session usage and cache aggregation.
 - `src/command-contract.ts` — lightweight command routes and completions loaded at startup.
-- `src/commands.ts` — lazily loaded menu, preview/confirmation flow, diagnostics, and compatibility routes.
+- `src/commands.ts` — lazily loaded top-level menu, preview/confirmation workflows, and compatibility routes.
+- `src/command-configuration.ts` — nested configuration presentation, exact document views, and safe runtime-only disk reload.
+- `src/effective-config.ts` — explicit catalog-ordered public TOML projection and deterministic serialization.
 - `src/command-preset-picker.ts` — lifecycle-owned preset cursor and temporary footer-preview UI.
 - `src/presets/` — bundled complete TOML documents and stable preset metadata.
 - `src/command-inspector.ts` — adaptive Explain and searchable read-only module inspection surfaces.
