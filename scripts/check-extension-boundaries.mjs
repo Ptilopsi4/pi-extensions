@@ -16,6 +16,7 @@ import {
 import { API } from "typescript/unstable/sync";
 
 const EXTENSION_PACKAGE_RE = /^@narumitw\/pi-/;
+const SUPPORTED_EXTENSION_ENTRIES = new Set(["./src/index.ts", "./dist/index.ts"]);
 const DEPENDENCY_FIELDS = [
 	"dependencies",
 	"devDependencies",
@@ -188,9 +189,35 @@ function checkPiEntrypoint(extensionPackage) {
 	}
 
 	const entries = extensionPackage.packageJson.pi?.extensions;
-	if (!Array.isArray(entries) || entries.length !== 1 || entries[0] !== "./src/index.ts") {
+	const declaredEntry = Array.isArray(entries) && entries.length === 1 ? entries[0] : undefined;
+	if (typeof declaredEntry !== "string" || !SUPPORTED_EXTENSION_ENTRIES.has(declaredEntry)) {
 		failures.push(
-			`${relative(extensionPackage.packagePath)} pi.extensions must be ["./src/index.ts"].`,
+			`${relative(extensionPackage.packagePath)} pi.extensions must be ["./src/index.ts"] or ["./dist/index.ts"].`,
+		);
+		return;
+	}
+
+	if (declaredEntry === "./src/index.ts") {
+		if (!extensionPackage.packageJson.files?.includes("src")) {
+			failures.push(
+				`${relative(extensionPackage.packagePath)} source entrypoint must publish src.`,
+			);
+		}
+		return;
+	}
+
+	if (!extensionPackage.packageJson.files?.includes("dist")) {
+		failures.push(`${relative(extensionPackage.packagePath)} dist entrypoint must publish dist.`);
+	}
+	if (!extensionPackage.packageJson.scripts?.build) {
+		failures.push(
+			`${relative(extensionPackage.packagePath)} dist entrypoint must define a build script.`,
+		);
+	}
+	const prepack = extensionPackage.packageJson.scripts?.prepack;
+	if (typeof prepack !== "string" || !/(?:^|\s)npm run build(?:\s|$)/u.test(prepack)) {
+		failures.push(
+			`${relative(extensionPackage.packagePath)} dist entrypoint prepack must run the package build.`,
 		);
 	}
 }

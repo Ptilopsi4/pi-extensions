@@ -17,7 +17,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
-const extensionPath = resolve(import.meta.dirname, "../src/index.ts");
+const extensionPath = resolve(import.meta.dirname, "../dist/index.ts");
 
 async function createHarness(
 	responses,
@@ -164,7 +164,9 @@ async function createHarness(
 			agentDir,
 			extensions: result.extensionsResult.extensions.map((extension) => ({
 				path: extension.path,
+				commands: [...extension.commands.keys()],
 				handlers: [...extension.handlers.keys()],
+				tools: [...extension.tools.keys()],
 			})),
 			faux,
 			lifecycleEvents,
@@ -204,6 +206,21 @@ async function agentDirectoryIsolationScenario() {
 	const harness = await createHarness([]);
 	try {
 		assert.equal(process.env.PI_CODING_AGENT_DIR, harness.agentDir);
+		const workflowExtension = harness.extensions.find((extension) =>
+			extension.path.endsWith("/dist/index.ts"),
+		);
+		assert.ok(workflowExtension, "expected the declared generated Workflow entrypoint");
+		assert.deepEqual([...workflowExtension.commands].sort(), ["goal", "plan", "workflow"]);
+		assert.deepEqual([...workflowExtension.tools].sort(), [
+			"goal_blocked",
+			"goal_complete",
+			"goal_wait",
+			"plan_mode_complete",
+			"plan_mode_question",
+		]);
+		for (const event of ["agent_end", "context", "session_shutdown", "session_start"]) {
+			assert.ok(workflowExtension.handlers.includes(event), `expected ${event} handler`);
+		}
 	} finally {
 		await harness.cleanup();
 	}
