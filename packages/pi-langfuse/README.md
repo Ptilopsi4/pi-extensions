@@ -40,7 +40,12 @@ pi -e ./packages/pi-langfuse
 
 The Langfuse v4 SDK requires Node.js 20 or newer.
 
-## ⚙️ Configuration
+## 🚀 Quick start
+
+Run `/langfuse`, choose the setup action, enter the Langfuse credentials, and restart Pi.
+Subsequent agent runs are traced according to the saved content-capture and metadata settings.
+
+## ⚙️ Settings
 
 Run the interactive manager, then choose **Set up Langfuse for this Pi agent directory** or **Update Langfuse for this Pi agent directory**:
 
@@ -139,7 +144,7 @@ At run start, the extension performs bounded, non-shell Git lookups in `ctx.cwd`
 
 Completed observations are exported in batches while Pi remains live. Neither `agent_end` nor `agent_settled` waits for Langfuse network I/O. To wait for completed exports, run `/langfuse` and choose **Flush completed traces for this session**; quit shutdown also drains the provider.
 
-## 💬 Command
+## 💬 Commands
 
 ```text
 /langfuse

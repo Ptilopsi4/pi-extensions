@@ -59,7 +59,7 @@ and the local workspace at the same time.
 
 When the active model is unsupported, compaction remains entirely Pi-native.
 
-## 💬 Command
+## 💬 Commands
 
 ```text
 /codex-compact
@@ -184,7 +184,7 @@ An individually oversized media item is dropped rather than making the session e
 oldest fitting text item may be partially truncated to preserve newer context. These hard byte
 ceilings are intentionally not configurable.
 
-## 🚧 Known limitations
+## 🚧 Limitations
 
 - The wire contract is undocumented and can change independently of Pi or this package. Keep
   backups of important sessions.

@@ -133,7 +133,7 @@ Deleting a message removes it from canonical `pi-recall.jsonl`. It is not secure
 
 Terminal controls are removed from labels, previews, metadata, and errors before display. Full review content is passed through Pi TUI Kit's sanitized review renderer. The raw stored text is not modified merely for display.
 
-## 🚧 Experimental limitations
+## 🚧 Limitations
 
 - No tags, saved-query persistence, message editing, reordering, batch deletion, import/export, automatic expiry, or automatic context injection.
 - No cross-session transcript browser: only previously saved records can be recalled across sessions.

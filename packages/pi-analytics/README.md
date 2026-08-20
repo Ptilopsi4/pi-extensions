@@ -91,7 +91,7 @@ A tool call starts at Pi's `tool_execution_start` event and finishes at `tool_ex
 
 Pi exposes HTTP responses and final assistant failures, not every provider-SDK transport retry. The dashboard therefore labels these values as **observed provider errors**. It reports HTTP 429 and 5xx counts; conservative DNS, timeout, connection, TLS, network, and provider categories; recovered errors; and terminal failures. Error messages are classified in memory and discarded.
 
-## 💬 Command
+## 💬 Commands
 
 ```text
 /analytics

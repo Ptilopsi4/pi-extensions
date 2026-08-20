@@ -77,7 +77,20 @@ Keep **All delegation methods** when an explicit blocking workflow or synchronou
 
 Async-first delegation still requires useful parallel main-agent work, clear worker ownership, and a supported completion path.
 
-## 🛠️ Pi tool
+## 💬 Commands
+
+- `/subagents` opens the current-session manager in TUI mode and reports bounded status in RPC mode.
+- `/subagents settings` configures target locations, trusted resources, and async completion delivery.
+- `/subagents status` shows current-session and configured values with their sources.
+- `/subagents help` summarizes the command surface and isolation limits.
+
+## ⚙️ Settings
+
+Use `/subagents settings` for target location, trust, consultation resource, and detached-completion preferences.
+Use `/subagents` → **Advanced settings** for delegation workflow, agent tool permissions, and runtime limits.
+Settings are stored in `~/.pi/agent/pi-subagents.json`; the detailed sections below document precedence, reload requirements, and safety behavior.
+
+## 🛠️ Tools
 
 `pi-subagents` registers seven tools by default. Run `/subagents`, choose **Change delegation**, review the concrete tool changes, then select **Save and reload** to apply one of these workflows:
 

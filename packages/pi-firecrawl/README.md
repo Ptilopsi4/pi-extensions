@@ -43,7 +43,12 @@ FIRECRAWL_API_KEY=fc-... pi -e ./packages/pi-firecrawl
 
 The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 
-## ⚙️ Configuration
+## 🚀 Quick start
+
+Set `FIRECRAWL_API_KEY`, start Pi with the extension, and ask the agent to load the Firecrawl capability needed for the task.
+Use `/firecrawl` to review configuration and control which capability tools may be loaded.
+
+## ⚙️ Settings
 
 Set a Firecrawl API key before running Pi:
 
@@ -59,7 +64,7 @@ export FIRECRAWL_API_URL=https://api.firecrawl.dev/v1
 
 `FIRECRAWL_BASE_URL` is also accepted for compatibility. The extension never logs or displays the API key.
 
-## 🛠️ Pi tools
+## 🛠️ Tools
 
 - `firecrawl_load` — find and load Firecrawl capabilities relevant to a web research task.
 - `firecrawl_scrape` — scrape a single URL and return requested formats such as markdown, HTML, links, screenshots, or JSON.
@@ -103,7 +108,7 @@ removed during session shutdown or reload. Tool-result metadata contains only si
 information rather than a duplicate of the raw Firecrawl response. Oversized Firecrawl error bodies
 are bounded in the same way.
 
-## 💬 Command
+## 💬 Commands
 
 ```text
 /firecrawl
@@ -170,7 +175,7 @@ The first subsequent settings save writes the canonical file. If both files exis
 `pi-firecrawl.json` wins and the legacy file is ignored. The legacy filename is
 deprecated and will be removed in a future major release.
 
-## 🚀 Examples
+## 🧪 Examples
 
 Scrape a page as markdown:
 

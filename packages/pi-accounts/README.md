@@ -52,7 +52,12 @@ Try this package locally from the repository root:
 pi -e ./packages/pi-accounts
 ```
 
-## 🚀 Usage
+## 🚀 Quick start
+
+Run `/accounts` in TUI or RPC mode, then choose a provider action from the account manager.
+Use the manager to log in, switch accounts, restore Pi's default login, or remove a saved account.
+
+## 💬 Commands
 
 Open the interactive account manager:
 

@@ -79,7 +79,7 @@ After the required consent and optional launch confirmation, Pi Fleet:
 
 If the terminal creates a split but the child does not become ready, Pi Fleet leaves the visible split open and reports a partial launch instead of closing a potentially useful pane.
 
-## 🧰 Tools
+## 🛠️ Tools
 
 ### `session_spawn`
 
@@ -187,7 +187,7 @@ Right and down use Zellij's native split directions.
 Left and up create the corresponding native pane and then use pane-targeted `move-pane` placement.
 A placement failure is a partial launch because the child pane may already be running and remains visible.
 
-## ⚙️ Settings and lifecycle
+## ⚙️ Settings
 
 Open `/fleet` and choose **Settings**.
 Pi Fleet stores user settings in `<getAgentDir()>/pi-fleet.json`, normally `~/.pi/agent/pi-fleet.json`:
@@ -250,7 +250,7 @@ Enabling them permits trusted invite holders to start paid model turns that may 
 - A same-user process or another privileged Pi extension is outside the security boundary and may inspect process arguments, private runtime files, memory, or environment.
 - Pi Fleet provides explicit group separation, not a sandbox against the operating-system user.
 
-## 🧪 Experimental limitations
+## 🚧 Limitations
 
 - Local same-user communication only.
 - POSIX Unix-socket transport only.
