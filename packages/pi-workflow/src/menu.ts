@@ -40,7 +40,7 @@ export function createWorkflowMenu(controller: WorkflowMenuController) {
 		screens: {
 			main: ({ state }) => ({
 				kind: "actions",
-				title: "Workflow · Experimental",
+				title: "Workflow",
 				lines: summaryLines(state),
 				items: [
 					{

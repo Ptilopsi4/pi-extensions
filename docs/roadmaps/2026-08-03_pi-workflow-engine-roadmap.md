@@ -53,8 +53,8 @@ same stage engine only when concrete consumer evidence supports their semantics.
 
 ## Current State
 
-- No `pi-workflow-engine` package, shared workflow engine, or standalone `pi-workflow` extension
-  exists.
+- No `pi-workflow-engine` package or shared workflow engine exists.
+- `pi-workflow` exists as a stable, independently installable combined extension that currently owns package-local Plan and Goal source snapshots instead of consuming the planned engine.
 - `pi-plan-mode` owns planning, approval, restrictive tools, exact plan persistence,
   compaction-safe active-plan context, and manual implementation clearing. Its accepted plan can be
   up to 50,000 characters.
@@ -207,9 +207,8 @@ remains the sole agent, session, compaction, retry, generic RPC, and UI runtime.
 
 ### Phase 2: Build packages/pi-workflow from both stages
 
-- [ ] `packages/pi-workflow` exists as an independently installable extension with a visible
-  experimental warning, unique `/workflow` command and tool namespace, one state-aware manager, and
-  no dependency on another extension package.
+- [x] `packages/pi-workflow` exists as an independently installable stable extension with a `/workflow` command, one state-aware manager, and no dependency on another extension package.
+  It currently uses package-local Plan and Goal source snapshots as an interim architecture.
 - [ ] The extension binds its commands, tools, and TUI to the same engine service without adding a
   dedicated Workflow RPC setting, public event channel, or automation protocol.
 - [ ] Service-level coverage proves start, snapshots, planning answers, approval or revision,
@@ -251,7 +250,7 @@ internal service boundary remains available if future automation evidence justif
   logic is removed rather than retained in parallel.
 
 **Outcome:** pi-goal becomes a focused product adapter over the same managed-execution stage already
-proven by experimental pi-workflow.
+proven by pi-workflow.
 
 ### Phase 4: Make pi-plan-mode use the planning stage
 
@@ -273,7 +272,7 @@ proven by experimental pi-workflow.
 **Outcome:** Both focused extensions share the engine with pi-workflow while keeping distinct product
 roles: planning-only, goal-only, and combined end-to-end workflow.
 
-### Phase 5: Soak pi-workflow and decide whether it is the primary successor
+### Phase 5: Validate stable coexistence and decide the successor role
 
 - [ ] Co-installation tests cover every supported combination of pi-workflow, pi-plan-mode, and
   pi-goal; unique commands and tools remain distinguishable, restrictive policy is never widened, and
@@ -281,24 +280,20 @@ roles: planning-only, goal-only, and combined end-to-end workflow.
 - [ ] Representative real tasks establish whether pi-workflow improves completion, recovery, and
   cleanup without making focused planning or direct Goal usage harder; unsupported adoption targets
   remain explicit unknowns.
-- [ ] Menu structure, defaults, pause/resume behavior, settings ownership, status language,
-  compatibility, and migration guidance receive an explicit stable-product decision based on soak
-  evidence.
+- [x] Maintainers approve `pi-workflow` as a stable extension with its current menu, defaults, settings ownership, status language, and compatibility surface.
 - [ ] Real consumers determine whether blocked-proposal review, continuation leases, or any additional
   supervision authority from the earlier pi-goal cross-extension proposal belongs in the shared
   workflow service; absent evidence, those hooks remain deferred.
 - [ ] Process-level automation evidence determines whether the internal service is sufficient or a
   separately proposed RPC adapter or upstream Pi capability is justified; the engine does not add a
   second JSONL server to close that platform gap.
-- [ ] Maintainers explicitly decide whether pi-workflow becomes the primary successor, remains a third
-  focused option, or stays experimental. pi-plan-mode and pi-goal remain active throughout the soak
-  and are deprecated only by a separate approved decision.
+- [x] Maintainers designate pi-workflow as a stable third option while pi-plan-mode and pi-goal remain active.
+  Any primary-successor selection or predecessor deprecation still requires a separate approved decision.
 - [ ] Engine, extension, and compatibility checks plus package dry runs and representative Pi smokes
   establish release readiness without implying publication, tags, visibility changes, or version
   changes.
 
-**Outcome:** The repository has an evidence-backed decision on whether pi-workflow should become the
-primary product, with a deliberate coexistence or migration path for both focused predecessors.
+**Outcome:** The repository supports pi-workflow as a stable combined product while gathering evidence for any later primary-successor or predecessor-migration decision.
 
 ### Future option: Decide whether Workflow RPC is justified
 
@@ -383,14 +378,13 @@ validated usage baseline.
 - A dedicated Workflow RPC is not part of the current engine or pi-workflow delivery scope. It may be
   reconsidered only after a concrete consumer establishes the caller, process boundary, operations,
   transport, ownership, and recovery requirements.
-- `packages/pi-workflow` is the approved initial combined product and must show a user-facing
-  warning while its command, settings, workflow behavior, and persisted state remain experimental.
+- `packages/pi-workflow` is an approved stable combined product and no longer shows a package-level experimental warning.
 - pi-plan-mode remains focused on planning and retains its existing ordinary implementation handoff;
   it does not become a second complete Plan-to-Execution product.
 - It is unknown whether overlapping `/workflow`, `/goal`, and `/plan` runs should be rejected globally
   or serialized. Phase 5 requires an explicit decision and verification.
-- It is unknown whether pi-workflow should become the primary successor, remain a third option, or
-  stay experimental. No predecessor deprecation is implied before Phase 5 evidence and approval.
+- It is unknown whether pi-workflow should become the primary successor or remain a stable third option.
+  No predecessor deprecation is implied without separate evidence and approval.
 - Broader workflows are deferred beyond this roadmap until concrete consumer demand proves reusable
   stage semantics.
 - No delivery dates, owners, staffing assumptions, publication schedule, or release commitment were
@@ -419,6 +413,7 @@ validated usage baseline.
   justify a public automation contract. Keep one clean internal workflow service, preserve the
   existing pi-goal managed-run contract only as compatibility behavior, and reconsider a Workflow
   RPC adapter after concrete consumer and transport evidence receives a separate approved proposal.
+- **2026-08-20 — Promote pi-workflow to stable:** Treat the combined extension as a stable third option, remove its package-level experimental warning, and keep pi-plan-mode and pi-goal active pending any separate successor decision.
 - **2026-08-03 — Reuse supervision lessons without reviving stale channels:** Carry forward PR #464's
   provenance, exact ownership, structured replies, timeout fallback, and real-consumer gates. Defer
   blocked review and continuation leases, and do not restore removed `pi-goal:rpc:*` channels.
