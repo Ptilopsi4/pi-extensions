@@ -42,8 +42,8 @@ A practical workflow is:
 - A clean LSP result does not replace the project's formatter, linter, type checker, build, or tests.
 - This project has not yet demonstrated through benchmarks that LSP improves agent task success, latency, or tool usage.
 
-This outcome-first framing is informed by [Eric Traut's comment on LSP integration for coding agents](https://github.com/openai/codex/issues/8745#issuecomment-3713058579):
-the protocol was not designed specifically for coding agents, and repository-native checks may already provide much of the desired verification value.
+This outcome-first framing is informed by [Eric Traut's comment on LSP integration for coding agents](https://github.com/openai/codex/issues/8745#issuecomment-3713058579).
+The comment explains that the protocol was not designed specifically for coding agents and that repository-native checks may already provide much of the desired verification value.
 
 ## 📦 Install
 

@@ -353,18 +353,17 @@ There is no hidden compatibility overlay or automatic migration.
 
 ### Usage semantics
 
-- `tokens`, `cache`, and `cost` total every usage-bearing session entry, matching Pi's native footer:
-  assistant messages, nested-LLM tool results, compactions, and branch summaries, including abandoned branches retained in the session.
+- `tokens`, `cache`, and `cost` total every usage-bearing session entry, matching Pi's native footer.
+  This includes assistant messages, nested-LLM tool results, compactions, and branch summaries, including abandoned branches retained in the session.
 - Cache `$read` and `$write` are cumulative.
-  `$rate` uses only the latest assistant prompt:
-`cacheRead / (input + cacheRead + cacheWrite) * 100`.
-The module is empty when Pi has reported no cache reads or writes.
+  `$rate` uses only the latest assistant prompt with `cacheRead / (input + cacheRead + cacheWrite) * 100`.
+  The module is empty when Pi has reported no cache reads or writes.
 - `cache` is disabled and absent from the built-in root.
   Enable it and add `$cache` to a custom root format (or use `$all`) to display it.
 - Context `$percentage` uses native one-decimal precision.
-  Its default display hides values below 30%;
-customize `[[context.display]]` when lower values should remain visible.
-The module name remains `context`, not `context_usage`.
+  Its default display hides values below 30%.
+  Customize `[[context.display]]` when lower values should remain visible.
+  The module name remains `context`, not `context_usage`.
 - Subscription-backed OAuth models and `kimi-coding` set cost `$subscription` to `(sub)`.
   The dollar value is usage cost, not proof of an amount billed under a subscription.
 - Pi's public extension API does not expose the current auto-compaction toggle, so pi-starship cannot reliably provide the native `(auto)` marker.
@@ -412,8 +411,8 @@ Upstream Starship represents its unlimited default as `2^63 - 1`; pi-starship us
 
 Conda retains the last path component by default; `0` keeps the complete environment path.
 Hostname trimming runs before exact alias lookup, matching Starship.
-These are display transformations only:
-collectors retain bounded, control-sanitized source metadata.
+These transformations affect display only.
+Collectors retain bounded, control-sanitized source metadata.
 
 ### Model aliases and truncation
 
@@ -532,8 +531,8 @@ Footer rendering and previews read only the immutable cached snapshot and perfor
 
 **Breaking migration:** `$git_branch.$pr` has been removed without a compatibility alias or automatic migration.
 Replace it with root `$github_pr` and an optional `[github_pr]` table.
-If `pi-github-pr` remains installed, its independent `github-pr` status can also appear under `$extension_status`;
-disable or remove that extension when adopting the native module to avoid duplicate information.
+If `pi-github-pr` remains installed, its independent `github-pr` status can also appear under `$extension_status`.
+Disable or remove that extension when adopting the native module to avoid duplicate information.
 
 ### 📦 Package and language modules
 
@@ -574,9 +573,9 @@ These modules read inert local metadata only.
 They do **not** contact Docker, a Kubernetes cluster, a Terraform/OpenTofu backend, a cloud API, an OAuth flow, a credential helper, or a metadata service.
 The deployment/cloud safety review retained opt-in root behavior: context labels may be sensitive and there is no usage evidence justifying more default footer density.
 
-- `docker_context`: `DOCKER_CONTEXT`, then `DOCKER_CONFIG/config.json` or `~/.docker/config.json`;
-`default` is suppressed.
-`only_with_files` and detection arrays are supported.
+- `docker_context`: `DOCKER_CONTEXT`, then `DOCKER_CONFIG/config.json` or `~/.docker/config.json`.
+  The `default` context is suppressed.
+  `only_with_files` and detection arrays are supported.
 - `kubernetes`: at most `max_config_files` (default 8) from `KUBECONFIG` or `~/.kube/config`, with first-wins merge semantics.
   Only context, namespace, cluster name, and user name are selected.
   Exact `context_aliases`, `namespace_aliases`, `cluster_aliases`, and `user_aliases` apply.
@@ -590,8 +589,8 @@ The deployment/cloud safety review retained opt-in root behavior: context labels
   Exact project/region aliases are supported.
 - `azure`: the default local `azureProfile.json` subscription name.
   `show_username` defaults to `false`; exact subscription aliases are supported.
-- `openstack`: `OS_CLOUD`, `OS_PROJECT_NAME`, or the selected `clouds.yaml` `auth.project_name` only;
-  exact cloud/project aliases are supported.
+- `openstack`: `OS_CLOUD`, `OS_PROJECT_NAME`, or the selected `clouds.yaml` `auth.project_name` only.
+  Exact cloud/project aliases are supported.
 
 Cloud files often colocate credentials with labels.
 Parsers allowlist fields while reading and discard source documents; token, key, password, auth URL, tenant, and credential-derived duration fields never enter snapshots, diagnostics, notifications, or rendered output.
@@ -633,8 +632,8 @@ Workspace, Git, and GitHub PR readers start only in TUI sessions and only for re
 Root format reachability, `$all`, module `disabled`, and module-format variables determine file and command requirements.
 Workspace/Git refreshes run at session start, after accepted settings, branch changes, tool/turn completion, and a 30-second fallback.
 GitHub PR uses the narrower lifecycle and 60-second network refresh described above.
-One read runs with at most one latest pending refresh;
-immutable snapshot equality suppresses redraws, and session/request generations reject stale results.
+One read runs with at most one latest pending refresh.
+Immutable snapshot equality suppresses redraws, and session or request generations reject stale results.
 Shutdown, replacement, footer disposal, branch changes, and accepted settings abort active command work before starting replacements; disabling `github_pr` also stops its query and timers.
 Bounded local filesystem operations may finish, but stale generations cannot publish them.
 Execution identity is retained rather than re-read by the periodic fallback.

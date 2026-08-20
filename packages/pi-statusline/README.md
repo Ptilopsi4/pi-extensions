@@ -138,8 +138,8 @@ If the last remaining segment is itself wider than the row, that row renders emp
 
 - `context` renders one-decimal current usage and the model window, such as `2.4%/272k`.
   After compaction it can temporarily render `?/272k` until the next valid assistant response.
-- `tokens`, `cache`, and `cost` total every usage-bearing session entry, matching Pi's native footer:
-  assistant messages, nested-LLM tool results, compactions, and branch summaries, including abandoned branches retained in the session.
+- `tokens`, `cache`, and `cost` total every usage-bearing session entry, matching Pi's native footer.
+  This includes assistant messages, nested-LLM tool results, compactions, and branch summaries, including abandoned branches retained in the session.
 - Cache tokens are `R<read>`, `W<write>`, and `CH<rate>`.
   `R` and `W` are cumulative; `CH` uses only the latest assistant prompt: `cacheRead / (input + cacheRead + cacheWrite) * 100`.
 - Subscription-backed OAuth models and `kimi-coding` append `(sub)` to cost.
@@ -314,8 +314,8 @@ Icons resolve in this order:
 6. Generic `🔌` fallback.
 
 Set an icon to `""` to hide only the icon.
-Wildcards match colon namespaces, not slash-delimited keys;
-configure slash keys exactly.
+Wildcards match colon namespaces, not slash-delimited keys.
+Configure slash keys exactly.
 Compatibility fallbacks retain `codex-usage`, `pisync`, and `unknown-error-retry`; an explicit canonical key wins.
 
 For interoperable extensions, prefer one aggregated key or a stable coexistence slot:

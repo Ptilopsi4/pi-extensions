@@ -217,8 +217,8 @@ Message entry compatibility is cumulative:
 - Version 1 stores role and creation timestamp.
 - Version 2 adds the previous message-stamp timestamp for live date-boundary formatting.
 - Version 3 assistant entries add completion and optional first-content observations.
-- Version 4 assistant entries add a sanitized metadata snapshot when metadata capture is enabled;
-  timing remains optional so a valid metadata stamp survives a backwards timing clock.
+- Version 4 assistant entries add a sanitized metadata snapshot when metadata capture is enabled.
+  Timing remains optional so a valid metadata stamp survives a backwards timing clock.
 - Version 1 tool entries store only bounded association/timing/outcome data.
 
 Existing versions remain readable.

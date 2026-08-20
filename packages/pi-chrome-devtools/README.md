@@ -204,8 +204,8 @@ The five actions stay on one level:
 - **Choose available browser tools…** — stage any combination of the five capabilities, then review the exact available/unavailable result before selecting **Apply tool changes**.
 - **Make all browser tools available…** or **Make all browser tools unavailable…** — preview the context-appropriate bulk change before applying it.
 - **Browser status** — inspect runtime, endpoint, launch mode, and the last launch attempt without probing the endpoint or starting Chrome.
-- **Browser settings** — immediately save the endpoint, auto-launch policy, or browser executable;
-inspect unpacked-extension paths and effective sources.
+- **Browser settings** — immediately save the endpoint, auto-launch policy, or browser executable.
+  Inspect unpacked-extension paths and effective sources.
 A deprecated environment override remains effective until removed even when its underlying JSON value changes.
 - **Help** — view command usage and return to the menu.
 

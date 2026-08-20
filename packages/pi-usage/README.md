@@ -114,8 +114,8 @@ Unlike `pi-codex-usage`, this successor intentionally has no Codex CLI fallback 
 Reset redemption is available only when Codex is the current provider and Pi's freshly resolved access token exactly matches its stored OpenAI Codex OAuth credential.
 `pi-usage` forwards only the bearer authorization and matching `chatgpt-account-id` to the official ChatGPT origin.
 API-key credentials, configured-but-not-current Codex accounts, account changes during the flow, and custom/proxy origins fail before mutation.
-Backend-provided titles and descriptions are sanitized for terminal display;
-opaque credit and account IDs are never shown or persisted by the extension.
+Backend-provided titles and descriptions are sanitized for terminal display.
+Opaque credit and account IDs are never shown or persisted by the extension.
 
 ### GitHub Copilot
 

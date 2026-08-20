@@ -108,8 +108,8 @@ nickname~7K2P-9D4M-HQ3T
 The nickname is editable.
 The 12-character identity tag is the first 60 bits of the SHA-256 digest of the authenticated DHT public key, encoded with Crockford Base32 and grouped `4-4-4`.
 The complete public key remains the protocol identity.
-If short tags collide in one room, the UI can extend them;
-the short tag is never an authorization boundary.
+If short tags collide in one room, the UI can extend them.
+The short tag is never an authorization boundary.
 
 A fingerprint establishes continuity for one pseudonymous key.
 It does **not** prove a person's real-world identity, prevent a user from creating many identities, or recover trust after the local identity is reset or lost.
@@ -173,8 +173,8 @@ Stored v1 public or private room ids are normalized to v2 in memory without rewr
 
 The identity seed and stored private invites are redacted from UI, notifications, status, and errors.
 On POSIX, settings are published with `0600` permissions.
-A missing file is a side-effect-free read;
-it is created only after an explicit first-use confirmation or settings change.
+A missing file is a side-effect-free read.
+It is created only after an explicit first-use confirmation or settings change.
 Saves are ordered within one Pi process, preserve unknown top-level and nested resume fields, and use a same-directory temporary file plus rename.
 Malformed, invalid, symlinked, non-regular, invalid UTF-8, or oversized files fail closed and remain unchanged.
 
@@ -220,8 +220,8 @@ Pi Chat performs bounded refresh and reconnect work but cannot promise a connect
 - Noise encrypts direct transport, but DHT infrastructure and direct peers may observe IP addresses, timing, and topic participation metadata.
   Pi Chat does not provide anonymity.
 - Anyone holding a private invite can join.
-  There is no member revocation in the initial protocol;
-  create a new room after an invite leak.
+  There is no member revocation in the initial protocol.
+  Create a new room after an invite leak.
 - Public slugs are guessable.
   Anyone may join, record, or repost public-room content.
 - A local session mute hides one signed origin while still forwarding valid events so a local preference does not partition the room.

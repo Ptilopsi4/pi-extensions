@@ -206,8 +206,8 @@ else if (confirmation.kind === "closed" && confirmation.reason === "close") retu
 ```
 
 TUI confirmation uses the standard bounded actions presentation: selecting the cancel row or pressing Escape returns `{ kind: "closed", reason: "back" }`, while Ctrl+C returns the same result with reason `"close"`.
-RPC uses one signal-aware `select()` request with explicit confirm and cancel rows;
-explicit cancel and protocol cancellation deterministically map to Back because Pi RPC does not expose a separate Ctrl+C dialog outcome.
+RPC uses one signal-aware `select()` request with explicit confirm and cancel rows.
+Explicit cancel and protocol cancellation deterministically map to Back because Pi RPC does not expose a separate Ctrl+C dialog outcome.
 Print and JSON return `unsupported`.
 Owner abort, session replacement, external TUI disposal, and failures remain distinct `stale` or `error` results.
 The Kit owns only this interaction lifecycle—the caller performs every confirmed side effect and must abort its owner signal on replacement or shutdown.
@@ -449,7 +449,7 @@ The kit owns this adapter because Pi's public `SettingsList` does not currently 
 
 Input screens submit through the existing action `value`.
 Validation, normalization, persistence, and product copy remain extension-owned.
-Rejection keeps the TUI draft available for correction;
+Rejection keeps the TUI draft available for correction.
 RPC reopens its signal-aware input dialog.
 
 ```ts
