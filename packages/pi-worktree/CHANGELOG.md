@@ -1,5 +1,11 @@
 # @narumitw/pi-worktree
 
+## 0.51.3
+
+### Patch Changes
+
+- dc4f90e: Load each extension from a generated source-mapped Jiti runtime while preserving first-use feature boundaries.
+
 ## 0.51.2
 
 ### Patch Changes
