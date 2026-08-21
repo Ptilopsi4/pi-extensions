@@ -1,0 +1,65 @@
+name: Feature request
+description: Suggest an improvement or new capability for a package in this repository.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve the project.
+        Please describe the need before proposing a specific implementation.
+
+  - type: input
+    id: package
+    attributes:
+      label: Package
+      description: Which existing package should own this feature, or are you proposing a new package?
+      placeholder: "For example: @narumitw/pi-example or new package"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What problem would this feature solve, and who would benefit from it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior from a user's perspective.
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Example usage
+      description: Show how the feature might be configured or used, if applicable.
+      render: shell
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any workarounds or alternative approaches you considered.
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add related issues, screenshots, references, or other useful details.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched the existing issues and did not find a duplicate request.
+          required: true
+        - label: This request describes one focused feature or improvement.
+          required: true
