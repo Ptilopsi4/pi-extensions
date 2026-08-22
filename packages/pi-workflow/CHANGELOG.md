@@ -1,5 +1,14 @@
 # @narumitw/pi-workflow
 
+## 0.6.1
+
+### Patch Changes
+
+- 5785cb4: Reuse Pi TUI Kit's questionnaire runner for the integrated Plan mode question tool.
+- 8540d0f: Simplify single-question TUI questionnaires with a plain header and immediate answer submission while retaining tabbed Review for multiple questions.
+- Updated dependencies [8540d0f]
+  - @narumitw/pi-tui-kit@0.57.1
+
 ## 0.6.0
 
 ### Minor Changes

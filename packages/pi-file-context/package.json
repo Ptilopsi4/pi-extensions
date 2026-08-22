@@ -1,6 +1,6 @@
 {
 	"name": "@narumitw/pi-file-context",
-	"version": "0.53.2",
+	"version": "0.53.3",
 	"description": "Experimental Pi extension for attaching file ranges and Git provenance as context.",
 	"type": "module",
 	"license": "MIT",
@@ -36,7 +36,7 @@
 		"prepack": "npm run build"
 	},
 	"dependencies": {
-		"@narumitw/pi-tui-kit": "^0.51.0"
+		"@narumitw/pi-tui-kit": "^0.57.1"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*",

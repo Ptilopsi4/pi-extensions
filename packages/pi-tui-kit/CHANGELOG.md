@@ -1,5 +1,11 @@
 # @narumitw/pi-tui-kit
 
+## 0.57.1
+
+### Patch Changes
+
+- 8540d0f: Simplify single-question TUI questionnaires with a plain header and immediate answer submission while retaining tabbed Review for multiple questions.
+
 ## 0.57.0
 
 ### Minor Changes
