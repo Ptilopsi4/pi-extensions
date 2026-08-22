@@ -9,6 +9,7 @@ The extension reads only PR metadata and remains passive, with no command, model
 ## ✨ Features
 
 - Shows compact PR number, checks, review state, and combined comment/review count.
+- Starts the initial refresh in the background without delaying Pi startup.
 - Refreshes once per minute and after agent turns.
 - Uses GitHub CLI authentication and repository resolution without storing a token.
 - Never reads or displays discussion bodies, review text, or review threads.
@@ -71,11 +72,11 @@ The extension automatically shows the current branch's pull request status and d
 
 The extension runs passively:
 
-- On session start, it checks the current branch PR and sets a compact statusline entry.
+- On session start, it begins checking the current branch PR in the background and sets a compact statusline entry when the check completes.
 - On Git branch change, it clears the old PR immediately and refreshes the new current branch.
 - While the session remains open, it refreshes that same current branch PR every 60 seconds and after each agent turn.
 - When an agent turn is aborted, it keeps the last successful PR status instead of treating cancellation as a GitHub failure.
-- On branch change, session replacement, or session shutdown, it cancels the previous refresh timer and any in-flight periodic request.
+- On branch change, session replacement, or session shutdown, it cancels the previous refresh timer and applicable in-flight initialization or refresh request.
 - On session shutdown, it clears the statusline entry.
 - If the directory has no GitHub PR, the statusline entry stays empty.
 - If `gh` is missing or unauthenticated, the statusline shows a short hint such as `PR gh missing` or `PR gh auth`.

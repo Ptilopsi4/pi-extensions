@@ -83,6 +83,8 @@ export default function githubPr(pi: ExtensionAPI, options: GithubPrOptions = {}
 		throw new RangeError("refreshIntervalMs must be a positive finite number");
 	}
 	const branchWatch: BranchWatchState = { generation: 0, request: 0, session: 0 };
+	const ownsSession = (session: number, sessionManager: ExtensionContext["sessionManager"]) =>
+		session === branchWatch.session && sessionManager === branchWatch.sessionManager;
 	const refreshStatus = async (
 		ctx: ExtensionContext,
 		signal?: AbortSignal,
@@ -107,73 +109,149 @@ export default function githubPr(pi: ExtensionAPI, options: GithubPrOptions = {}
 		return request;
 	};
 	const schedulePeriodicRefresh = (ctx: ExtensionContext, session: number) => {
-		cancelPeriodicRefresh(branchWatch);
+		cancelRefresh(branchWatch);
+		const generation = branchWatch.generation;
+		const sessionManager = ctx.sessionManager;
 		branchWatch.refreshTimer = setTimeout(async () => {
 			branchWatch.refreshTimer = undefined;
-			if (session !== branchWatch.session) return;
+			if (!ownsSession(session, sessionManager) || generation !== branchWatch.generation) return;
 			const controller = new AbortController();
 			branchWatch.refreshController = controller;
-			const request = await refreshStatus(ctx, controller.signal);
+			const request = await refreshStatus(ctx, controller.signal, generation);
 			if (branchWatch.refreshController === controller) {
 				branchWatch.refreshController = undefined;
 			}
-			if (session === branchWatch.session && request === branchWatch.request) {
+			if (
+				!controller.signal.aborted &&
+				ownsSession(session, sessionManager) &&
+				generation === branchWatch.generation &&
+				request === branchWatch.request
+			) {
 				schedulePeriodicRefresh(ctx, session);
 			}
 		}, refreshIntervalMs);
 		branchWatch.refreshTimer.unref?.();
 	};
 	const scheduleBranchRefresh = (ctx: ExtensionContext, session: number) => {
+		cancelInitialization(branchWatch);
 		branchWatch.generation += 1;
 		const generation = branchWatch.generation;
-		cancelPeriodicRefresh(branchWatch);
+		const sessionManager = ctx.sessionManager;
+		cancelRefresh(branchWatch);
 		clearExpiryTimer(branchWatch);
 		clearStatus(ctx);
 		if (branchWatch.timer) clearTimeout(branchWatch.timer);
 		branchWatch.timer = setTimeout(async () => {
 			branchWatch.timer = undefined;
-			if (generation !== branchWatch.generation) return;
-			const request = await refreshStatus(ctx, ctx.signal, generation);
-			if (session === branchWatch.session && request === branchWatch.request) {
+			if (!ownsSession(session, sessionManager) || generation !== branchWatch.generation) return;
+			const controller = new AbortController();
+			branchWatch.refreshController = controller;
+			const request = await refreshStatus(ctx, controller.signal, generation);
+			if (branchWatch.refreshController === controller) {
+				branchWatch.refreshController = undefined;
+			}
+			if (
+				!controller.signal.aborted &&
+				ownsSession(session, sessionManager) &&
+				generation === branchWatch.generation &&
+				request === branchWatch.request
+			) {
 				schedulePeriodicRefresh(ctx, session);
 			}
 		}, BRANCH_REFRESH_DEBOUNCE_MS);
+		branchWatch.timer.unref?.();
 	};
 	const closeBranchWatcher = () => {
+		cancelInitialization(branchWatch);
 		if (branchWatch.timer) clearTimeout(branchWatch.timer);
 		branchWatch.timer = undefined;
-		cancelPeriodicRefresh(branchWatch);
+		cancelRefresh(branchWatch);
 		clearExpiryTimer(branchWatch);
 		branchWatch.watcher?.close();
 		branchWatch.watcher = undefined;
 	};
-
-	pi.on("session_start", async (_event, ctx) => {
-		branchWatch.generation += 1;
-		branchWatch.session += 1;
-		branchWatch.sessionManager = ctx.sessionManager;
-		const session = branchWatch.session;
-		closeBranchWatcher();
-		const watcher = await createBranchWatcher(pi, ctx.cwd, ctx.signal, () => {
-			if (session === branchWatch.session) scheduleBranchRefresh(ctx, session);
+	const initializeSession = async (
+		ctx: ExtensionContext,
+		session: number,
+		generation: number,
+		controller: AbortController,
+	) => {
+		const sessionManager = ctx.sessionManager;
+		const watcher = await createBranchWatcher(pi, ctx.cwd, controller.signal, () => {
+			if (ownsSession(session, sessionManager)) scheduleBranchRefresh(ctx, session);
 		});
-		if (session !== branchWatch.session) {
+		if (
+			controller.signal.aborted ||
+			branchWatch.initializationController !== controller ||
+			!ownsSession(session, sessionManager)
+		) {
 			watcher?.close();
 			return;
 		}
 		branchWatch.watcher = watcher;
-		const request = await refreshStatus(ctx, ctx.signal);
-		if (session === branchWatch.session && request === branchWatch.request) {
-			schedulePeriodicRefresh(ctx, session);
+		if (generation !== branchWatch.generation) return;
+
+		const request = await refreshStatus(ctx, controller.signal, generation);
+		if (
+			controller.signal.aborted ||
+			branchWatch.initializationController !== controller ||
+			!ownsSession(session, sessionManager) ||
+			generation !== branchWatch.generation ||
+			request !== branchWatch.request
+		) {
+			return;
 		}
+		schedulePeriodicRefresh(ctx, session);
+	};
+
+	pi.on("session_start", (_event, ctx) => {
+		closeBranchWatcher();
+		branchWatch.generation += 1;
+		branchWatch.session += 1;
+		branchWatch.sessionManager = ctx.sessionManager;
+		clearStatus(ctx);
+		const session = branchWatch.session;
+		const generation = branchWatch.generation;
+		const controller = new AbortController();
+		branchWatch.initializationController = controller;
+		const initializationTask = initializeSession(ctx, session, generation, controller)
+			.catch(() => undefined)
+			.finally(() => {
+				if (branchWatch.initializationController === controller) {
+					branchWatch.initializationController = undefined;
+				}
+				if (branchWatch.initializationTask === initializationTask) {
+					branchWatch.initializationTask = undefined;
+				}
+			});
+		branchWatch.initializationTask = initializationTask;
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
 		if (ctx.sessionManager !== branchWatch.sessionManager || ctx.signal?.aborted) return;
 		const session = branchWatch.session;
-		cancelPeriodicRefresh(branchWatch);
-		const request = await refreshStatus(ctx, ctx.signal);
-		if (session === branchWatch.session && request === branchWatch.request) {
+		const generation = branchWatch.generation;
+		cancelRefresh(branchWatch);
+		const controller = new AbortController();
+		const abortFromContext = () => controller.abort(ctx.signal?.reason);
+		ctx.signal?.addEventListener("abort", abortFromContext, { once: true });
+		if (ctx.signal?.aborted) abortFromContext();
+		branchWatch.refreshController = controller;
+		let request: number;
+		try {
+			request = await refreshStatus(ctx, controller.signal, generation);
+		} finally {
+			ctx.signal?.removeEventListener("abort", abortFromContext);
+			if (branchWatch.refreshController === controller) {
+				branchWatch.refreshController = undefined;
+			}
+		}
+		if (
+			!controller.signal.aborted &&
+			ownsSession(session, ctx.sessionManager) &&
+			generation === branchWatch.generation &&
+			request === branchWatch.request
+		) {
 			schedulePeriodicRefresh(ctx, session);
 		}
 	});
@@ -193,6 +271,8 @@ interface BranchWatchState {
 	request: number;
 	session: number;
 	sessionManager?: ExtensionContext["sessionManager"];
+	initializationController?: AbortController;
+	initializationTask?: Promise<void>;
 	watcher?: FSWatcher;
 	timer?: ReturnType<typeof setTimeout>;
 	refreshTimer?: ReturnType<typeof setTimeout>;
@@ -212,7 +292,7 @@ async function createBranchWatcher(
 			signal,
 			timeout: GIT_TIMEOUT_MS,
 		});
-		if (result.killed || result.code !== 0) return undefined;
+		if (signal?.aborted || result.killed || result.code !== 0) return undefined;
 
 		const gitHead = result.stdout.trim();
 		if (!gitHead) return undefined;
@@ -238,6 +318,7 @@ export async function runGhPrView(
 	const result = await execGh(pi, invocation.command, invocation.args, cwd, signal, "gh pr view");
 	if (result.killed) throw new Error("gh pr view timed out or was cancelled.");
 	if (result.code !== 0) throw new Error(formatGhFailure("gh pr view", result));
+	signal?.throwIfAborted();
 
 	let pr: JsonRecord;
 	try {
@@ -456,7 +537,12 @@ function pullRequestExpiresAt(status: PullRequestStatus): number | undefined {
 	return Number.isFinite(terminalAt) ? terminalAt + TERMINAL_PR_LIFETIME_MS : undefined;
 }
 
-function cancelPeriodicRefresh(branchWatch: BranchWatchState) {
+function cancelInitialization(branchWatch: BranchWatchState) {
+	branchWatch.initializationController?.abort();
+	branchWatch.initializationController = undefined;
+}
+
+function cancelRefresh(branchWatch: BranchWatchState) {
 	if (branchWatch.refreshTimer) clearTimeout(branchWatch.refreshTimer);
 	branchWatch.refreshTimer = undefined;
 	branchWatch.refreshController?.abort();
@@ -549,6 +635,7 @@ async function runGhPrCountQuery(
 
 	if (result.killed) throw new Error("gh api graphql timed out or was cancelled.");
 	if (result.code !== 0) throw new Error(formatGhFailure("gh api graphql", result));
+	signal?.throwIfAborted();
 
 	try {
 		const payload = objectRecord(JSON.parse(result.stdout));
