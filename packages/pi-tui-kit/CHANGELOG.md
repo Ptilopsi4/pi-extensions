@@ -1,5 +1,15 @@
 # @narumitw/pi-tui-kit
 
+## 0.57.0
+
+### Minor Changes
+
+- 6574232: Add a generic lifecycle-safe questionnaire runner for TUI and RPC interactions.
+
+### Patch Changes
+
+- cddc265: Keep questionnaire hints visible at narrow widths and omit conflicting additive page keys.
+
 ## 0.56.1
 
 ### Patch Changes

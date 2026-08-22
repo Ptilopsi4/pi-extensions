@@ -31,7 +31,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@narumitw/pi-tui-kit": "^0.56.1"
+		"@narumitw/pi-tui-kit": "^0.57.0"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*"
@@ -39,7 +39,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.5.9",
 		"@earendil-works/pi-coding-agent": "0.84.2",
-		"@narumitw/pi-tui-kit": "^0.56.1",
+		"@narumitw/pi-tui-kit": "^0.57.0",
 		"typescript": "7.0.2"
 	},
 	"repository": {

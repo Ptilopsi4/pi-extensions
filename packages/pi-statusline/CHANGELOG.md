@@ -1,5 +1,13 @@
 # @narumitw/pi-statusline
 
+## 0.49.12
+
+### Patch Changes
+
+- Updated dependencies [6574232]
+- Updated dependencies [cddc265]
+  - @narumitw/pi-tui-kit@0.57.0
+
 ## 0.49.11
 
 ### Patch Changes
