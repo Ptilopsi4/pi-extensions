@@ -94,7 +94,7 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 - [x] Repository guidance permits documented, versioned, extension-neutral protocols that preserve standalone behavior.
 - [x] [Workflow Mutex Protocol v1](../api/workflow-mutex-v1.md) defines the channel, schema, synchronous critical section, session scoping, mutex groups, ownership states, malformed-input behavior, and version policy.
 - [x] The v1 contract explicitly prohibits participant identity, workflow control, state transfer, start or cancel RPC, plan handoff, and completion forwarding.
-- [ ] Pi's current synchronous listener-start behavior is characterized by a deterministic test, and any unsupported runtime version is stated explicitly.
+- [x] [`test/workflow-mutex-runtime.test.ts`](../../test/workflow-mutex-runtime.test.ts) characterizes Pi `0.84.2` listener start, shared delivery, session identity, and stale-listener cleanup; the protocol explicitly excludes uncharacterized runtimes without claiming product conformance.
 - [x] The v1 version policy states that pre-protocol Plan or Goal releases cannot provide guaranteed coexistence with a protocol-aware peer.
 
 **Outcome:** Any workflow extension can implement the same small mutex without knowing which other extensions are installed.

@@ -247,6 +247,11 @@ A v1 participant operating beside a pre-v1 extension remains standalone-compatib
 
 ## Required Pi behavior
 
+The deterministic characterization in [`test/workflow-mutex-runtime.test.ts`](../../test/workflow-mutex-runtime.test.ts) covers the repository's exact installed Pi version, `@earendil-works/pi-coding-agent@0.84.2`.
+The root `package.json` and `package-lock.json` pin that version, and the test imports only public package-root APIs.
+V1 coexistence is supported only on this characterized version.
+Earlier releases, later releases, forks, and separately loaded Pi runtimes are uncharacterized and cannot receive the v1 coexistence guarantee until the same evidence passes for them.
+
 V1 depends on these Pi runtime properties:
 
 1. Loaded extensions share one process-local event bus.
@@ -254,9 +259,10 @@ V1 depends on these Pi runtime properties:
 3. All extension contexts for one active session expose the same `sessionManager` object identity.
 4. Stale extension runtimes unsubscribe their tracked event-bus listeners.
 
-The current installed Pi implementation uses Node's synchronous `EventEmitter` dispatch behind an async error-catching wrapper.
+The characterized Pi runtime uses Node's synchronous `EventEmitter` dispatch behind an async error-catching wrapper.
 
-Only mutations performed before a listener returns are visible to the requester before `emit()` returns.
+Only mutations performed before a listener first yields are visible to the requester before `emit()` returns.
+The characterization proves shared delivery across inline extension factories, synchronous listener start and mutation, exact `sessionManager` identity across runner contexts, and tracked-listener cleanup after runtime invalidation.
 
 These properties MUST have deterministic characterization tests before a package claims v1 support.
 
