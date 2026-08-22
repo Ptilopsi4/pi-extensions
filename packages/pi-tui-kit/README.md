@@ -268,6 +268,43 @@ RPC deliberately degrades to a signal-aware ordinary selector: it never runs liv
 Print and JSON return `unsupported`.
 Results distinguish `selected`, `shortcut`, `closed`, `stale`, `unsupported`, and `error`.
 
+Use `runQuestionnaire()` for a bounded sequence of required choices with optional free-form answers, notes, and a final read-only review:
+
+```ts
+import { runQuestionnaire } from "@narumitw/pi-tui-kit";
+
+const result = await runQuestionnaire(ctx, {
+  questions: [
+    {
+      id: "scope",
+      header: "Scope",
+      prompt: "How broad should this change be?",
+      options: [
+        { label: "Focused", description: "Change only the requested behavior." },
+        { label: "Broad", description: "Include compatible cleanup." },
+      ],
+    },
+  ],
+  allowNotes: true,
+  maxTextLength: 4_000,
+  signal: currentSessionSignal(),
+  isCurrent: () => generation === currentGeneration(),
+});
+
+if (result.kind === "submitted") {
+  await saveDomainAnswers(result.answers);
+}
+```
+
+TUI preserves Pi selector framing, effective keybindings, Back versus Ctrl+C Close, exact editor input, optional notes, and a plain non-selectable review.
+Free-form answers are enabled by default, notes require `allowNotes`, and `maxTextLength` applies to free-form answers and notes.
+RPC preserves the existing sequential `select()` and `editor()` fallback for choices and free-form answers, but does not collect TUI-only notes or show the final review.
+RPC preserves the editor response verbatim, including an empty string, for compatibility with existing Pi dialogs.
+Pi's RPC editor API has no abort signal, so owner cancellation during an open editor is classified as stale after that editor closes.
+Print and JSON return `unsupported`.
+Owner abort, stale state, external disposal, invalid options, and UI failures remain distinct typed results.
+The caller owns question-count and option-count policy, domain validation, side effects, result persistence, and mapping answer IDs back to domain objects.
+
 `formatInteractionHints()` is available for other specialized components.
 Pass the callback-injected keybindings plus binding-backed or literal-key hint groups; the formatter normalizes arrows, Enter/Escape names, sanitizes controls, applies exclusions, de-duplicates keys, and supports a custom separator.
 
@@ -705,6 +742,7 @@ Consumer fixtures continue to own domain state, persistence, generation checks, 
 - `runTask()` — runs typed abort-aware work with a cancellable TUI loader and direct non-TUI fallback.
 - `runConfirmation()` — preserves Confirmed, Back, Close, Stale, Unsupported, and Error for one standalone confirmation without owning the confirmed side effect.
 - `runLiveChoice()` — adapts a live-preview choice to TUI and ordinary RPC selection while preserving typed selection, confirmation-only gating, shortcuts, Back, Close, Stale, Unsupported, and Error.
+- `runQuestionnaire()` — adapts required multi-question choices, free-form answers, optional TUI notes, and read-only review to TUI and sequential RPC while preserving typed Submitted, Back, Close, Stale, Unsupported, and Error outcomes.
 - `formatInteractionHints()` — formats sanitized, normalized, de-duplicated injected bindings and literal shortcut keys for specialized interaction hints; the lightweight `@narumitw/pi-tui-kit/interaction-hints` subpath exports it and its public types.
 - `sanitizeTerminalText()` — removes terminal and bidirectional display controls from untrusted single-line presentation text without mutating raw payloads; the lightweight `@narumitw/pi-tui-kit/terminal-text` subpath exports it.
 - `runCustomInteraction()` — owns cancellation, stale checks, exactly-once disposal, optional pending work draining, and typed results around one extension-owned custom TUI component.
@@ -712,7 +750,8 @@ Consumer fixtures continue to own domain state, persistence, generation checks, 
 - `createMenuNavigator()` — lower-level stack and selection state helper.
 - exported screen, item, action, transition, runtime option, `BrowseDetailDocument`, `MenuCloseReason`, and result types.
 - `@narumitw/pi-tui-kit/testing` — separate subpath for `createTuiHarness()`, `createRpcHarness()`, strict scripts, and their public testing types; it is not re-exported from the production root.
-- `PI_EXTENSION_MENU_API_VERSION` — current API version (`13`).
+- `PI_EXTENSION_MENU_API_VERSION` — current API version (`14`).
+Version 14 adds the standalone `runQuestionnaire()` interaction while version-13 menu definitions remain valid.
 Version 13 adds opt-in Markdown, LaTeX, and Mermaid document formatting while version-12 menu definitions remain valid.
 Version 12 added optional searchable `choice` fields, version 11 added Live Choice confirmation-only gating, version 10 added exact browse detail documents, version 9 added `runLiveChoice()` and `formatInteractionHints()`, version 8 added disabled action reasons and adaptive action-label columns, version 7 added `runConfirmation()`, and version 6 added the read-only `browse` screen and `runCustomInteraction()`.
 
@@ -724,6 +763,7 @@ Version 12 added optional searchable `choice` fields, version 11 added Live Choi
 - `src/task.ts` — standalone and menu-shared task lifecycle orchestration
 - `src/confirmation.ts` — standalone confirmation mode adaptation and lifecycle results
 - `src/live-choice.ts` — standalone live-choice TUI/RPC adaptation and preview-work ownership
+- `src/questionnaire.ts` — standalone questionnaire TUI/RPC adaptation and public result contract
 - `src/interaction-hints.ts` — injected-key and literal-shortcut hint formatting, published through the lightweight `/interaction-hints` subpath
 - `src/terminal-text.ts` — terminal display sanitization published through the lightweight `/terminal-text` subpath
 - `src/custom-interaction.ts` — lifecycle ownership for specialized public custom components
