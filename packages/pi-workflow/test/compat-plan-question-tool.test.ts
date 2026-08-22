@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { stripVTControlCharacters } from "node:util";
-import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	CURSOR_MARKER,
+	KeybindingsManager,
+	TUI_KEYBINDINGS,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 import { createTuiHarness } from "@narumitw/pi-tui-kit/testing";
 import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
@@ -35,7 +40,11 @@ const questions: PlanModeQuestion[] = [
 ];
 
 function tuiRun(customQuestions = questions, width = 60) {
-	const tui = createTuiHarness({ width, rows: 30 });
+	const tui = createTuiHarness({
+		width,
+		rows: 30,
+		keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
+	});
 	const context = createMockContext({ mode: "tui", hasUI: true, custom: tui.custom });
 	const running = askPlanModeQuestions(customQuestions, context.ctx);
 	return { tui, running };
@@ -87,6 +96,185 @@ test("TUI previews future questions and navigates back before answering", async 
 	assert.equal(await running, undefined);
 });
 
+test("TUI frames the questionnaire with select-style separator borders", async () => {
+	const { tui, running } = tuiRun([questions[0]], 40);
+	await tui.waitForOpen();
+	const frame = tui.render();
+	assert.equal(frame[0], "─".repeat(40));
+	assert.equal(frame[1], "");
+	assert.equal(frame.at(-2), "");
+	assert.equal(frame.at(-1), "─".repeat(40));
+	assert.match(frame.join("\n"), /^ How broad\?$/mu);
+	tui.dispose();
+	assert.equal(await running, undefined);
+});
+
+test("TUI applies legacy selector emphasis to borders, title, and selected option", async () => {
+	const foreground: Array<{ color: string; text: string }> = [];
+	const bold: string[] = [];
+	const tui = createTuiHarness({
+		width: 60,
+		rows: 30,
+		theme: {
+			fg: (color, text) => {
+				foreground.push({ color: String(color), text });
+				return text;
+			},
+			bold: (text) => {
+				bold.push(text);
+				return text;
+			},
+		},
+	});
+	const context = createMockContext({ mode: "tui", hasUI: true, custom: tui.custom });
+	const running = askPlanModeQuestions([questions[0]], context.ctx);
+	await tui.waitForOpen();
+	tui.render();
+	assert.ok(foreground.some(({ color, text }) => color === "border" && text === "─".repeat(60)));
+	assert.ok(
+		foreground.some(
+			({ color, text }) => color === "accent" && text === "→ 1. Small — Only the bug.",
+		),
+	);
+	assert.ok(
+		foreground.some(({ color, text }) => color === "muted" && text === " — Include cleanup."),
+	);
+	assert.ok(bold.includes("How broad?"));
+	assert.match(tui.render().join("\n"), /↑↓ navigate {2}enter select {2}escape\/ctrl\+c cancel/u);
+	tui.dispose();
+	assert.equal(await running, undefined);
+});
+
+test("Review renders plain summaries without selection affordances", async () => {
+	const foreground: Array<{ color: string; text: string }> = [];
+	const bold: string[] = [];
+	const tui = createTuiHarness({
+		width: 60,
+		rows: 30,
+		theme: {
+			fg: (color, text) => {
+				foreground.push({ color: String(color), text });
+				return text;
+			},
+			bold: (text) => {
+				bold.push(text);
+				return text;
+			},
+		},
+	});
+	const context = createMockContext({ mode: "tui", hasUI: true, custom: tui.custom });
+	const running = askPlanModeQuestions(questions, context.ctx);
+	await tui.waitForOpen();
+	tui.setFocused(true);
+	tui.send("\u001b[C");
+	tui.send("\u001b[C");
+	foreground.length = 0;
+	bold.length = 0;
+	const frame = tui.render().join("\n");
+	assert.match(frame, /\n 1\. Scope — Unanswered\n 2\. Tests — Unanswered/u);
+	assert.doesNotMatch(frame, /→ [12]\./u);
+	assert.match(frame, /enter submit/u);
+	assert.doesNotMatch(frame, /↑\/↓ select|n note/u);
+	assert.ok(foreground.some(({ color, text }) => color === "text" && text === "1. Scope"));
+	assert.ok(foreground.some(({ color, text }) => color === "text" && text === "2. Tests"));
+	assert.ok(foreground.some(({ color, text }) => color === "muted" && text === " — Unanswered"));
+	assert.equal(
+		foreground.some(
+			({ color, text }) => color === "accent" && /(?:→ )?[12]\. (?:Scope|Tests)/u.test(text),
+		),
+		false,
+	);
+	assert.ok(bold.includes("Review answers"));
+	const unchanged = tui.render().join("\n");
+	tui.press("tui.select.down");
+	assert.equal(tui.render().join("\n"), unchanged);
+	tui.dispose();
+	assert.equal(await running, undefined);
+});
+
+test("TUI uses configured selector keybindings and legacy j/k aliases", async () => {
+	const bindings = {
+		"tui.input.newLine": { data: "\u001b[13;3u", key: "alt+enter" },
+		"tui.input.submit": { data: "\u0013", key: "ctrl+s" },
+		"tui.input.tab": { data: "t", key: "t" },
+		"tui.select.cancel": { data: "q", key: "q" },
+		"tui.select.confirm": { data: "x", key: "x" },
+		"tui.select.down": { data: "s", key: "s" },
+		"tui.select.up": { data: "w", key: "w" },
+	} as const;
+	const tui = createTuiHarness({
+		width: 120,
+		rows: 30,
+		keybindings: {
+			matches: (data, binding) => bindings[binding as keyof typeof bindings]?.data === data,
+			getKeys: (binding) => {
+				const configured = bindings[binding as keyof typeof bindings];
+				return configured ? [configured.key] : [];
+			},
+		},
+	});
+	const context = createMockContext({ mode: "tui", hasUI: true, custom: tui.custom });
+	const running = askPlanModeQuestions(questions, context.ctx);
+	await tui.waitForOpen();
+	tui.setFocused(true);
+	assert.match(
+		tui.render().join("\n"),
+		/w\/s navigate {2}x select {2}q\/ctrl\+c cancel {2}t\/shift\+tab\/←→ questions {2}n note/u,
+	);
+	tui.send("j");
+	assert.match(tui.render().join("\n"), /→ 2\. Broad/u);
+	tui.send("k");
+	assert.match(tui.render().join("\n"), /→ 1\. Small/u);
+	tui.send("s");
+	tui.send("t");
+	assert.match(tui.render().join("\n"), /\[Tests\]/u);
+	tui.send("\u001b[D");
+	tui.send("x");
+	tui.send("x");
+	assert.match(tui.render().join("\n"), /x submit {2}q\/ctrl\+c cancel/u);
+	tui.send("\n");
+	assert.equal(tui.isOpen, true);
+	assert.match(tui.render().join("\n"), /\[Review\]/u);
+	tui.send("q");
+	assert.equal(await running, undefined);
+});
+
+test("TUI keeps Ctrl+C as a hard cancel when it is not configured", async () => {
+	const tui = createTuiHarness({
+		keybindings: {
+			matches: (data, binding) => binding === "tui.select.cancel" && data === "q",
+			getKeys: (binding) => (binding === "tui.select.cancel" ? ["q"] : []),
+		},
+	});
+	const context = createMockContext({ mode: "tui", hasUI: true, custom: tui.custom });
+	const running = askPlanModeQuestions([questions[0]], context.ctx);
+	await tui.waitForOpen();
+	tui.setFocused(true);
+	assert.match(tui.render().join("\n"), /q\/ctrl\+c cancel/u);
+	tui.send("\u0003");
+	assert.equal(await running, undefined);
+});
+
+test("TUI uses numbered select styling and restores the recorded answer cursor", async () => {
+	const { tui, running } = tuiRun([questions[0]]);
+	await tui.waitForOpen();
+	tui.setFocused(true);
+	let frame = tui.render().join("\n");
+	assert.match(frame, /→ 1\. Small — Only the bug\./u);
+	assert.doesNotMatch(frame, /[○●]/u);
+	tui.press("tui.select.down");
+	tui.press("tui.select.confirm");
+	tui.send("\u001b[D");
+	frame = tui.render().join("\n");
+	assert.match(frame, /→ 2\. Broad ✓/u);
+	tui.press("tui.select.up");
+	tui.send("\u001b[C");
+	tui.send("\u001b[D");
+	assert.match(tui.render().join("\n"), /→ 2\. Broad ✓/u);
+	tui.press("tui.select.cancel");
+	assert.equal(await running, undefined);
+});
+
 test("TUI replaces answers, manages notes, accepts Other, and submits ordered raw payload", async () => {
 	const { tui, running } = tuiRun();
 	await tui.waitForOpen();
@@ -113,7 +301,9 @@ test("TUI replaces answers, manages notes, accepts Other, and submits ordered ra
 	tui.press("tui.input.submit");
 	assert.match(tui.render().join("\n"), /Review answers[\s\S]*Broad[\s\S]*custom answer/u);
 
-	// Review selects answers for note add/edit/clear.
+	// Notes remain editable from their question page, not from the plain Review summary.
+	tui.send("\u001b[D");
+	tui.send("\u001b[D");
 	tui.type("n");
 	paste(tui, "draft note");
 	tui.press("tui.input.submit");
@@ -124,6 +314,9 @@ test("TUI replaces answers, manages notes, accepts Other, and submits ordered ra
 	tui.type("n");
 	paste(tui, "final note");
 	tui.press("tui.input.submit");
+	tui.send("\u001b[C");
+	tui.send("\u001b[C");
+	assert.match(tui.render().join("\n"), /1\. Scope — Broad · Note: final note/u);
 	tui.press("tui.select.confirm");
 
 	assert.deepEqual(await running, [
@@ -146,7 +339,7 @@ test("TUI replaces answers, manages notes, accepts Other, and submits ordered ra
 	]);
 });
 
-test("Review blocks incomplete submission and lets selected answer receive a note", async () => {
+test("Review blocks incomplete submission and directs note edits back to questions", async () => {
 	const { tui, running } = tuiRun();
 	await tui.waitForOpen();
 	tui.setFocused(true);
@@ -155,10 +348,135 @@ test("Review blocks incomplete submission and lets selected answer receive a not
 	tui.press("tui.select.confirm");
 	assert.match(tui.render().join("\n"), /Answer every question before submitting/u);
 	tui.press("tui.select.down");
+	assert.doesNotMatch(tui.render().join("\n"), /→ [12]\./u);
 	tui.type("n");
-	assert.match(tui.render().join("\n"), /Select an answer before adding a note/u);
+	assert.match(tui.render().join("\n"), /Return to a question to add or edit its note/u);
 	tui.press("tui.select.cancel");
 	assert.equal(await running, undefined);
+});
+
+test("TUI preserves raw custom answers and notes while sanitizing editor rendering", async () => {
+	const unsafeAnswer = "raw\u007f\u001b]8;;https://evil.example\u0007text\u202ereversed";
+	const unsafeNote = "note\u009bcontrol\u202aspoofed";
+	const { tui, running } = tuiRun([questions[0]]);
+	await tui.waitForOpen();
+	tui.setFocused(true);
+	tui.press("tui.select.down");
+	tui.press("tui.select.down");
+	tui.press("tui.select.confirm");
+	paste(tui, unsafeAnswer);
+	const answerDraft = tui.render().join("\n");
+	assert.equal(answerDraft.includes("\u202e"), false);
+	assert.equal(answerDraft.includes("\u001b]8;;https://evil.example"), false);
+	tui.press("tui.input.submit");
+	tui.send("\u001b[D");
+	tui.type("n");
+	paste(tui, unsafeNote);
+	const noteDraft = tui.render().join("\n");
+	assert.equal(noteDraft.includes("\u009b"), false);
+	assert.equal(noteDraft.includes("\u202a"), false);
+	tui.press("tui.input.submit");
+	tui.send("\u001b[C");
+	const review = tui.render().join("\n");
+	assert.equal(review.includes("\u202e") || review.includes("\u202a"), false);
+	tui.press("tui.select.confirm");
+
+	assert.deepEqual(await running, [
+		{
+			id: "scope",
+			header: "Scope",
+			question: "How broad?",
+			answer: unsafeAnswer,
+			wasCustom: true,
+			note: unsafeNote,
+		},
+	]);
+});
+
+test("editing an existing Other answer preserves its note", async () => {
+	const { tui, running } = tuiRun([questions[0]]);
+	await tui.waitForOpen();
+	tui.setFocused(true);
+	tui.press("tui.select.down");
+	tui.press("tui.select.down");
+	tui.press("tui.select.confirm");
+	paste(tui, "first answer");
+	tui.press("tui.input.submit");
+	tui.send("\u001b[D");
+	tui.type("n");
+	paste(tui, "keep this note");
+	tui.press("tui.input.submit");
+	tui.press("tui.select.confirm");
+	tui.send("\u0015");
+	paste(tui, "edited answer");
+	tui.press("tui.input.submit");
+	tui.press("tui.select.confirm");
+
+	assert.equal((await running)?.[0]?.note, "keep this note");
+});
+
+test("narrow TUI rendering keeps every question and Review tab visible", async () => {
+	const longQuestions = [
+		{ ...questions[0], header: "LongHeader12" },
+		{ ...questions[1], header: "SecondHeader" },
+		{ ...questions[0], id: "risk", header: "ThirdHeader3" },
+	];
+	const { tui, running } = tuiRun(longQuestions, 24);
+	await tui.waitForOpen();
+	tui.setFocused(true);
+	for (let index = 0; index < longQuestions.length; index += 1) tui.send("\u001b[C");
+	const frame = stripVTControlCharacters(tui.render().join("\n"));
+	assert.match(frame, /LongHeader12/u);
+	assert.match(frame, /SecondHeader/u);
+	assert.match(frame, /ThirdHeader3/u);
+	assert.match(frame, /\[Review\]/u);
+	tui.dispose();
+	assert.equal(await running, undefined);
+});
+
+test("TUI abort signal closes the questionnaire without answers", async () => {
+	const controller = new AbortController();
+	const tui = createTuiHarness({ width: 60, rows: 30 });
+	const context = createMockContext({
+		mode: "tui",
+		hasUI: true,
+		custom: tui.custom,
+		signal: controller.signal,
+	});
+	const running = askPlanModeQuestions(questions, context.ctx);
+	await tui.waitForOpen();
+	controller.abort();
+	assert.equal(await running, undefined);
+	assert.equal(tui.isOpen, false);
+});
+
+test("Other editor treats Backspace as deletion instead of raw text", async () => {
+	const { tui, running } = tuiRun([questions[0]]);
+	await tui.waitForOpen();
+	tui.setFocused(true);
+	tui.press("tui.select.down");
+	tui.press("tui.select.down");
+	tui.press("tui.select.confirm");
+	tui.type("wrongx");
+	tui.send("\u007f");
+	tui.press("tui.input.submit");
+	tui.press("tui.select.confirm");
+
+	assert.equal((await running)?.[0]?.answer, "wrong");
+});
+
+test("Optional note editor treats Backspace as deletion instead of raw text", async () => {
+	const { tui, running } = tuiRun([questions[0]]);
+	await tui.waitForOpen();
+	tui.setFocused(true);
+	tui.type("n");
+	tui.type("note!");
+	tui.send("\u007f");
+	tui.press("tui.input.submit");
+	tui.press("tui.select.confirm");
+	tui.press("tui.select.confirm");
+
+	assert.equal((await running)?.[0]?.note, "note");
 });
 
 test("Other editor rejects oversized input and forwards focus", async () => {
@@ -173,6 +491,21 @@ test("Other editor rejects oversized input and forwards focus", async () => {
 	paste(tui, "x".repeat(MAX_PLAN_MODE_RESPONSE_LENGTH + 1));
 	tui.press("tui.input.submit");
 	assert.match(tui.render().join("\n"), /4,000 characters or fewer/u);
+	assert.equal(tui.isOpen, true);
+	tui.press("ctrl+c");
+	assert.equal(await running, undefined);
+});
+
+test("Note editor rejects oversized input and stays open", async () => {
+	const { tui, running } = tuiRun([questions[0]]);
+	await tui.waitForOpen();
+	tui.setFocused(true);
+	tui.type("n");
+	const oversized = "z".repeat(MAX_PLAN_MODE_RESPONSE_LENGTH + 1);
+	paste(tui, oversized);
+	tui.press("tui.input.submit");
+	const frame = tui.render().join("\n");
+	assert.match(frame, /Note must be 4,000 characters or fewer/u);
 	assert.equal(tui.isOpen, true);
 	tui.press("ctrl+c");
 	assert.equal(await running, undefined);

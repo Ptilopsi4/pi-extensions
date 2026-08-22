@@ -1,5 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
-import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import {
 	type Component,
 	Editor,
@@ -15,6 +15,9 @@ import {
 
 export const PLAN_MODE_QUESTION_TOOL_NAME = "plan_mode_question";
 export const MAX_PLAN_MODE_RESPONSE_LENGTH = 4_000;
+
+const BRACKETED_PASTE_START = "\u001b[200~";
+const BRACKETED_PASTE_END = "\u001b[201~";
 
 export type PlanModeQuestionOption = {
 	label: string;
@@ -204,11 +207,12 @@ export async function askPlanModeQuestions(
 ): Promise<PlanModeQuestionAnswer[] | undefined> {
 	if (ctx.mode === "tui") {
 		const answers = await ctx.ui.custom<PlanModeQuestionAnswer[] | undefined>(
-			(tui, theme, _keybindings, done) =>
+			(tui, theme, keybindings, done) =>
 				new PlanModeQuestionnaire({
 					questions,
 					tui,
 					theme,
+					keybindings,
 					shouldContinue,
 					signal: ctx.signal,
 					onDone: done,
@@ -268,6 +272,7 @@ interface QuestionnaireOptions {
 	questions: PlanModeQuestion[];
 	tui: TUI;
 	theme: Theme;
+	keybindings: KeybindingsManager;
 	shouldContinue(): boolean;
 	signal?: AbortSignal;
 	onDone(answers: PlanModeQuestionAnswer[] | undefined): void;
@@ -275,11 +280,10 @@ interface QuestionnaireOptions {
 
 export class PlanModeQuestionnaire implements Component, Focusable {
 	private readonly options: QuestionnaireOptions;
-	private readonly editor: Editor;
+	private readonly editor: RawPreservingEditor;
 	private readonly answers: Array<PlanModeQuestionAnswer | undefined>;
 	private readonly selectedOptions: number[];
 	private page = 0;
-	private reviewSelection = 0;
 	private editorKind: "answer" | "note" | undefined;
 	private message: string | undefined;
 	private finished = false;
@@ -300,7 +304,7 @@ export class PlanModeQuestionnaire implements Component, Focusable {
 				noMatch: (text) => options.theme.fg("warning", text),
 			},
 		};
-		this.editor = new Editor(options.tui, editorTheme, { paddingX: 0 });
+		this.editor = new RawPreservingEditor(options.tui, editorTheme);
 		this.editor.onChange = () => {
 			this.message = undefined;
 		};
@@ -324,24 +328,20 @@ export class PlanModeQuestionnaire implements Component, Focusable {
 
 	render(width: number): string[] {
 		const safeWidth = Math.max(1, width);
-		const lines = [this.renderTabs(safeWidth), ""];
-		if (this.page === this.options.questions.length) lines.push(...this.renderReview(safeWidth));
-		else lines.push(...this.renderQuestion(safeWidth));
+		const padding = safeWidth > 1 ? " " : "";
+		const contentWidth = Math.max(1, safeWidth - visibleWidth(padding));
+		const border = this.options.theme.fg("border", "─".repeat(safeWidth));
+		const lines = [border, "", ...this.renderTabs(contentWidth), ""];
+		if (this.page === this.options.questions.length) lines.push(...this.renderReview(contentWidth));
+		else lines.push(...this.renderQuestion(contentWidth));
 		if (this.message)
-			lines.push(...hardWrap(this.options.theme.fg("warning", this.message), safeWidth));
+			lines.push(...hardWrap(this.options.theme.fg("warning", this.message), contentWidth));
 		lines.push("");
-		lines.push(
-			truncateToWidth(
-				this.options.theme.fg(
-					"dim",
-					this.editorKind
-						? "Enter save · Esc/Ctrl+C cancel questionnaire"
-						: "Tab/Shift+Tab or ←/→ navigate · ↑/↓ select · Enter answer/submit · n note · Esc cancel",
-				),
-				safeWidth,
-			),
-		);
-		return lines.map((line) => truncateToWidth(line, safeWidth));
+		lines.push(truncateToWidth(this.renderHints(), contentWidth), "", border);
+		return lines.map((line) => {
+			if (!line || line === border) return line;
+			return `${padding}${truncateToWidth(line, contentWidth)}`;
+		});
 	}
 
 	handleInput(data: string): void {
@@ -364,16 +364,38 @@ export class PlanModeQuestionnaire implements Component, Focusable {
 	}
 
 	private isCancel(data: string): boolean {
-		return matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"));
+		return (
+			matchesKey(data, Key.ctrl("c")) || this.options.keybindings.matches(data, "tui.select.cancel")
+		);
 	}
 
 	private handleEditorInput(data: string): void {
-		if (matchesKey(data, Key.enter)) this.submitEditor(this.editor.getExpandedText());
-		else this.editor.handleInput(data);
+		const keybindings = this.options.keybindings;
+		if (keybindings.matches(data, "tui.input.newLine")) {
+			this.editor.handleInput(data);
+		} else if (keybindings.matches(data, "tui.input.submit")) {
+			this.submitEditor(this.editor.getExpandedText());
+		} else {
+			this.editor.handleInput(data);
+		}
 	}
 
 	private handlePageInput(data: string): void {
-		if (matchesKey(data, Key.tab) || matchesKey(data, Key.right)) {
+		const keybindings = this.options.keybindings;
+		const review = this.page === this.options.questions.length;
+		if (keybindings.matches(data, "tui.select.up") || data === "k") {
+			if (!review) this.moveSelection(-1);
+			return;
+		}
+		if (keybindings.matches(data, "tui.select.down") || data === "j") {
+			if (!review) this.moveSelection(1);
+			return;
+		}
+		if (keybindings.matches(data, "tui.select.confirm")) {
+			this.submitPage();
+			return;
+		}
+		if (keybindings.matches(data, "tui.input.tab") || matchesKey(data, Key.right)) {
 			this.movePage(1);
 			return;
 		}
@@ -381,28 +403,53 @@ export class PlanModeQuestionnaire implements Component, Focusable {
 			this.movePage(-1);
 			return;
 		}
-		if (matchesKey(data, Key.up)) {
-			this.moveSelection(-1);
-			return;
-		}
-		if (matchesKey(data, Key.down)) {
-			this.moveSelection(1);
-			return;
-		}
 		if (data.toLowerCase() === "n") {
-			this.editNote();
-			return;
+			if (review) this.message = "Return to a question to add or edit its note.";
+			else this.editNote();
 		}
-		if (matchesKey(data, Key.enter)) this.submitPage();
+	}
+
+	private renderHints(): string {
+		const { keybindings, theme } = this.options;
+		const cancel = cancelHint(theme, keybindings);
+		if (this.editorKind) {
+			return [
+				keybindingHint(theme, keybindings, "tui.input.submit", "save"),
+				keybindingHint(theme, keybindings, "tui.input.newLine", "newline"),
+				cancel,
+			].join("  ");
+		}
+		const questions = rawKeyHint(theme, questionNavigationKeys(keybindings), "questions");
+		if (this.page === this.options.questions.length) {
+			return [
+				keybindingHint(theme, keybindings, "tui.select.confirm", "submit"),
+				cancel,
+				questions,
+			].join("  ");
+		}
+		return [
+			rawKeyHint(theme, selectionNavigationKeys(keybindings), "navigate"),
+			keybindingHint(theme, keybindings, "tui.select.confirm", "select"),
+			cancel,
+			questions,
+			rawKeyHint(theme, "n", "note"),
+		].join("  ");
 	}
 
 	private movePage(delta: number): void {
 		const pageCount = this.options.questions.length + 1;
 		this.page = (this.page + delta + pageCount) % pageCount;
+		const answer = this.answers[this.page];
+		const question = this.options.questions[this.page];
+		if (answer?.wasCustom && question) {
+			this.selectedOptions[this.page] = question.options.length;
+		} else if (answer?.optionIndex !== undefined) {
+			this.selectedOptions[this.page] = answer.optionIndex - 1;
+		}
 		this.message = undefined;
 	}
 
-	private renderTabs(width: number): string {
+	private renderTabs(width: number): string[] {
 		const tabs = [
 			...this.options.questions.map((question, index) => {
 				const label = sanitizeTerminalText(question.header) || `Question ${index + 1}`;
@@ -411,35 +458,60 @@ export class PlanModeQuestionnaire implements Component, Focusable {
 			}),
 			this.page === this.options.questions.length ? "[Review]" : "Review",
 		];
-		return truncateToWidth(this.options.theme.fg("accent", tabs.join("  ")), width, "…");
+		const lines: string[] = [];
+		let line = "";
+		for (const tab of tabs) {
+			const boundedTab = truncateToWidth(tab, width, "…");
+			const candidate = line ? `${line}  ${boundedTab}` : boundedTab;
+			if (line && visibleWidth(candidate) > width) {
+				lines.push(this.options.theme.fg("accent", line));
+				line = boundedTab;
+			} else {
+				line = candidate;
+			}
+		}
+		if (line) lines.push(this.options.theme.fg("accent", line));
+		return lines;
 	}
 
 	private renderQuestion(width: number): string[] {
 		const question = this.options.questions[this.page];
 		if (!question) return [];
 		const lines = hardWrap(
-			this.options.theme.fg("text", sanitizeTerminalText(question.question)),
+			this.options.theme.fg(
+				"accent",
+				this.options.theme.bold(sanitizeTerminalText(question.question)),
+			),
 			width,
 		);
 		lines.push("");
 		question.options.forEach((option, index) => {
-			const cursor = this.selectedOptions[this.page] === index ? "›" : " ";
-			const chosen = this.answers[this.page]?.optionIndex === index + 1 ? "●" : "○";
-			const label = `${cursor} ${chosen} ${sanitizeTerminalText(option.label)}`;
-			lines.push(...hardWrap(this.options.theme.fg("text", label), width));
-			if (option.description) {
-				lines.push(
-					...hardWrap(
-						`    ${this.options.theme.fg("muted", sanitizeTerminalText(option.description))}`,
-						width,
-					),
-				);
-			}
+			const selected = this.selectedOptions[this.page] === index;
+			const cursor = selected ? "→" : " ";
+			const label = `${cursor} ${index + 1}. ${sanitizeTerminalText(option.label)}`;
+			const chosen = this.answers[this.page]?.optionIndex === index + 1;
+			const description = option.description
+				? ` — ${sanitizeTerminalText(option.description)}`
+				: "";
+			const line = selected
+				? this.options.theme.fg("accent", `${label}${chosen ? " ✓" : ""}${description}`)
+				: `${this.options.theme.fg("text", label)}${
+						chosen ? this.options.theme.fg("success", " ✓") : ""
+					}${description ? this.options.theme.fg("muted", description) : ""}`;
+			lines.push(...hardWrapWithIndent(line, width, visibleWidth(`${cursor} ${index + 1}. `)));
 		});
 		const otherIndex = question.options.length;
-		const otherCursor = this.selectedOptions[this.page] === otherIndex ? "›" : " ";
-		const otherChosen = this.answers[this.page]?.wasCustom ? "●" : "○";
-		lines.push(`${otherCursor} ${otherChosen} Other (free-form)`);
+		const otherSelected = this.selectedOptions[this.page] === otherIndex;
+		const otherCursor = otherSelected ? "→" : " ";
+		const otherLabel = `${otherCursor} ${otherIndex + 1}. Other (free-form)`;
+		const otherChosen = this.answers[this.page]?.wasCustom === true;
+		lines.push(
+			otherSelected
+				? this.options.theme.fg("accent", `${otherLabel}${otherChosen ? " ✓" : ""}`)
+				: `${this.options.theme.fg("text", otherLabel)}${
+						otherChosen ? this.options.theme.fg("success", " ✓") : ""
+					}`,
+		);
 		const answer = this.answers[this.page];
 		if (answer?.wasCustom)
 			lines.push(...labeledRaw("Answer", answer.answer, width, this.options.theme));
@@ -458,33 +530,21 @@ export class PlanModeQuestionnaire implements Component, Focusable {
 	}
 
 	private renderReview(width: number): string[] {
-		const lines = [this.options.theme.fg("text", "Review answers")];
+		const lines = [this.options.theme.fg("accent", this.options.theme.bold("Review answers")), ""];
 		this.options.questions.forEach((question, index) => {
 			const answer = this.answers[index];
-			const cursor = this.reviewSelection === index ? "›" : " ";
 			const header = sanitizeTerminalText(question.header) || `Question ${index + 1}`;
-			lines.push("");
-			lines.push(`${cursor} ${this.options.theme.fg("accent", header)}`);
-			lines.push(
-				...labeledRaw("Answer", answer?.answer ?? "Unanswered", width, this.options.theme),
-			);
-			if (answer?.note) lines.push(...labeledRaw("Note", answer.note, width, this.options.theme));
+			const label = `${index + 1}. ${header}`;
+			const summary = ` — ${inlineSummary(answer?.answer ?? "Unanswered")}${
+				answer?.note ? ` · Note: ${inlineSummary(answer.note)}` : ""
+			}`;
+			const line = `${this.options.theme.fg("text", label)}${this.options.theme.fg("muted", summary)}`;
+			lines.push(...hardWrapWithIndent(line, width, visibleWidth(`${index + 1}. `)));
 		});
-		if (this.editorKind === "note") {
-			lines.push("");
-			lines.push(this.options.theme.fg("accent", "Optional note"));
-			lines.push(...this.editor.render(width));
-		}
 		return lines;
 	}
 
 	private moveSelection(delta: number): void {
-		if (this.page === this.options.questions.length) {
-			this.reviewSelection =
-				(this.reviewSelection + delta + this.options.questions.length) %
-				this.options.questions.length;
-			return;
-		}
 		const optionCount = (this.options.questions[this.page]?.options.length ?? 0) + 1;
 		this.selectedOptions[this.page] =
 			((this.selectedOptions[this.page] ?? 0) + delta + optionCount) % optionCount;
@@ -524,25 +584,22 @@ export class PlanModeQuestionnaire implements Component, Focusable {
 	}
 
 	private editNote(): void {
-		const review = this.page === this.options.questions.length;
-		const index = review ? this.reviewSelection : this.page;
+		const index = this.page;
 		let answer = this.answers[index];
-		if (!review) {
-			const question = this.options.questions[index];
-			const selected = this.selectedOptions[index] ?? 0;
-			if (question && selected === question.options.length && !answer?.wasCustom) {
-				this.beginEditor("answer", "");
-				return;
-			}
-			if (question && selected < question.options.length && answer?.optionIndex !== selected + 1) {
-				const option = question.options[selected];
-				if (option) {
-					answer = answerFor(question, option.label, {
-						wasCustom: false,
-						optionIndex: selected + 1,
-					});
-					this.answers[index] = answer;
-				}
+		const question = this.options.questions[index];
+		const selected = this.selectedOptions[index] ?? 0;
+		if (question && selected === question.options.length && !answer?.wasCustom) {
+			this.beginEditor("answer", "");
+			return;
+		}
+		if (question && selected < question.options.length && answer?.optionIndex !== selected + 1) {
+			const option = question.options[selected];
+			if (option) {
+				answer = answerFor(question, option.label, {
+					wasCustom: false,
+					optionIndex: selected + 1,
+				});
+				this.answers[index] = answer;
 			}
 		}
 		if (!answer) {
@@ -566,7 +623,7 @@ export class PlanModeQuestionnaire implements Component, Focusable {
 			this.options.tui.requestRender();
 			return;
 		}
-		const index = this.page === this.options.questions.length ? this.reviewSelection : this.page;
+		const index = this.page;
 		if (this.editorKind === "answer") {
 			if (!value.trim()) {
 				this.editor.setText(value);
@@ -576,7 +633,11 @@ export class PlanModeQuestionnaire implements Component, Focusable {
 			}
 			const question = this.options.questions[index];
 			if (!question) return;
-			this.answers[index] = answerFor(question, value, { wasCustom: true });
+			const previous = this.answers[index];
+			this.answers[index] = answerFor(question, value, {
+				wasCustom: true,
+				note: previous?.wasCustom ? previous.note : undefined,
+			});
 			this.editor.setText("");
 			this.editorKind = undefined;
 			this.editor.focused = false;
@@ -605,6 +666,152 @@ export class PlanModeQuestionnaire implements Component, Focusable {
 		this.editor.focused = false;
 		this.options.onDone(answers);
 	}
+}
+
+class RawPreservingEditor implements Focusable {
+	private readonly editor: Editor;
+	private readonly rawByMarker = new Map<string, string>();
+	private markerCodePoint = 0xe000;
+	private pasteBuffer: string | undefined;
+
+	constructor(tui: TUI, theme: EditorTheme) {
+		this.editor = new Editor(tui, theme, { paddingX: 0 });
+	}
+
+	get focused(): boolean {
+		return this.editor.focused;
+	}
+
+	set focused(value: boolean) {
+		this.editor.focused = value;
+	}
+
+	set onChange(handler: ((value: string) => void) | undefined) {
+		this.editor.onChange = handler ? () => handler(this.getExpandedText()) : undefined;
+	}
+
+	set onSubmit(handler: ((value: string) => void) | undefined) {
+		this.editor.onSubmit = handler ? (value) => handler(this.decode(value)) : undefined;
+	}
+
+	handleInput(data: string): void {
+		if (this.pasteBuffer !== undefined) {
+			this.pasteBuffer += data;
+			this.flushPasteBuffer();
+			return;
+		}
+		if (matchesKey(data, Key.backspace)) {
+			this.editor.handleInput(data);
+			return;
+		}
+		const pasteStart = data.indexOf(BRACKETED_PASTE_START);
+		if (pasteStart >= 0) {
+			if (pasteStart > 0) this.editor.handleInput(data.slice(0, pasteStart));
+			this.pasteBuffer = data.slice(pasteStart + BRACKETED_PASTE_START.length);
+			this.flushPasteBuffer();
+			return;
+		}
+		if (
+			[...data].some(
+				(character) => isUnsafeDirectEditorCharacter(character) || this.rawByMarker.has(character),
+			)
+		) {
+			this.editor.handleInput(this.encode(data));
+			return;
+		}
+		this.editor.handleInput(data);
+	}
+
+	render(width: number): string[] {
+		return this.editor
+			.render(width)
+			.map((line) =>
+				[...line].map((character) => (this.rawByMarker.has(character) ? " " : character)).join(""),
+			);
+	}
+
+	invalidate(): void {
+		this.editor.invalidate();
+	}
+
+	setText(value: string): void {
+		this.rawByMarker.clear();
+		this.markerCodePoint = 0xe000;
+		this.pasteBuffer = undefined;
+		this.editor.setText(this.encode(value));
+	}
+
+	getExpandedText(): string {
+		return this.decode(this.editor.getExpandedText());
+	}
+
+	private flushPasteBuffer(): void {
+		if (this.pasteBuffer === undefined) return;
+		const pasteEnd = this.pasteBuffer.indexOf(BRACKETED_PASTE_END);
+		if (pasteEnd < 0) return;
+		const raw = this.pasteBuffer.slice(0, pasteEnd);
+		const remaining = this.pasteBuffer.slice(pasteEnd + BRACKETED_PASTE_END.length);
+		this.pasteBuffer = undefined;
+		this.editor.handleInput(`${BRACKETED_PASTE_START}${this.encode(raw)}${BRACKETED_PASTE_END}`);
+		if (remaining) this.handleInput(remaining);
+	}
+
+	private encode(value: string): string {
+		const forbidden = new Set([
+			...value,
+			...this.editor.getExpandedText(),
+			...this.rawByMarker.keys(),
+		]);
+		return [...value]
+			.map((character) => {
+				if (!isUnsafeEditorCharacter(character) && !this.rawByMarker.has(character)) {
+					return character;
+				}
+				const marker = this.nextMarker(forbidden);
+				this.rawByMarker.set(marker, character);
+				forbidden.add(marker);
+				return marker;
+			})
+			.join("");
+	}
+
+	private decode(value: string): string {
+		return [...value].map((character) => this.rawByMarker.get(character) ?? character).join("");
+	}
+
+	private nextMarker(forbidden: ReadonlySet<string>): string {
+		for (;;) {
+			if (this.markerCodePoint === 0xf900) this.markerCodePoint = 0xf0000;
+			if (this.markerCodePoint === 0xffffe) this.markerCodePoint = 0x100000;
+			if (this.markerCodePoint > 0x10fffd) {
+				throw new Error("Plan-mode editor exhausted its safe input markers.");
+			}
+			const marker = String.fromCodePoint(this.markerCodePoint++);
+			if (!forbidden.has(marker)) return marker;
+		}
+	}
+}
+
+function isUnsafeDirectEditorCharacter(character: string): boolean {
+	const codePoint = character.codePointAt(0) ?? 0;
+	return (
+		(codePoint >= 0x7f && codePoint <= 0x9f) ||
+		codePoint === 0x2028 ||
+		codePoint === 0x2029 ||
+		isBidiControl(codePoint)
+	);
+}
+
+function isUnsafeEditorCharacter(character: string): boolean {
+	const codePoint = character.codePointAt(0) ?? 0;
+	return (
+		character !== "\n" &&
+		(codePoint <= 0x1f ||
+			(codePoint >= 0x7f && codePoint <= 0x9f) ||
+			codePoint === 0x2028 ||
+			codePoint === 0x2029 ||
+			isBidiControl(codePoint))
+	);
 }
 
 function answerFor(
@@ -690,6 +897,63 @@ function isBidiControl(codePoint: number): boolean {
 	);
 }
 
+type QuestionnaireKeybinding = Parameters<KeybindingsManager["getKeys"]>[0];
+
+function keybindingHint(
+	theme: Theme,
+	keybindings: KeybindingsManager,
+	keybinding: QuestionnaireKeybinding,
+	description: string,
+): string {
+	return rawKeyHint(theme, formatHintKeys(keybindings.getKeys(keybinding)), description);
+}
+
+function rawKeyHint(theme: Theme, keys: string, description: string): string {
+	return `${theme.fg("dim", keys)}${theme.fg("muted", ` ${description}`)}`;
+}
+
+function cancelHint(theme: Theme, keybindings: KeybindingsManager): string {
+	return rawKeyHint(
+		theme,
+		formatHintKeys([...keybindings.getKeys("tui.select.cancel"), "ctrl+c"]),
+		"cancel",
+	);
+}
+
+function selectionNavigationKeys(keybindings: KeybindingsManager): string {
+	const up = keybindings.getKeys("tui.select.up");
+	const down = keybindings.getKeys("tui.select.down");
+	if (up.includes("up") && down.includes("down")) {
+		return formatHintKeys([
+			"↑↓",
+			...up.filter((key) => key !== "up"),
+			...down.filter((key) => key !== "down"),
+		]);
+	}
+	return formatHintKeys([...up, ...down]);
+}
+
+function questionNavigationKeys(keybindings: KeybindingsManager): string {
+	return formatHintKeys([...keybindings.getKeys("tui.input.tab"), "shift+tab", "←→"]);
+}
+
+function formatHintKeys(keys: readonly string[]): string {
+	return [...new Set(keys)].map(formatHintKey).join("/");
+}
+
+function formatHintKey(key: string): string {
+	return key
+		.split("+")
+		.map((part) =>
+			process.platform === "darwin" && part.toLowerCase() === "alt" ? "option" : part,
+		)
+		.join("+");
+}
+
+function inlineSummary(value: string): string {
+	return value.split("\n").map(sanitizeTerminalText).join(" ↵ ");
+}
+
 function labeledRaw(label: string, value: string, width: number, theme: Theme): string[] {
 	const prefix = `${label}: `;
 	const safe = sanitizeTerminalText(value);
@@ -697,6 +961,19 @@ function labeledRaw(label: string, value: string, width: number, theme: Theme): 
 	return lines.map((line, index) =>
 		index === 0 ? `${theme.fg("muted", prefix)}${line}` : `${" ".repeat(prefix.length)}${line}`,
 	);
+}
+
+function hardWrapWithIndent(value: string, width: number, indent: number): string[] {
+	const safeWidth = Math.max(1, width);
+	const safeIndent = Math.min(Math.max(0, indent), Math.max(0, safeWidth - 1));
+	const continuationWidth = Math.max(1, safeWidth - safeIndent);
+	const columns = visibleWidth(value);
+	if (columns <= safeWidth) return [value];
+	const output = [sliceByColumn(value, 0, safeWidth)];
+	for (let column = safeWidth; column < columns; column += continuationWidth) {
+		output.push(`${" ".repeat(safeIndent)}${sliceByColumn(value, column, continuationWidth)}`);
+	}
+	return output;
 }
 
 function hardWrap(value: string, width: number): string[] {
