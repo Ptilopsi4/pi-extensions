@@ -1,6 +1,6 @@
 # Workflow Mutex Protocol v1
 
-- **Status:** Draft protocol for implementation and characterization.
+- **Status:** Implemented protocol with release-ready Plan and Goal conformance evidence.
 - **Transport:** Pi's process-local `pi.events` bus.
 - **Purpose:** Ensure at most one participating agent workflow is active in the same Pi session.
 
@@ -243,9 +243,16 @@ A dual-version migration requires a separate specification because emitting mult
 
 Packages MUST document the minimum counterpart versions required for guaranteed coexistence.
 
+The first release-intent versions derived from the repository Changesets are `@narumitw/pi-plan-mode@0.52.0` and `@narumitw/pi-goal@0.53.0`.
+These are compatibility floors, not evidence that either package has been published.
 A v1 participant operating beside a pre-v1 extension remains standalone-compatible but cannot claim mutual exclusion.
 
 ## Required Pi behavior
+
+The deterministic characterization in [`test/workflow-mutex-runtime.test.ts`](../../test/workflow-mutex-runtime.test.ts) covers the repository's exact installed Pi version, `@earendil-works/pi-coding-agent@0.84.2`.
+The root `package.json` and `package-lock.json` pin that version, and the test imports only public package-root APIs.
+V1 coexistence is supported only on this characterized version.
+Earlier releases, later releases, forks, and separately loaded Pi runtimes are uncharacterized and cannot receive the v1 coexistence guarantee until the same evidence passes for them.
 
 V1 depends on these Pi runtime properties:
 
@@ -254,13 +261,22 @@ V1 depends on these Pi runtime properties:
 3. All extension contexts for one active session expose the same `sessionManager` object identity.
 4. Stale extension runtimes unsubscribe their tracked event-bus listeners.
 
-The current installed Pi implementation uses Node's synchronous `EventEmitter` dispatch behind an async error-catching wrapper.
+The characterized Pi runtime uses Node's synchronous `EventEmitter` dispatch behind an async error-catching wrapper.
 
-Only mutations performed before a listener returns are visible to the requester before `emit()` returns.
+Only mutations performed before a listener first yields are visible to the requester before `emit()` returns.
+The characterization proves shared delivery across inline extension factories, synchronous listener start and mutation, exact `sessionManager` identity across runner contexts, and tracked-listener cleanup after runtime invalidation.
 
 These properties MUST have deterministic characterization tests before a package claims v1 support.
 
 If a supported Pi version stops satisfying any property, participants MUST fail safe and withdraw the coexistence claim until the protocol is revised.
+
+## Product conformance
+
+`@narumitw/pi-plan-mode` and `@narumitw/pi-goal` each implement v1 in a package-local module without importing, identifying, or depending on the other extension.
+[`test/plan-goal-coexistence.test.ts`](../../test/plan-goal-coexistence.test.ts) covers both source load orders, both acquisition orders, restoration, tool-write rejection, release and reacquisition, standalone parity, and built generated entries on one public Pi event bus.
+Package-focused mutex suites cover each participant's activation, rollback, waiting, continuation, settings, managed-run, and lifecycle boundaries.
+The coexistence claim applies only at or above both documented package floors on the characterized Pi runtime.
+No publication, tag, visibility change, or release workflow is implied by this conformance status.
 
 ## Conformance tests
 
