@@ -1,5 +1,11 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { runConfirmation, runLiveChoice, runMenu, runTask } from "@narumitw/pi-tui-kit";
+import {
+	runConfirmation,
+	runLiveChoice,
+	runMenu,
+	runQuestionnaire,
+	runTask,
+} from "@narumitw/pi-tui-kit";
 import {
 	appendLog,
 	createInitialShowcaseState,
@@ -69,6 +75,7 @@ async function runStandaloneInteraction(
 			task: ({ signal }) => delay(250, signal),
 			onError: (_ctx, error) => notify(ctx, safeError(error), "error"),
 		});
+		if (options.signal.aborted || !options.isCurrent()) return;
 		if (result.kind === "completed") {
 			appendLog(state, "Standalone task completed.");
 			notify(ctx, "Showcase task completed.", "info");
@@ -86,11 +93,50 @@ async function runStandaloneInteraction(
 			isCurrent: options.isCurrent,
 			onError: (_ctx, error) => notify(ctx, safeError(error), "error"),
 		});
+		if (options.signal.aborted || !options.isCurrent()) return;
 		if (result.kind === "confirmed") {
 			appendLog(state, "Standalone confirmation accepted.");
 			notify(ctx, "Confirmation recorded.", "info");
 		} else if (result.kind === "closed") {
 			appendLog(state, `Standalone confirmation closed with ${result.reason}.`);
+		}
+		return;
+	}
+
+	if (interaction === "questionnaire") {
+		const result = await runQuestionnaire(ctx, {
+			questions: [
+				{
+					id: "layout",
+					header: "Layout",
+					prompt: "Which layout should this demo prefer?",
+					options: [
+						{ label: "Compact", description: "Keep the presentation concise." },
+						{ label: "Spacious", description: "Leave more room for explanations." },
+					],
+				},
+				{
+					id: "validation",
+					header: "Validation",
+					prompt: "How should the demo validate input?",
+					options: [
+						{ label: "Strict", description: "Reject invalid input immediately." },
+						{ label: "Flexible", description: "Accept broader demonstration input." },
+					],
+				},
+			],
+			allowNotes: true,
+			maxTextLength: 200,
+			signal: options.signal,
+			isCurrent: options.isCurrent,
+			onError: (_ctx, error) => notify(ctx, safeError(error), "error"),
+		});
+		if (options.signal.aborted || !options.isCurrent()) return;
+		if (result.kind === "submitted") {
+			appendLog(state, `Standalone questionnaire submitted ${result.answers.length} answers.`);
+			notify(ctx, "Questionnaire submitted.", "info");
+		} else if (result.kind === "closed") {
+			appendLog(state, `Standalone questionnaire closed with ${result.reason}.`);
 		}
 		return;
 	}
@@ -115,6 +161,7 @@ async function runStandaloneInteraction(
 		},
 		onError: (_ctx, error) => notify(ctx, safeError(error), "error"),
 	});
+	if (options.signal.aborted || !options.isCurrent()) return;
 
 	if (result.kind === "selected" && isShowcaseProfile(result.itemId)) {
 		state.profile = result.itemId;
