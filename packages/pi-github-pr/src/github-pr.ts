@@ -108,6 +108,29 @@ export default function githubPr(pi: ExtensionAPI, options: GithubPrOptions = {}
 		}
 		return request;
 	};
+	const runCurrentRefresh = async (
+		ctx: ExtensionContext,
+		session: number,
+		generation: number,
+		controller: AbortController,
+	): Promise<boolean> => {
+		const sessionManager = ctx.sessionManager;
+		try {
+			const request = await refreshStatus(ctx, controller.signal, generation);
+			return (
+				!controller.signal.aborted &&
+				ownsSession(session, sessionManager) &&
+				generation === branchWatch.generation &&
+				request === branchWatch.request
+			);
+		} catch {
+			return false;
+		} finally {
+			if (branchWatch.refreshController === controller) {
+				branchWatch.refreshController = undefined;
+			}
+		}
+	};
 	const schedulePeriodicRefresh = (ctx: ExtensionContext, session: number) => {
 		cancelRefresh(branchWatch);
 		const generation = branchWatch.generation;
@@ -117,16 +140,7 @@ export default function githubPr(pi: ExtensionAPI, options: GithubPrOptions = {}
 			if (!ownsSession(session, sessionManager) || generation !== branchWatch.generation) return;
 			const controller = new AbortController();
 			branchWatch.refreshController = controller;
-			const request = await refreshStatus(ctx, controller.signal, generation);
-			if (branchWatch.refreshController === controller) {
-				branchWatch.refreshController = undefined;
-			}
-			if (
-				!controller.signal.aborted &&
-				ownsSession(session, sessionManager) &&
-				generation === branchWatch.generation &&
-				request === branchWatch.request
-			) {
+			if (await runCurrentRefresh(ctx, session, generation, controller)) {
 				schedulePeriodicRefresh(ctx, session);
 			}
 		}, refreshIntervalMs);
@@ -146,16 +160,7 @@ export default function githubPr(pi: ExtensionAPI, options: GithubPrOptions = {}
 			if (!ownsSession(session, sessionManager) || generation !== branchWatch.generation) return;
 			const controller = new AbortController();
 			branchWatch.refreshController = controller;
-			const request = await refreshStatus(ctx, controller.signal, generation);
-			if (branchWatch.refreshController === controller) {
-				branchWatch.refreshController = undefined;
-			}
-			if (
-				!controller.signal.aborted &&
-				ownsSession(session, sessionManager) &&
-				generation === branchWatch.generation &&
-				request === branchWatch.request
-			) {
+			if (await runCurrentRefresh(ctx, session, generation, controller)) {
 				schedulePeriodicRefresh(ctx, session);
 			}
 		}, BRANCH_REFRESH_DEBOUNCE_MS);
@@ -176,6 +181,7 @@ export default function githubPr(pi: ExtensionAPI, options: GithubPrOptions = {}
 		generation: number,
 		controller: AbortController,
 	) => {
+		if (controller.signal.aborted) return;
 		const sessionManager = ctx.sessionManager;
 		const watcher = await createBranchWatcher(pi, ctx.cwd, controller.signal, () => {
 			if (ownsSession(session, sessionManager)) scheduleBranchRefresh(ctx, session);
@@ -214,9 +220,15 @@ export default function githubPr(pi: ExtensionAPI, options: GithubPrOptions = {}
 		const generation = branchWatch.generation;
 		const controller = new AbortController();
 		branchWatch.initializationController = controller;
+		const stopForwardingAbort = forwardAbort(ctx.signal, controller);
+		branchWatch.initializationAbortCleanup = stopForwardingAbort;
 		const initializationTask = initializeSession(ctx, session, generation, controller)
 			.catch(() => undefined)
 			.finally(() => {
+				stopForwardingAbort();
+				if (branchWatch.initializationAbortCleanup === stopForwardingAbort) {
+					branchWatch.initializationAbortCleanup = undefined;
+				}
 				if (branchWatch.initializationController === controller) {
 					branchWatch.initializationController = undefined;
 				}
@@ -233,26 +245,18 @@ export default function githubPr(pi: ExtensionAPI, options: GithubPrOptions = {}
 		const generation = branchWatch.generation;
 		cancelRefresh(branchWatch);
 		const controller = new AbortController();
-		const abortFromContext = () => controller.abort(ctx.signal?.reason);
-		ctx.signal?.addEventListener("abort", abortFromContext, { once: true });
-		if (ctx.signal?.aborted) abortFromContext();
+		const stopForwardingAbort = forwardAbort(ctx.signal, controller);
+		branchWatch.refreshAbortCleanup = stopForwardingAbort;
 		branchWatch.refreshController = controller;
-		let request: number;
 		try {
-			request = await refreshStatus(ctx, controller.signal, generation);
-		} finally {
-			ctx.signal?.removeEventListener("abort", abortFromContext);
-			if (branchWatch.refreshController === controller) {
-				branchWatch.refreshController = undefined;
+			if (await runCurrentRefresh(ctx, session, generation, controller)) {
+				schedulePeriodicRefresh(ctx, session);
 			}
-		}
-		if (
-			!controller.signal.aborted &&
-			ownsSession(session, ctx.sessionManager) &&
-			generation === branchWatch.generation &&
-			request === branchWatch.request
-		) {
-			schedulePeriodicRefresh(ctx, session);
+		} finally {
+			stopForwardingAbort();
+			if (branchWatch.refreshAbortCleanup === stopForwardingAbort) {
+				branchWatch.refreshAbortCleanup = undefined;
+			}
 		}
 	});
 
@@ -272,11 +276,13 @@ interface BranchWatchState {
 	session: number;
 	sessionManager?: ExtensionContext["sessionManager"];
 	initializationController?: AbortController;
+	initializationAbortCleanup?: () => void;
 	initializationTask?: Promise<void>;
 	watcher?: FSWatcher;
 	timer?: ReturnType<typeof setTimeout>;
 	refreshTimer?: ReturnType<typeof setTimeout>;
 	refreshController?: AbortController;
+	refreshAbortCleanup?: () => void;
 	expiryTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -537,9 +543,24 @@ function pullRequestExpiresAt(status: PullRequestStatus): number | undefined {
 	return Number.isFinite(terminalAt) ? terminalAt + TERMINAL_PR_LIFETIME_MS : undefined;
 }
 
+function forwardAbort(source: AbortSignal | undefined, target: AbortController): () => void {
+	if (!source) return () => undefined;
+	let active = true;
+	const abort = () => target.abort(source.reason);
+	source.addEventListener("abort", abort, { once: true });
+	if (source.aborted) abort();
+	return () => {
+		if (!active) return;
+		active = false;
+		source.removeEventListener("abort", abort);
+	};
+}
+
 function cancelInitialization(branchWatch: BranchWatchState) {
 	branchWatch.initializationController?.abort();
 	branchWatch.initializationController = undefined;
+	branchWatch.initializationAbortCleanup?.();
+	branchWatch.initializationAbortCleanup = undefined;
 }
 
 function cancelRefresh(branchWatch: BranchWatchState) {
@@ -547,6 +568,8 @@ function cancelRefresh(branchWatch: BranchWatchState) {
 	branchWatch.refreshTimer = undefined;
 	branchWatch.refreshController?.abort();
 	branchWatch.refreshController = undefined;
+	branchWatch.refreshAbortCleanup?.();
+	branchWatch.refreshAbortCleanup = undefined;
 }
 
 function clearExpiryTimer(branchWatch: BranchWatchState) {

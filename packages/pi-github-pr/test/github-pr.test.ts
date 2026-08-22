@@ -454,6 +454,8 @@ test("session start does not wait for initial commands before returning", async 
 test("session shutdown aborts initial refresh and blocks late publication", async () => {
 	const mock = createMockPi();
 	const prView = deferred<ExecResult>();
+	const sessionController = new AbortController();
+	const removeAbortListener = vi.spyOn(sessionController.signal, "removeEventListener");
 	let initialSignal: AbortSignal | undefined;
 	const calls = installExec(mock, async (command, args, options) => {
 		if (command === "git") return textResult("", 128, "not a git repository");
@@ -464,7 +466,7 @@ test("session shutdown aborts initial refresh and blocks late publication", asyn
 		return okResult(sampleCounts);
 	});
 	githubPr(mock.pi, { refreshIntervalMs: 20 });
-	const context = createMockContext({ cwd: "/repo" });
+	const context = createMockContext({ cwd: "/repo", signal: sessionController.signal });
 	const sessionStart = mock.events.get("session_start")?.[0];
 	const sessionShutdown = mock.events.get("session_shutdown")?.[0];
 	assert.ok(sessionStart);
@@ -477,11 +479,69 @@ test("session shutdown aborts initial refresh and blocks late publication", asyn
 
 	await sessionShutdown({}, context.ctx);
 	assert.equal(initialSignal.aborted, true);
+	assert.equal(removeAbortListener.mock.calls.length, 1);
+	prView.resolve(okResult(samplePr));
+	await drainMicrotasks();
+
+	assert.equal(removeAbortListener.mock.calls.length, 1);
+	assert.equal(calls.length, 2);
+	assert.equal(context.statuses.get("github-pr"), undefined);
+});
+
+test("session cancellation aborts initial refresh and blocks late publication", async () => {
+	const mock = createMockPi();
+	const prView = deferred<ExecResult>();
+	const sessionController = new AbortController();
+	let initialSignal: AbortSignal | undefined;
+	const calls = installExec(mock, async (command, args, options) => {
+		if (command === "git") return textResult("", 128, "not a git repository");
+		if (args[0] === "pr") {
+			initialSignal = options?.signal;
+			return prView.promise;
+		}
+		return okResult(sampleCounts);
+	});
+	githubPr(mock.pi);
+	const context = createMockContext({ cwd: "/repo", signal: sessionController.signal });
+	const sessionStart = mock.events.get("session_start")?.[0];
+	const sessionShutdown = mock.events.get("session_shutdown")?.[0];
+	assert.ok(sessionStart);
+	assert.ok(sessionShutdown);
+
+	sessionStart({}, context.ctx);
+	await waitFor(() => initialSignal !== undefined, "initial refresh receives an abort signal");
+	assert.ok(initialSignal);
+	assert.notEqual(initialSignal, sessionController.signal);
+	assert.equal(initialSignal.aborted, false);
+
+	const reason = new Error("session cancelled");
+	sessionController.abort(reason);
+	assert.equal(initialSignal.aborted, true);
+	assert.equal(initialSignal.reason, reason);
 	prView.resolve(okResult(samplePr));
 	await drainMicrotasks();
 
 	assert.equal(calls.length, 2);
 	assert.equal(context.statuses.get("github-pr"), undefined);
+	await sessionShutdown({}, context.ctx);
+});
+
+test("a pre-aborted session does not start initialization commands", async () => {
+	const mock = createMockPi();
+	const calls = installExec(mock, async () => textResult("", 128, "not a git repository"));
+	githubPr(mock.pi);
+	const controller = new AbortController();
+	controller.abort(new Error("already cancelled"));
+	const context = createMockContext({ cwd: "/repo", signal: controller.signal });
+	const sessionStart = mock.events.get("session_start")?.[0];
+	const sessionShutdown = mock.events.get("session_shutdown")?.[0];
+	assert.ok(sessionStart);
+	assert.ok(sessionShutdown);
+
+	assert.equal(sessionStart({}, context.ctx), undefined);
+	await drainMicrotasks();
+	assert.deepEqual(calls, []);
+	await sessionShutdown({}, context.ctx);
 });
 
 test("session replacement aborts initial refresh and rejects its late result", async () => {
@@ -678,6 +738,8 @@ test("a refresh aborted during agent-end preserves the current status", async ()
 test("session shutdown aborts an in-flight agent-end refresh", async () => {
 	const mock = createMockPi();
 	const agentEndPrView = deferred<ExecResult>();
+	const sessionController = new AbortController();
+	const removeAbortListener = vi.spyOn(sessionController.signal, "removeEventListener");
 	let agentEndSignal: AbortSignal | undefined;
 	let prViews = 0;
 	installExec(mock, async (command, args, options) => {
@@ -692,7 +754,7 @@ test("session shutdown aborts an in-flight agent-end refresh", async () => {
 		return okResult(args[0] === "pr" ? samplePr : sampleCounts);
 	});
 	githubPr(mock.pi, { refreshIntervalMs: 20 });
-	const context = createMockContext({ cwd: "/repo" });
+	const context = createMockContext({ cwd: "/repo", signal: sessionController.signal });
 	const sessionStart = mock.events.get("session_start")?.[0];
 	const agentEnd = mock.events.get("agent_end")?.[0];
 	const sessionShutdown = mock.events.get("session_shutdown")?.[0];
@@ -705,6 +767,8 @@ test("session shutdown aborts an in-flight agent-end refresh", async () => {
 		() => (context.statuses.get("github-pr") ?? "").includes("#123"),
 		"initial status is visible before agent-end shutdown",
 	);
+	const removalsBeforeAgentEnd = removeAbortListener.mock.calls.length;
+	assert.equal(removalsBeforeAgentEnd, 1);
 	const agentEndPromise = agentEnd({}, context.ctx);
 	await waitFor(() => agentEndSignal !== undefined, "agent-end refresh starts");
 	assert.ok(agentEndSignal);
@@ -712,9 +776,11 @@ test("session shutdown aborts an in-flight agent-end refresh", async () => {
 
 	await sessionShutdown({}, context.ctx);
 	assert.equal(agentEndSignal.aborted, true);
+	assert.equal(removeAbortListener.mock.calls.length, removalsBeforeAgentEnd + 1);
 	agentEndPrView.resolve(okResult(samplePr));
 	await agentEndPromise;
 
+	assert.equal(removeAbortListener.mock.calls.length, removalsBeforeAgentEnd + 1);
 	assert.equal(context.statuses.get("github-pr"), undefined);
 	assert.equal(prViews, 2);
 });
