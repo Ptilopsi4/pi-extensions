@@ -53,7 +53,8 @@ Run commands from the repository root unless a command says otherwise.
 - Upgrade an outdated dependency instead of hiding its type errors by removing or downgrading code.
 - Keep every extension independently installable and functional by itself.
 - Do not import or depend on another extension package.
-- Do not assume another extension's names, schemas, settings, events, installation state, version, or behavior.
+- Do not assume private or extension-specific details of another extension, including its names, schemas, settings, events, installation state, version, or behavior.
+- Extensions may participate in documented, versioned, extension-neutral protocols over Pi's public APIs only when the protocol does not identify or require a specific extension and the absence of other participants preserves standalone behavior.
 - Keep each behavior policy in the extension that enforces it.
 - Share code only through Pi's public extension-neutral APIs or reusable non-extension libraries.
 - Do not make reusable libraries coordinate specific extensions.
