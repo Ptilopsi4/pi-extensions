@@ -2,7 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { access, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
@@ -54,8 +54,11 @@ export async function buildRuntime({
 			banner: { js: GENERATED_BANNER },
 			bundle: true,
 			chunkNames: "chunks/[name]-[hash]",
-			entryNames: "index",
-			entryPoints: ["src/index.ts"],
+			entryNames: "[dir]/[name]",
+			entryPoints: {
+				index: "src/index.ts",
+				"chunks/child-peer-bridge": "src/child-peer-bridge.ts",
+			},
 			format: "esm",
 			legalComments: "none",
 			metafile: true,
@@ -134,7 +137,11 @@ export async function validateGeneratedFiles(outputDirectory) {
 	if (!runtimeFiles.some((path) => path.startsWith("chunks/"))) {
 		throw new Error("Generated runtime has no lazy chunks");
 	}
+	if (!runtimeFiles.includes("chunks/child-peer-bridge.ts")) {
+		throw new Error("Generated runtime is missing the child peer bridge");
+	}
 
+	let bridgeReferences = 0;
 	for (const runtimePath of runtimeFiles) {
 		const source = await readFile(join(outputDirectory, runtimePath), "utf8");
 		if (!source.startsWith(GENERATED_BANNER)) {
@@ -149,6 +156,16 @@ export async function validateGeneratedFiles(outputDirectory) {
 		if (!files.includes(`${runtimePath}.map`)) {
 			throw new Error(`Source map is missing for ${runtimePath}`);
 		}
+		if (/new URL\((["'])\.\/child-peer-bridge\.ts\1,\s*import\.meta\.url\)/u.test(source)) {
+			bridgeReferences += 1;
+			const bridgePath = posix.join(posix.dirname(runtimePath), "child-peer-bridge.ts");
+			if (!files.includes(bridgePath)) {
+				throw new Error(`Child peer bridge target is missing for ${runtimePath}: ${bridgePath}`);
+			}
+		}
+	}
+	if (bridgeReferences !== 1) {
+		throw new Error(`Generated runtime has ${bridgeReferences} child peer bridge references`);
 	}
 }
 
