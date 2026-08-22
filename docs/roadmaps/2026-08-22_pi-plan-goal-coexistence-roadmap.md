@@ -102,7 +102,7 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 ### Phase 2: Make Plan and Goal participate
 
 - [ ] Every transition from inactive to a Plan mutex-holding state performs final admission after all asynchronous preflight and before any state, persistence, prompt, or tool mutation.
-- [ ] Every Goal activation path, including direct start, queue activation, resume, retry recovery, and restored automatic continuation, respects one documented mutex-ownership rule.
+- [ ] Every Goal activation path, including direct start, resume, retry recovery, and restored automatic continuation, respects one documented mutex-ownership rule; queue activation is not applicable because the focused Goal keeps legacy queued state inert.
 - [ ] Plan reports the mutex as busy while planning, ready, or revising, and releases it after implementation handoff, save, export-and-exit, discard, or exit.
 - [ ] Goal reports the mutex as busy for every state that can execute or resume automatically and releases it only after its existing terminal, stop, clear, or non-resumable transition.
 - [ ] An inactive Goal path that would widen active tools performs the same final busy check and defers its tool change while another workflow holds the group.
