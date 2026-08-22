@@ -1,6 +1,6 @@
 # Workflow Mutex Protocol v1
 
-- **Status:** Draft protocol for implementation and characterization.
+- **Status:** Implemented protocol with release-ready Plan and Goal conformance evidence.
 - **Transport:** Pi's process-local `pi.events` bus.
 - **Purpose:** Ensure at most one participating agent workflow is active in the same Pi session.
 
@@ -243,6 +243,8 @@ A dual-version migration requires a separate specification because emitting mult
 
 Packages MUST document the minimum counterpart versions required for guaranteed coexistence.
 
+The first release-intent versions derived from the repository Changesets are `@narumitw/pi-plan-mode@0.52.0` and `@narumitw/pi-goal@0.53.0`.
+These are compatibility floors, not evidence that either package has been published.
 A v1 participant operating beside a pre-v1 extension remains standalone-compatible but cannot claim mutual exclusion.
 
 ## Required Pi behavior
@@ -267,6 +269,14 @@ The characterization proves shared delivery across inline extension factories, s
 These properties MUST have deterministic characterization tests before a package claims v1 support.
 
 If a supported Pi version stops satisfying any property, participants MUST fail safe and withdraw the coexistence claim until the protocol is revised.
+
+## Product conformance
+
+`@narumitw/pi-plan-mode` and `@narumitw/pi-goal` each implement v1 in a package-local module without importing, identifying, or depending on the other extension.
+[`test/plan-goal-coexistence.test.ts`](../../test/plan-goal-coexistence.test.ts) covers both source load orders, both acquisition orders, restoration, tool-write rejection, release and reacquisition, standalone parity, and built generated entries on one public Pi event bus.
+Package-focused mutex suites cover each participant's activation, rollback, waiting, continuation, settings, managed-run, and lifecycle boundaries.
+The coexistence claim applies only at or above both documented package floors on the characterized Pi runtime.
+No publication, tag, visibility change, or release workflow is implied by this conformance status.
 
 ## Conformance tests
 

@@ -101,25 +101,25 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 
 ### Phase 2: Make Plan and Goal participate
 
-- [ ] Every transition from inactive to a Plan mutex-holding state performs final admission after all asynchronous preflight and before any state, persistence, prompt, or tool mutation.
-- [ ] Every Goal activation path, including direct start, resume, retry recovery, and restored automatic continuation, respects one documented mutex-ownership rule; queue activation is not applicable because the focused Goal keeps legacy queued state inert.
-- [ ] Plan reports the mutex as busy while planning, ready, or revising, and releases it after implementation handoff, save, export-and-exit, discard, or exit.
-- [ ] Goal reports the mutex as busy for every state that can execute or resume automatically and releases it only after its existing terminal, stop, clear, or non-resumable transition.
-- [ ] An inactive Goal path that would widen active tools performs the same final busy check and defers its tool change while another workflow holds the group.
-- [ ] Restored active state holds the mutex before it can schedule work, and an unsupported legacy collision falls back to the existing restrictive-wins pause behavior without starting autonomous work.
-- [ ] A rejected start is observable in every supported command mode and preserves the exact prior state and active tools.
-- [ ] Loading either package alone preserves its current commands, tools, settings, persistence, and runtime behavior.
+- [x] Every transition from inactive to a Plan mutex-holding state performs final admission after all asynchronous preflight and before any state, persistence, prompt, or tool mutation.
+- [x] Every Goal activation path, including direct start, resume, retry recovery, and restored automatic continuation, respects one documented mutex-ownership rule; queue activation is not applicable because the focused Goal keeps legacy queued state inert.
+- [x] Plan reports the mutex as busy while planning, ready, or revising, and releases it after implementation handoff, save, export-and-exit, discard, or exit.
+- [x] Goal reports the mutex as busy for every state that can execute or resume automatically and releases it only after its existing terminal, stop, clear, or non-resumable transition.
+- [x] An inactive Goal path that would widen active tools performs the same final busy check and defers its tool change while another workflow holds the group.
+- [x] Restored active state holds the mutex before it can schedule work, and an unsupported legacy collision falls back to the existing restrictive-wins pause behavior without starting autonomous work.
+- [x] A rejected start is observable in every supported command mode and preserves the exact prior state and active tools.
+- [x] Loading either package alone preserves its current commands, tools, settings, persistence, and runtime behavior.
 
 **Outcome:** Supported Plan and Goal versions coexist without becoming active at the same time and without importing or identifying one another.
 
 ### Phase 3: Prove lifecycle and tool safety
 
-- [ ] Co-installation tests cover both extension load orders and both acquisition orders.
-- [ ] Tests cover session restore, queued Goal activation, continuation, retry, Plan ready and revision states, cancellation, replacement, reload, shutdown, and stale callbacks.
-- [ ] Tests prove that a busy result never invokes `setActiveTools()`, Goal visibility changes cannot widen an active Plan tool set, and Plan restores the exact pre-Plan set when it exits.
-- [ ] The current restrictive-wins Goal fail-safe remains as defense in depth for unsupported or non-participating tool policies.
-- [ ] Package documentation states the minimum counterpart versions for guaranteed coexistence and distinguishes standalone support from mixed-version guarantees.
-- [ ] Both repository gates, focused package tests, package dry runs, and isolated Pi loading smokes pass before release readiness is claimed.
+- [x] Co-installation tests cover both extension load orders and both acquisition orders.
+- [x] Tests cover session restore, inert legacy queue state, continuation, retry, Plan ready and revision states, cancellation, replacement, reload, shutdown, and stale callbacks; focused Goal queue activation is not applicable.
+- [x] Tests prove that a busy result never invokes `setActiveTools()`, Goal visibility changes cannot widen an active Plan tool set, and Plan restores the exact pre-Plan set when it exits.
+- [x] The current restrictive-wins Goal fail-safe remains as defense in depth for unsupported or non-participating tool policies.
+- [x] Package documentation states the minimum counterpart versions for guaranteed coexistence and distinguishes standalone support from mixed-version guarantees.
+- [x] Both repository gates, focused package tests, package dry runs, and isolated Pi loading smokes pass before release readiness is claimed.
 
 **Outcome:** Coexistence is supported by deterministic lifecycle evidence rather than event timing assumptions alone.
 
