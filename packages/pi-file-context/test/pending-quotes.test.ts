@@ -49,7 +49,7 @@ async function stageQuote(
 	const running = Promise.resolve(command?.handler("browse", context.ctx));
 	await waitForText(tui, "File Context");
 	assert.equal(path.startsWith("src/"), true);
-	tui.press("tui.select.down");
+	tui.press("tui.select.confirm");
 	tui.press("tui.select.confirm");
 	await waitForText(tui, "Enter add");
 	assert.match(tui.render().join("\n"), new RegExp(text, "u"));
