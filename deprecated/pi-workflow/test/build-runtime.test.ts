@@ -15,7 +15,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "vitest";
 
-const packageRoot = resolve("packages/pi-workflow");
+const packageRoot = resolve("deprecated/pi-workflow");
 const builderUrl = pathToFileURL(join(packageRoot, "scripts/build-runtime.mjs")).href;
 
 type BuildMetadata = {

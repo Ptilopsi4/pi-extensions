@@ -71,7 +71,6 @@ Run commands from the repository root unless a command says otherwise.
 - Choose the first TUI layer that fully supports the flow: Pi core `ctx.ui` APIs and `@earendil-works/pi-tui` components, then `@narumitw/pi-tui-kit`, and finally an extension-owned custom component.
 - Create a new custom component only when the earlier layers cannot preserve the required state, interaction, or lifecycle behavior.
 - Keep domain state, persistence, confirmations, and specialized UI inside the owning extension.
-- When changing either `packages/pi-plan-mode/src/question-tool.ts` or `packages/pi-workflow/src/plan/question-tool.ts`, inspect both implementations and their mirrored tests, and either keep compatibility changes aligned or document why package behavior intentionally differs.
 - Preserve each README's emoji title; npm, Pi, and license badges; and applicable `✨ Features`, `📦 Install`, `🚀 Quick start`, `⚙️ Settings`, `💬 Commands`, `🗂️ Package layout`, `🔎 Keywords`, and `📄 License` sections.
 - Show a user-facing warning for experimental extensions and features.
 - Keep experimental packages in root checks unless they are private.

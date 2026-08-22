@@ -1,17 +1,27 @@
-# 🧭 pi-workflow — Plan First, Then Execute with Goal Mode
+# 🧭 pi-workflow — Deprecated Integrated Plan-to-Goal Workflow
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-workflow)](https://www.npmjs.com/package/@narumitw/pi-workflow) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-Explore and approve an implementation plan, then hand the exact plan to persistent Goal execution in the same session or a fresh linked session.
+> [!WARNING]
+> `@narumitw/pi-workflow` is deprecated, kept under `deprecated/` for reference, and excluded from active workspace checks, tests, releases, and maintenance.
+> Migrate to [`@narumitw/pi-plan-mode`](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-plan-mode) and [`@narumitw/pi-goal`](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-goal) by following the [migration guide](../../docs/pi-workflow-migration.md).
+> The focused packages do not replace atomic or automatic Plan-to-Goal handoff, the `/workflow` manager, unified settings, or handoff rollback.
+> Remove the deprecated package with:
+>
+> ```bash
+> pi uninstall npm:@narumitw/pi-workflow
+> ```
 
-The extension combines the established `/plan` and `/goal` workflows into one recoverable Plan-to-Goal transition.
+This archived extension explored and approved an implementation plan, then handed the exact plan to persistent Goal execution in the same session or a fresh linked session.
+
+It combined the established `/plan` and `/goal` workflows into one recoverable Plan-to-Goal transition.
 
 > [!IMPORTANT]
 > Do not load this package with `@narumitw/pi-plan-mode` or `@narumitw/pi-goal` because they intentionally share commands, tools, event channels, and session-state names.
 
 ## ✨ Features
 
-- Provides `/workflow`, `/plan`, and `/goal` from one independently installable extension.
+- Provided `/workflow`, `/plan`, and `/goal` from one package.
 - Supports planning alone, Goal execution alone, or an explicit approved Plan-to-Goal handoff.
 - Preserves structured Plan questions, completion, save, export, tool selection, and thinking-level control.
 - Preserves Goal completion, blockers, external waits, pause, resume, edit, clear, budgets, queues, and managed-run RPC.
@@ -21,36 +31,23 @@ The extension combines the established `/plan` and `/goal` workflows into one re
 - Stores optional settings atomically and reports Plan and Goal status independently.
 - Loads a generated split runtime while preserving lazy manager, export, preflight, and handoff chunks.
 
-## 📦 Install
+## 📦 Archived reference
 
-Install persistently from npm:
-
-```bash
-pi install npm:@narumitw/pi-workflow
-```
-
-Try without installing permanently:
+Build and inspect the archived local package only when maintaining historical behavior:
 
 ```bash
-pi -e npm:@narumitw/pi-workflow
+cd deprecated/pi-workflow
+npm run build
+pi -e .
 ```
 
-Build the generated runtime and try the local package from this repository:
-
-```bash
-npm --workspace @narumitw/pi-workflow run build
-pi -e ./packages/pi-workflow
-```
-
-The package declares `dist/index.ts`, so the build command must finish before Pi loads the local package directory.
+The package declares `dist/index.ts`, so the build command must finish before Pi loads the archived package directory.
 
 An unbuilt checkout still declares `dist/index.ts`, but the generated entrypoint and chunks do not exist until the build completes.
 
 Pi extensions run with the same permissions as Pi.
 
-Only install extensions from sources you trust.
-
-Remove the standalone Plan and Goal packages from the same Pi configuration before loading this combined package.
+Do not load this archived package with Plan or Goal.
 
 ## 🚀 Quick start
 
@@ -343,18 +340,18 @@ Keep finite safety limits unless unlimited execution is an informed choice.
 
 ## 🚧 Limitations
 
-This package owns source snapshots of the stable Plan and Goal implementations so it remains independently installable.
+This archived package owns source snapshots of the Plan and Goal implementations as they existed at deprecation.
 
 It does not import or depend on another extension package.
 
-The shared workflow engine remains a planned maintainability improvement rather than a stability prerequisite.
+It receives no feature, compatibility, or security fixes.
 
-Behavioral updates to either stable predecessor must be intentionally synchronized and reverified here.
+Use the focused Plan and Goal packages for maintained behavior.
 
 ## 🗂️ Package layout
 
 ```text
-packages/pi-workflow/
+deprecated/pi-workflow/
 ├── dist/              # Generated split TypeScript runtime loaded through Pi's Jiti loader
 ├── scripts/
 │   └── build-runtime.mjs # Deterministic bundler and eager-boundary validator
