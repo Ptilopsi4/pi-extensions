@@ -22,9 +22,14 @@ export type ShowcaseAction =
 	| "resetFeatures"
 	| "openTask"
 	| "openConfirmation"
-	| "openLiveChoice";
+	| "openLiveChoice"
+	| "openQuestionnaire";
 
-export type ShowcaseStandaloneInteraction = "task" | "confirmation" | "liveChoice";
+export type ShowcaseStandaloneInteraction =
+	| "task"
+	| "confirmation"
+	| "liveChoice"
+	| "questionnaire";
 
 export interface ShowcaseState {
 	profile: "Minimal" | "Balanced" | "Verbose";
@@ -118,6 +123,12 @@ export function createShowcaseMenu(
 						label: "Multi-select screen",
 						description: "Toggles, search, and bulk actions",
 						to: "multiSelect",
+					},
+					{
+						id: "questionnaire",
+						label: "Questionnaire",
+						description: "Closes this menu, shows runQuestionnaire(), then reopens",
+						action: "openQuestionnaire",
 					},
 					{
 						id: "task",
@@ -408,6 +419,10 @@ export function createShowcaseMenu(
 			},
 			openLiveChoice: () => {
 				runtime.requestStandalone("liveChoice");
+				return { kind: "close" };
+			},
+			openQuestionnaire: () => {
+				runtime.requestStandalone("questionnaire");
 				return { kind: "close" };
 			},
 		},

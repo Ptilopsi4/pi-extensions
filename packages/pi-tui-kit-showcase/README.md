@@ -13,7 +13,7 @@ The showcase uses only in-memory state and stores no settings.
 ## ✨ Features
 
 - Demonstrates action, detail, browse, choice, settings, input, review, and multi-select screens.
-- Demonstrates standalone task, confirmation, and live-choice interactions from the same menu.
+- Demonstrates standalone questionnaire, task, confirmation, and live-choice interactions from the same menu.
 - Covers disabled rows, busy labels, search, exact documents, adaptive review, bulk actions, and row descriptions.
 - Keeps all effects in memory inside the demo process.
 - Loads the Kit runtime only after `/tui-kit-showcase` runs.
@@ -44,7 +44,7 @@ Run this command in Pi TUI mode:
 
 Choose any row to inspect a presentation pattern.
 
-The standalone task, confirmation, and live-choice rows close the menu, show the standalone interaction, then reopen the menu when the interaction finishes.
+The standalone questionnaire, task, confirmation, and live-choice rows close the menu, show the standalone interaction, then reopen the menu when the interaction finishes.
 
 RPC mode reports that the showcase requires TUI mode.
 
