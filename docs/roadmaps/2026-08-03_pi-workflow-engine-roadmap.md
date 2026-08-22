@@ -42,6 +42,7 @@ same stage engine only when concrete consumer evidence supports their semantics.
 - **Keep extensions thin and independent** — Success: `pi-plan-mode`, `pi-goal`, and `pi-workflow`
   depend on the library but never import or inspect one another; each remains installable and
   functional alone.
+- **Establish a truthful product loading boundary** — Success: every declared supported combination either coexists without registration, state, event, or tool-policy collisions, or is prevented from loading together through a repository-compliant and documented product boundary.
 - **Compose planning and execution atomically** — Success: `pi-workflow` moves one persisted workflow
   from planning to managed execution without an event-channel handoff, duplicate objective, or two
   completion owners.
@@ -55,6 +56,7 @@ same stage engine only when concrete consumer evidence supports their semantics.
 
 - No `pi-workflow-engine` package or shared workflow engine exists.
 - `pi-workflow` exists as a stable, independently installable combined extension that currently owns package-local Plan and Goal source snapshots instead of consuming the planned engine.
+- The root manifest loads `pi-workflow`, `pi-plan-mode`, and `pi-goal` as stable extensions, but the `pi-workflow` README currently prohibits loading the combined product with either focused product because they share commands, tools, event channels, and session-state names.
 - `pi-plan-mode` owns planning, approval, restrictive tools, exact plan persistence,
   compaction-safe active-plan context, and manual implementation clearing. Its accepted plan can be
   up to 50,000 characters.
@@ -139,7 +141,7 @@ pi-goal
 
 packages/pi-workflow
 ├─ /workflow public interface and one unified status surface
-├─ workflow-specific menus, settings, wording, and tool namespace
+├─ workflow-specific menus, settings, wording, and Phase 0-approved registration namespace
 ├─ workflow manager and interaction adapters over the shared service
 ├─ planning and managed-execution stage composition
 └─ standalone end-to-end product with no extension dependencies
@@ -177,6 +179,15 @@ stage configuration or an engine-owned transition.
 
 ## Roadmap
 
+### Phase 0: Resolve the stable product loading boundary
+
+- [x] Maintainers approved `pi-workflow` as a stable third option with its current menu, defaults, settings ownership, status language, and compatibility surface while keeping `pi-plan-mode` and `pi-goal` active; that decision did not establish that the three products may be loaded together.
+- [ ] Maintainers choose one supported loading model: collision-free coexistence through a separately approved `pi-workflow` registration migration and an explicit overlapping-run policy, or enforced mutual exclusion with lifecycle, root-loading, installation, and user guidance aligned so incompatible products are not activated together.
+- [ ] The selected model is implemented and verified before engine extraction: coexistence covers every supported package combination and proves restrictive policy is never widened, while mutual exclusion prevents or rejects unsupported combinations before conflicting commands, tools, events, or state owners become active.
+- [ ] Root and package manifests, installation guidance, runtime behavior, boundary checks, and Pi load smokes describe and enforce the same supported combinations.
+
+**Outcome:** Stable products have one truthful and enforceable loading contract, so the engine can be extracted without preserving an unresolved registration or workflow-ownership collision.
+
 ### Phase 1: Establish pi-workflow-engine
 
 - [ ] `@narumitw/pi-workflow-engine` exists as a publishable non-extension library with bounded APIs
@@ -188,9 +199,8 @@ stage configuration or an engine-owned transition.
 - [ ] One workflow service exposes structured operations and results needed by product-owned
   commands, tools, and UI, so domain transitions have one authoritative implementation without a
   published transport contract.
-- [ ] Product adapters call the same workflow service rather than infer state from notifications or
-  assistant prose. The package implements no JSONL framing, custom native Pi RPC command, or
-  extension-owned event-bus control protocol.
+- [ ] A reference host adapter and service-contract tests call the same workflow service rather than infer state from notifications or assistant prose.
+  The package implements no JSONL framing, custom native Pi RPC command, or extension-owned event-bus control protocol.
 - [ ] Initial planning and managed-execution stages provide the behavior required by the combined
   product, backed by characterization contracts derived from pi-plan-mode and pi-goal without yet
   changing either focused extension's public implementation.
@@ -272,28 +282,15 @@ proven by pi-workflow.
 **Outcome:** Both focused extensions share the engine with pi-workflow while keeping distinct product
 roles: planning-only, goal-only, and combined end-to-end workflow.
 
-### Phase 5: Validate stable coexistence and decide the successor role
+### Phase 5: Validate engine-backed product roles and decide the successor direction
 
-- [ ] Co-installation tests cover every supported combination of pi-workflow, pi-plan-mode, and
-  pi-goal; unique commands and tools remain distinguishable, restrictive policy is never widened, and
-  overlapping autonomous workflows follow one explicit reject-or-serialize decision.
-- [ ] Representative real tasks establish whether pi-workflow improves completion, recovery, and
-  cleanup without making focused planning or direct Goal usage harder; unsupported adoption targets
-  remain explicit unknowns.
-- [x] Maintainers approve `pi-workflow` as a stable extension with its current menu, defaults, settings ownership, status language, and compatibility surface.
-- [ ] Real consumers determine whether blocked-proposal review, continuation leases, or any additional
-  supervision authority from the earlier pi-goal cross-extension proposal belongs in the shared
-  workflow service; absent evidence, those hooks remain deferred.
-- [ ] Process-level automation evidence determines whether the internal service is sufficient or a
-  separately proposed RPC adapter or upstream Pi capability is justified; the engine does not add a
-  second JSONL server to close that platform gap.
-- [x] Maintainers designate pi-workflow as a stable third option while pi-plan-mode and pi-goal remain active.
-  Any primary-successor selection or predecessor deprecation still requires a separate approved decision.
-- [ ] Engine, extension, and compatibility checks plus package dry runs and representative Pi smokes
-  establish release readiness without implying publication, tags, visibility changes, or version
-  changes.
+- [ ] Representative real tasks establish whether the engine-backed `pi-workflow` improves completion, recovery, and cleanup without making focused planning or direct Goal usage harder; unsupported adoption targets remain explicit unknowns.
+- [ ] Real consumers determine whether blocked-proposal review, continuation leases, or any additional supervision authority from the earlier pi-goal cross-extension proposal belongs in the shared workflow service; absent evidence, those hooks remain deferred.
+- [ ] Process-level automation evidence determines whether the internal service is sufficient or a separately proposed RPC adapter or upstream Pi capability is justified; the engine does not add a second JSONL server to close that platform gap.
+- [ ] Evidence determines whether to retain the approved stable-third-option role or propose a separately approved primary-successor change; any predecessor deprecation remains a separate decision.
+- [ ] Engine, extension, loading-boundary, and compatibility checks plus package dry runs and representative Pi smokes establish release readiness without implying publication, tags, visibility changes, or version changes.
 
-**Outcome:** The repository supports pi-workflow as a stable combined product while gathering evidence for any later primary-successor or predecessor-migration decision.
+**Outcome:** All three products have verified engine-backed roles and release-readiness evidence, and any proposed successor or predecessor migration has an explicit evidence-backed decision path.
 
 ### Future option: Decide whether Workflow RPC is justified
 
@@ -324,8 +321,9 @@ unimplemented without complicating the normal pi-workflow experience.
 | Plan fidelity after implementation compaction | Plan-mode-specific support | Byte-exact engine artifact | End-to-end smoke and context assertions |
 | Valid completion owners for one active phase | Potentially separate Plan/Goal concepts | Exactly 1 | Tool-schema and transition tests |
 | Existing `/plan` and `/goal` behavior lost during migration | Current baseline | 0 unapproved losses | Characterization and compatibility suites |
-| Focused extension dependencies imported by pi-workflow | No combined product | 0 | Boundary checks and package review |
-| End-to-end workflows with one completion owner | No combined product | Every pi-workflow run | Integration tests and Pi smokes |
+| Supported product-loading combinations without registration, state, event, or tool-policy collisions | Root loading includes all three stable products, while pi-workflow documentation prohibits co-loading | Every declared supported combination is collision-free; unsupported combinations cannot activate conflicting owners | Boundary checks, combination tests, and Pi load smokes |
+| Focused extension dependencies imported by pi-workflow | pi-workflow imports no focused extension and owns package-local source snapshots | 0 | Boundary checks and package review |
+| End-to-end workflows with one completion owner | pi-workflow composes package-local Plan and Goal state; current completion ownership requires explicit characterization | Every pi-workflow run | Characterization, integration tests, and Pi smokes |
 | Broader public primitives without two consumers | No engine | 0 | API review and roadmap evidence |
 
 Adoption and task-completion-rate targets remain TBD because the repository has no telemetry or
@@ -346,7 +344,7 @@ validated usage baseline.
 | Pi native RPC has a fixed public command union | A custom Workflow RPC could be misrepresented or lead to a duplicate JSONL server | Add no Workflow RPC now; retain a transport-neutral internal service and reopen transport design only for an admitted consumer or upstream Pi extension point. |
 | `pi.events` does not await async listeners or provide protocol services | A future event adapter could lose replies or run stale continuations | Do not use it as a Workflow control protocol by default; any separately approved adapter must define correlation, revisions, idempotency, timeout, fallback, and resynchronization. |
 | Existing managed-run RPC is documented behavior | Extraction could create an unapproved breaking change | Preserve the current unversioned start/cancel/run-event contract as a pi-goal adapter until a separately approved compatibility decision says otherwise. |
-| Three product adapters can overlap in commands, tools, settings, and user expectations | Co-installation could be confusing even without code coupling | Give pi-workflow a unique namespace, test every supported combination, and make Phase 5 own the coexistence or successor decision. |
+| Three stable products currently overlap in commands, tools, events, state names, and user expectations | Root loading can activate incompatible owners before the engine migration begins | Make Phase 0 choose and enforce either collision-free coexistence or repository-compliant mutual exclusion before engine extraction. |
 | Source modules already contain dense lifecycle logic | Extraction could create files over repository size limits or shallow wrappers | Design deep stage modules with bounded interfaces and audit every source file over 1,000 lines during migration. |
 
 ## Non-Goals
@@ -381,10 +379,10 @@ validated usage baseline.
 - `packages/pi-workflow` is an approved stable combined product and no longer shows a package-level experimental warning.
 - pi-plan-mode remains focused on planning and retains its existing ordinary implementation handoff;
   it does not become a second complete Plan-to-Execution product.
-- It is unknown whether overlapping `/workflow`, `/goal`, and `/plan` runs should be rejected globally
-  or serialized. Phase 5 requires an explicit decision and verification.
-- It is unknown whether pi-workflow should become the primary successor or remain a stable third option.
-  No predecessor deprecation is implied without separate evidence and approval.
+- The current loading boundary is contradictory: root loading includes all three stable products while `pi-workflow` documentation requires mutual exclusion.
+  Phase 0 must select and verify the supported model before Phase 1 begins.
+- `pi-workflow` is currently the approved stable third option.
+  It is unknown whether later evidence will justify a separately approved primary-successor change, and no predecessor deprecation is implied without separate evidence and approval.
 - Broader workflows are deferred beyond this roadmap until concrete consumer demand proves reusable
   stage semantics.
 - No delivery dates, owners, staffing assumptions, publication schedule, or release commitment were
@@ -401,19 +399,19 @@ validated usage baseline.
 - **2026-08-03 — Add a standalone combined product:** Build `packages/pi-workflow` in Phase 2 from
   planning and managed-execution stages, then migrate pi-goal and pi-plan-mode in Phases 3 and 4.
   pi-plan-mode remains focused rather than becoming another complete Plan-to-Execution product.
-- **2026-08-03 — Defer successor selection:** Keep pi-plan-mode and pi-goal active while pi-workflow
-  soaks; decide its primary-successor, coexistence, or continued-experiment role only in Phase 5.
+- **2026-08-03 — Defer successor selection:** Keep pi-plan-mode and pi-goal active while pi-workflow soaks; require a later evidence-backed decision before any primary-successor selection or predecessor deprecation.
 - **2026-08-03 — Treat Pi as the execution substrate:** Reuse Pi's agent loop, tools, queues, session
   tree, compaction, retry, generic RPC, extension UI, and lifecycle events. The engine owns only the
   workflow-domain state, policy, artifacts, restoration, and transitions layered above them.
 - **2026-08-03 — Initially prefer headless-first, transport-neutral control:** The original direction
   proposed complete typed workflow operations and events while avoiding claims of native
   `pi --mode rpc` extensibility.
+- **2026-08-03 — Reuse supervision lessons without reviving stale channels:** Carry forward PR #464's
+  provenance, exact ownership, structured replies, timeout fallback, and real-consumer gates. Defer
+  blocked review and continuation leases, and do not restore removed `pi-goal:rpc:*` channels.
 - **2026-08-13 — Defer new pi-workflow RPC:** No current repository consumer proves enough value to
   justify a public automation contract. Keep one clean internal workflow service, preserve the
   existing pi-goal managed-run contract only as compatibility behavior, and reconsider a Workflow
   RPC adapter after concrete consumer and transport evidence receives a separate approved proposal.
 - **2026-08-20 — Promote pi-workflow to stable:** Treat the combined extension as a stable third option, remove its package-level experimental warning, and keep pi-plan-mode and pi-goal active pending any separate successor decision.
-- **2026-08-03 — Reuse supervision lessons without reviving stale channels:** Carry forward PR #464's
-  provenance, exact ownership, structured replies, timeout fallback, and real-consumer gates. Defer
-  blocked review and continuation leases, and do not restore removed `pi-goal:rpc:*` channels.
+- **2026-08-22 — Resolve the loading boundary before extraction:** Stability does not approve co-loading products with conflicting registrations, so Phase 0 must choose and verify coexistence or enforced mutual exclusion before Phase 1.
