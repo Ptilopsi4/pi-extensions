@@ -15,12 +15,13 @@ test("built package entrypoints resolve their documented exports", async (t) => 
 	const interactionHints = await import(interactionHintsSpecifier);
 	const terminalText = await import(terminalTextSpecifier);
 	const testing = await import(testingSpecifier);
-	assert.equal(production.PI_EXTENSION_MENU_API_VERSION, 13);
+	assert.equal(production.PI_EXTENSION_MENU_API_VERSION, 14);
 	assert.equal(typeof production.sanitizeTerminalText, "function");
 	assert.equal(typeof production.formatInteractionHints, "function");
 	assert.equal(typeof production.runConfirmation, "function");
 	assert.equal(typeof production.runCustomInteraction, "function");
 	assert.equal(typeof production.runLiveChoice, "function");
+	assert.equal(typeof production.runQuestionnaire, "function");
 	assert.equal("createTuiHarness" in production, false);
 	assert.equal("createRpcHarness" in production, false);
 	assert.deepEqual(Object.keys(interactionHints), ["formatInteractionHints"]);
@@ -33,11 +34,11 @@ test("built package entrypoints resolve their documented exports", async (t) => 
 	t.onTestFinished(() => rmSync(fixture, { recursive: true, force: true }));
 	writeFileSync(
 		path.join(fixture, "usage.ts"),
-		`import { PI_EXTENSION_MENU_API_VERSION, type BrowseDetailDocument, type ChoiceScreen, type LiveChoiceItem, type MenuBrowseItem, type ReviewFormat } from "@narumitw/pi-tui-kit";\n` +
+		`import { PI_EXTENSION_MENU_API_VERSION, type BrowseDetailDocument, type ChoiceScreen, type LiveChoiceItem, type MenuBrowseItem, type QuestionnaireAnswer, type QuestionnaireQuestion, type ReviewFormat, type RunQuestionnaireResult } from "@narumitw/pi-tui-kit";\n` +
 			`import { formatInteractionHints, type FormatInteractionHintsOptions, type InteractionHint, type InteractionKeybindings } from "@narumitw/pi-tui-kit/interaction-hints";\n` +
 			`import { sanitizeTerminalText } from "@narumitw/pi-tui-kit/terminal-text";\n` +
 			`import { createRpcHarness, createTuiHarness } from "@narumitw/pi-tui-kit/testing";\n` +
-			`const version: 13 = PI_EXTENSION_MENU_API_VERSION;\n` +
+			`const version: 14 = PI_EXTENSION_MENU_API_VERSION;\n` +
 			`const keybindings: InteractionKeybindings<"confirm"> = { getKeys: () => ["return"] };\n` +
 			`const hints: InteractionHint<"confirm">[] = [{ bindings: ["confirm"], label: sanitizeTerminalText("apply") }];\n` +
 			`const hintOptions: FormatInteractionHintsOptions = { separator: "·" };\n` +
@@ -47,7 +48,10 @@ test("built package entrypoints resolve their documented exports", async (t) => 
 			`const item: MenuBrowseItem = { id: "one", label: "One", detailDocument: document };\n` +
 			`const choice: LiveChoiceItem = { id: "active", label: "Active", confirmationDisabled: true, confirmationDisabledReason: "Already active" };\n` +
 			`const screen: ChoiceScreen<"select"> = { kind: "choice", title: "Records", enableSearch: true, items: [{ id: "one", label: "One", searchText: "alias" }], action: "select" };\n` +
-			`void version;\nvoid formattedHints;\nvoid item;\nvoid choice;\nvoid screen;\nvoid createTuiHarness();\nvoid createRpcHarness([]);\n`,
+			`const question: QuestionnaireQuestion<"scope"> = { id: "scope", header: "Scope", prompt: "How broad?", options: [{ label: "Small" }] };\n` +
+			`const answer: QuestionnaireAnswer<"scope"> = { questionId: "scope", answer: "Small", wasCustom: false, optionIndex: 1 };\n` +
+			`const questionnaireResult: RunQuestionnaireResult<"scope"> = { kind: "submitted", answers: [answer] };\n` +
+			`void version;\nvoid formattedHints;\nvoid item;\nvoid choice;\nvoid screen;\nvoid question;\nvoid questionnaireResult;\nvoid createTuiHarness();\nvoid createRpcHarness([]);\n`,
 	);
 	writeFileSync(
 		path.join(fixture, "tsconfig.json"),

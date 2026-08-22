@@ -5,16 +5,19 @@ import {
 	type InputScreen,
 	type LiveChoiceItem,
 	type MenuCloseReason,
+	type QuestionnaireQuestion,
 	type ReviewScreen,
 	type RunConfirmationResult,
 	type RunCustomInteractionResult,
 	type RunLiveChoiceResult,
 	type RunMenuResult,
+	type RunQuestionnaireResult,
 	type RunTaskResult,
 	runConfirmation,
 	runCustomInteraction,
 	runLiveChoice,
 	runMenu,
+	runQuestionnaire,
 	runTask,
 } from "../src/index.js";
 
@@ -189,6 +192,32 @@ void runCustomInteraction(lifecycleContext, {
 		// @ts-expect-error Lifecycle custom interactions must not gain command-only session methods.
 		handleInput: () => void ctx.waitForIdle(),
 	}),
+});
+
+const questionnaireQuestions = [
+	{
+		id: "scope",
+		header: "Scope",
+		prompt: "How broad?",
+		options: [{ label: "Small", description: "Only the bug" }],
+	},
+] as const satisfies readonly QuestionnaireQuestion[];
+const commandQuestionnaire: Promise<RunQuestionnaireResult<"scope">> = runQuestionnaire(
+	commandContext,
+	{
+		questions: questionnaireQuestions,
+		onUnsupportedMode: async (ctx) => ctx.waitForIdle(),
+	},
+);
+void commandQuestionnaire;
+
+void runQuestionnaire(lifecycleContext, {
+	questions: questionnaireQuestions,
+	onUnsupportedMode: async (ctx) => {
+		ctx.isIdle();
+		// @ts-expect-error Lifecycle questionnaires must not gain command-only session methods.
+		await ctx.waitForIdle();
+	},
 });
 
 const confirmationGatedItem: LiveChoiceItem<"one"> = {

@@ -9,9 +9,11 @@ import {
 	type MultiSelectScreen,
 	type ReviewScreen,
 	type RunLiveChoiceResult,
+	type RunQuestionnaireResult,
 	runCustomInteraction,
 	runLiveChoice,
 	runMenu,
+	runQuestionnaire,
 } from "../src/index.js";
 import { createRpcHarness, createTuiHarness } from "../src/testing/index.js";
 
@@ -192,6 +194,29 @@ export function showSpecializedView(ctx: ExtensionCommandContext, generation: nu
 				},
 			};
 		},
+	});
+}
+
+export async function askReleaseQuestions(
+	ctx: ExtensionCommandContext,
+	generation: number,
+): Promise<RunQuestionnaireResult<"scope">> {
+	return runQuestionnaire(ctx, {
+		questions: [
+			{
+				id: "scope",
+				header: "Scope",
+				prompt: "How broad should this release be?",
+				options: [
+					{ label: "Patch", description: "Ship only the fix" },
+					{ label: "Minor", description: "Include compatible features" },
+				],
+			},
+		],
+		allowNotes: true,
+		maxTextLength: 4_000,
+		signal: currentSessionSignal(),
+		isCurrent: () => generation === currentGeneration(),
 	});
 }
 
