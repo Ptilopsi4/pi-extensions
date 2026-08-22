@@ -12,7 +12,7 @@ Browse project files inside Pi, select exact lines or Git changes, and review ev
 
 ## ✨ Features
 
-- Opens from `/file-context` or a configurable shortcut that defaults to `Ctrl+X`.
+- Opens from `/file-context` or a configurable shortcut that defaults to `Ctrl+Shift+X`.
 - Browses discovered project folders hierarchically, searches file names or contents globally, and previews bounded text with line numbers.
 - Adds whole-file references, exact line ranges, changed hunks, revisions, or Git diffs without using the clipboard.
 - Shows Git state, blame, bounded file history, provenance, and a deterministic token estimate before attachment.
@@ -44,14 +44,14 @@ The package declares `dist/index.ts`, so an unbuilt local checkout must run the 
 
 ## 🚀 Quick start
 
-1. Press `Ctrl+X` or run `/file-context browse`.
+1. Press `Ctrl+Shift+X` or run `/file-context browse`.
 2. Find a file, preview it, select the exact lines or Git change, and press `Enter` to attach the snapshot.
 3. Review queued snapshots from `/file-context`, write the request, and submit normally.
 
 ## 🧭 Browser workflow
 
 1. Run `/file-context` and choose **Add context snippet**.
-   Press `Ctrl+X` or run `/file-context browse` to open the browser directly.
+   Press `Ctrl+Shift+X` or run `/file-context browse` to open the browser directly.
    Every route shows the same cancellable project scan before browsing.
 2. Use `Up`/`Down` to select an immediate child folder or file, and press `Enter` to open it.
    `Escape`, `Left`, or `Backspace` returns to the parent folder when the search field is empty.
@@ -102,24 +102,28 @@ File Context reads optional user settings from `~/.pi/agent/pi-file-context.json
 The file is not created when defaults are used.
 
 Open `/file-context`, choose **Settings**, then choose **Open shortcut** to change or disable it.
-Menu changes are saved and applied immediately in the current Pi session.
+The Settings action is unavailable while context snippets are selected because applying the shortcut reloads Pi and would otherwise discard those in-memory selections.
+A successful menu save reloads Pi automatically so the new shortcut becomes active.
 
 ```json
 {
-  "openShortcut": "ctrl+x"
+  "openShortcut": "ctrl+shift+x"
 }
 ```
 
 Set `openShortcut` to any valid Pi key identifier, or set it to `null` to disable the direct browser shortcut and use `/file-context browse`.
-Run `/reload` after editing the JSON file manually; menu changes do not require reload.
+Run `/reload` after editing the JSON file manually.
 
-Missing settings use `Ctrl+X` without creating the file.
-Invalid JSON or values leave the source file unchanged, use the safe default on load, show a warning, and make the Settings screen read-only until the file is fixed.
+Missing settings use `Ctrl+Shift+X` without creating the file.
+`Ctrl+Shift+X` requires a terminal that reports shifted control keys through the Kitty keyboard protocol or modifyOtherKeys; use `F8` if the terminal cannot distinguish it from `Ctrl+X`.
+Invalid JSON or values leave the source file unchanged, use the safe default on load, show a warning, and make the Settings screen read-only until the file is fixed and Pi is reloaded.
 Failed saves preserve the previous effective shortcut.
+If an automatic reload fails after a successful save, run `/reload` to apply the saved value.
 Interactive saves preserve unknown fields, run in request order within the Pi process, and publish atomically with private file permissions.
 
 Choose a shortcut that does not conflict with Pi or another extension; `Ctrl+F` is already File Context's internal search-mode toggle.
-Explicit `F8` and `Ctrl+Alt+F` values remain supported, but the default is now `Ctrl+X`.
+Pi reserves `Ctrl+X` for `app.message.copy` by default, so remap that built-in action before assigning `Ctrl+X` to File Context.
+Explicit `F8` and `Ctrl+Alt+F` values remain supported, but the default is now `Ctrl+Shift+X`.
 
 ## 💬 Commands
 

@@ -30,10 +30,10 @@ async function withTempSettings(
 	}
 }
 
-test("missing settings use Ctrl+X without creating a file", async () => {
+test("missing settings use Ctrl+Shift+X without creating a file", async () => {
 	await withTempSettings(async (settingsPath) => {
 		const result = await loadFileContextSettings(settingsPath);
-		assert.deepEqual(result, { settings: { openShortcut: "ctrl+x" } });
+		assert.deepEqual(result, { settings: { openShortcut: "ctrl+shift+x" } });
 		await assert.rejects(access(settingsPath), { code: "ENOENT" });
 	});
 });
@@ -50,7 +50,20 @@ test("settings normalize a custom shortcut and allow disabling it", async () => 
 			settings: { openShortcut: null },
 		});
 		assert.equal(normalizeKeyId(" Ctrl+Shift+P "), "ctrl+shift+p");
+		assert.equal(normalizeKeyId("ctrl+f1"), undefined);
 		assert.equal(normalizeKeyId("ctrl+not-a-key"), undefined);
+	});
+});
+
+test("accepts a UTF-8 BOM without weakening strict decoding", async () => {
+	await withTempSettings(async (settingsPath) => {
+		await writeFile(
+			settingsPath,
+			Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('{"openShortcut":"f8"}')]),
+		);
+		assert.deepEqual(await loadFileContextSettings(settingsPath), {
+			settings: { openShortcut: "f8" },
+		});
 	});
 });
 

@@ -25,7 +25,7 @@ export interface UpdateFileContextSettingsOptions {
 }
 
 export const DEFAULT_FILE_CONTEXT_SETTINGS: FileContextSettings = {
-	openShortcut: "ctrl+x",
+	openShortcut: "ctrl+shift+x",
 };
 
 const MODIFIERS = new Set(["ctrl", "shift", "alt", "super"]);
@@ -247,9 +247,7 @@ async function readSettingsContents(settingsPath: string): Promise<string> {
 			throw new Error(`settings file exceeds ${MAX_SETTINGS_BYTES} bytes`);
 		}
 		try {
-			return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-				buffer.subarray(0, offset),
-			);
+			return new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, offset));
 		} catch {
 			throw new Error("settings file is not valid UTF-8");
 		}

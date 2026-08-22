@@ -72,11 +72,12 @@ test("makes the no-argument command a menu and advertises compatibility routes",
 	});
 });
 
-test("reloads and applies shortcut settings immediately from the main menu", async () => {
+test("saves shortcut settings and reloads instead of mutating stale TUI bindings", async () => {
 	await withTempProject(async (root) => {
 		const mock = createMockPi();
-		let storedShortcut: "ctrl+x" | "f8" | "ctrl+y" | null = "ctrl+x";
+		let storedShortcut: "ctrl+shift+x" | "ctrl+y" | null = "ctrl+shift+x";
 		const saved: Array<string | null> = [];
+		let reloadCalls = 0;
 		await registerFileQuoteExtension(mock.pi, {
 			settingsPath: join(root, "pi-file-context.json"),
 			loadSettings: async () => ({ settings: { openShortcut: storedShortcut } }),
@@ -88,11 +89,17 @@ test("reloads and applies shortcut settings immediately from the main menu", asy
 				return { openShortcut: shortcut };
 			},
 		});
-		assert.equal(mock.shortcuts.get("ctrl+x")?.description, "Open File Context");
+		assert.equal(mock.shortcuts.get("ctrl+shift+x")?.description, "Open File Context");
 
-		storedShortcut = "f8";
 		const tui = createTuiHarness({ width: 52, rows: 16 });
-		const base = createMockContext({ mode: "tui", hasUI: true, cwd: root });
+		const base = createMockContext({
+			mode: "tui",
+			hasUI: true,
+			cwd: root,
+			async reload() {
+				reloadCalls += 1;
+			},
+		});
 		const baseCtx = base.ctx as unknown as { ui: Record<string, unknown> } & Record<
 			string,
 			unknown
@@ -102,8 +109,6 @@ test("reloads and applies shortcut settings immediately from the main menu", asy
 			ui: { ...baseCtx.ui, custom: tui.custom },
 		} as never;
 		await mock.events.get("session_start")?.[0]?.({}, ctx);
-		assert.equal(mock.shortcuts.get("ctrl+x")?.description, undefined);
-		assert.equal(mock.shortcuts.get("f8")?.description, "Open File Context");
 
 		const running = Promise.resolve(mock.commands.get("file-context")?.handler("", ctx));
 		await tui.waitForOpen();
@@ -111,29 +116,20 @@ test("reloads and applies shortcut settings immediately from the main menu", asy
 		tui.press("tui.select.down");
 		tui.press("tui.select.confirm");
 		await tui.waitForOpen();
-		assert.match(tui.render().join("\n"), /Open shortcut\s+f8/u);
+		assert.match(tui.render().join("\n"), /Open shortcut\s+ctrl\+shift\+x/u);
 		tui.press("tui.select.confirm");
 		await tui.waitForPending();
 		await tui.waitForOpen();
 		tui.type("ctrl+y");
 		tui.press("tui.input.submit");
 		await tui.waitForPending();
-		await tui.waitForOpen();
+		await running;
 
 		assert.deepEqual(saved, ["ctrl+y"]);
-		assert.equal(mock.shortcuts.get("f8")?.description, undefined);
-		assert.equal(mock.shortcuts.get("ctrl+y")?.description, "Open File Context");
-
-		tui.press("tui.select.confirm");
-		await tui.waitForPending();
-		await tui.waitForOpen();
-		tui.press("tui.input.submit");
-		await tui.waitForPending();
-		await tui.waitForOpen();
-		assert.deepEqual(saved, ["ctrl+y", null]);
-		assert.equal(mock.shortcuts.get("ctrl+y")?.description, undefined);
+		assert.equal(reloadCalls, 1);
+		assert.equal(mock.shortcuts.get("ctrl+shift+x")?.description, "Open File Context");
+		assert.equal(mock.shortcuts.has("ctrl+y"), false);
 		await mock.events.get("session_shutdown")?.[0]?.({}, ctx);
-		await running;
 	});
 });
 

@@ -11,7 +11,6 @@ import { FileQuoteExplorer, type FileQuoteExplorerResult } from "./file-context-
 import { type FileContextMenuQuote, showFileContextMenu } from "./file-context-menu.js";
 import {
 	awaitFileContextSettingsWrites,
-	type FileContextSettings,
 	fileContextSettingsPath,
 	type LoadedFileContextSettings,
 	loadFileContextSettings,
@@ -525,26 +524,14 @@ export async function registerFileQuoteExtension(
 		return launch.promise;
 	};
 
-	let registeredOpenShortcut: FileContextSettings["openShortcut"];
-	const clearFileContextShortcutHandler = () => {};
-	const applyOpenShortcut = (nextShortcut: FileContextSettings["openShortcut"]) => {
-		if (registeredOpenShortcut && registeredOpenShortcut !== nextShortcut) {
-			pi.registerShortcut(registeredOpenShortcut, {
-				handler: clearFileContextShortcutHandler,
-			});
-		}
-		if (!nextShortcut) {
-			registeredOpenShortcut = null;
-			return;
-		}
-		if (registeredOpenShortcut === nextShortcut) return;
-		pi.registerShortcut(nextShortcut, {
+	// Pi snapshots extension shortcuts when the TUI binds them, so settings changes reload Pi.
+	const registeredOpenShortcut = loadedSettings.settings.openShortcut;
+	if (registeredOpenShortcut) {
+		pi.registerShortcut(registeredOpenShortcut, {
 			description: "Open File Context",
 			handler: openExplorer,
 		});
-		registeredOpenShortcut = nextShortcut;
-	};
-	applyOpenShortcut(loadedSettings.settings.openShortcut);
+	}
 
 	const openMenu = (
 		ctx: ExtensionCommandContext,
@@ -594,7 +581,6 @@ export async function registerFileQuoteExtension(
 				}
 				const saved = await updateSettings(shortcut, { settingsPath, signal });
 				if (!isCurrent() || signal.aborted) return;
-				applyOpenShortcut(saved.openShortcut);
 				loadedSettings = { settings: saved };
 			},
 			removeQuote: (id, signal) => {
@@ -666,15 +652,13 @@ export async function registerFileQuoteExtension(
 			return;
 		}
 		loadedSettings = refreshedSettings;
-		applyOpenShortcut(loadedSettings.settings.openShortcut);
 		if (loadedSettings.warning && ctx.hasUI) {
 			ctx.ui.notify(escapeTerminalControls(loadedSettings.warning), "warning");
 		}
 		if (ctx.mode !== "tui") return;
-		const shortcut = loadedSettings.settings.openShortcut;
 		ctx.ui.notify(
-			shortcut
-				? `Experimental File Context loaded. Press ${shortcut} to browse or run /file-context to review selected context.`
+			registeredOpenShortcut
+				? `Experimental File Context loaded. Press ${registeredOpenShortcut} to browse or run /file-context to review selected context.`
 				: "Experimental File Context loaded. Run /file-context to add or review selected context.",
 			"warning",
 		);

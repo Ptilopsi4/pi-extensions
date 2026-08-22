@@ -86,6 +86,11 @@ export async function showFileContextMenu(
 						label: "Settings",
 						description: "Configure the shortcut used to open File Context",
 						to: "settings",
+						disabled: state.quotes.length > 0,
+						disabledReason:
+							state.quotes.length > 0
+								? "Submit or remove selected context first; applying a shortcut reloads Pi"
+								: undefined,
 					},
 					{
 						id: "status",
@@ -172,7 +177,7 @@ export async function showFileContextMenu(
 							title: "File Context Settings",
 							lines: [
 								`User settings · ${safeTerminalText(state.settingsPath)}`,
-								"Shortcut changes apply immediately in the current Pi session.",
+								"Saving reloads Pi so the new shortcut becomes active.",
 							],
 							items: [
 								{
@@ -190,7 +195,7 @@ export async function showFileContextMenu(
 				title: "File Context shortcut",
 				lines: [
 					`Configured: ${state.shortcut ?? "none"}`,
-					"Use a Pi key identifier such as ctrl+x or f8.",
+					"Use a Pi key identifier such as ctrl+shift+x or f8.",
 					"Submit an empty value to disable the shortcut.",
 				],
 				placeholder: state.shortcut ?? "",
@@ -219,7 +224,7 @@ export async function showFileContextMenu(
 					"Selected context is attached in order to your next prompt, then cleared together.",
 					"Review selected context opens each exact snapshot before offering removal.",
 					"The configured shortcut and /file-context browse open the browser directly.",
-					"Settings changes or disables the shortcut immediately; Status shows active limits and configuration.",
+					"Settings saves the shortcut and reloads Pi; Status shows active limits and configuration.",
 					"Escape goes back. Ctrl+C closes File Context. Cancelling never changes selected context.",
 				],
 				hint: "back",
@@ -240,7 +245,7 @@ export async function showFileContextMenu(
 				const normalized = raw ? normalizeKeyId(raw) : undefined;
 				if (raw && !normalized) {
 					actionCtx.ui.notify(
-						`Invalid key identifier: ${safeTerminalText(raw)}. Use a Pi key identifier like ctrl+x.`,
+						`Invalid key identifier: ${safeTerminalText(raw)}. Use a Pi key identifier like ctrl+shift+x.`,
 						"warning",
 					);
 					return { kind: "stay" };
@@ -248,14 +253,6 @@ export async function showFileContextMenu(
 				const shortcut = normalized ?? null;
 				try {
 					await options.saveShortcut(shortcut, signal);
-					if (signal.aborted || !options.isCurrent()) return { kind: "close" };
-					actionCtx.ui.notify(
-						shortcut
-							? `File Context shortcut: ${safeTerminalText(shortcut)}.`
-							: "File Context shortcut disabled; use /file-context browse.",
-						"info",
-					);
-					return { kind: "to", screen: "settings" };
 				} catch (error: unknown) {
 					if (!signal.aborted && options.isCurrent()) {
 						actionCtx.ui.notify(
@@ -264,6 +261,25 @@ export async function showFileContextMenu(
 						);
 					}
 					return { kind: "stay" };
+				}
+				if (signal.aborted || !options.isCurrent()) return { kind: "close" };
+				actionCtx.ui.notify(
+					shortcut
+						? `Saved File Context shortcut ${safeTerminalText(shortcut)}. Reloading Pi…`
+						: "Disabled the File Context shortcut. Reloading Pi…",
+					"info",
+				);
+				try {
+					await actionCtx.reload();
+					return { kind: "close" };
+				} catch (error: unknown) {
+					if (!signal.aborted && options.isCurrent()) {
+						actionCtx.ui.notify(
+							`File Context settings were saved, but Pi could not reload; run /reload to apply them: ${safeTerminalText(formatError(error))}`,
+							"error",
+						);
+					}
+					return { kind: "close" };
 				}
 			},
 			remove: async ({ signal }) => {

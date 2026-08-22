@@ -29,7 +29,7 @@ function state(
 ): FileContextMenuState {
 	return {
 		quotes,
-		shortcut: "ctrl+x",
+		shortcut: "ctrl+shift+x",
 		maximumQuotes: 8,
 		maximumBytes: 100_000,
 		totalBytes: quotes.reduce((total, item) => total + Buffer.byteLength(item.text), 0),
@@ -38,13 +38,24 @@ function state(
 	};
 }
 
-function menuContext(width = 80, rows = 24) {
+function menuContext(width = 80, rows = 24, reload: () => Promise<void> = async () => {}) {
 	const tui = createTuiHarness({ width, rows });
-	const base = createMockContext({ mode: "tui", hasUI: true });
+	let reloadCalls = 0;
+	const base = createMockContext({
+		mode: "tui",
+		hasUI: true,
+		async reload() {
+			reloadCalls += 1;
+			await reload();
+		},
+	});
 	const baseCtx = base.ctx as unknown as { ui: Record<string, unknown> } & Record<string, unknown>;
 	return {
 		tui,
 		notifications: base.notifications,
+		get reloadCalls() {
+			return reloadCalls;
+		},
 		ctx: {
 			...baseCtx,
 			ui: { ...baseCtx.ui, custom: tui.custom },
@@ -93,7 +104,7 @@ test("shows the primary menu immediately with visible state and disabled reasons
 	const initial = tui.render().join("\n");
 	assert.match(initial, /File Context/u);
 	assert.match(initial, /Next prompt context: 0\/8 snippets/u);
-	assert.match(initial, /Shortcut: CTRL\+X/u);
+	assert.match(initial, /Shortcut: CTRL\+SHIFT\+X/u);
 	assert.match(initial, /Add context snippet/u);
 	assert.match(initial, /Settings/u);
 	assert.match(initial, /Status/u);
@@ -144,7 +155,7 @@ test("opens Status with current limits and settings", async () => {
 	const frame = tui.render().join("\n");
 	assert.match(frame, /File Context Status/u);
 	assert.match(frame, /Next prompt context: 1\/8 snippets/u);
-	assert.match(frame, /Open shortcut: ctrl\+x/u);
+	assert.match(frame, /Open shortcut: ctrl\+shift\+x/u);
 	assert.match(frame, /pi-file-context\.json/u);
 	tui.press("ctrl+c");
 	await running;
@@ -178,59 +189,92 @@ test("opens Help from the menu and Escape returns without side effects", async (
 	await running;
 });
 
-test("Settings changes and disables the open shortcut immediately", async () => {
-	const { tui, ctx, notifications } = menuContext(44, 14);
-	let current = state();
+test("Settings saves or disables the shortcut and reloads Pi", async () => {
+	for (const scenario of [
+		{ input: "ctrl+y", expected: "ctrl+y" },
+		{ input: "", expected: null },
+	] as const) {
+		const menu = menuContext(44, 14);
+		const saved: Array<string | null> = [];
+		const running = showFileContextMenu(
+			menu.ctx,
+			options(() => state(), {
+				saveShortcut: (shortcut) => {
+					saved.push(shortcut);
+				},
+			}),
+		);
+		await menu.tui.waitForOpen();
+		menu.tui.press("tui.select.down");
+		menu.tui.press("tui.select.down");
+		menu.tui.press("tui.select.confirm");
+		await menu.tui.waitForOpen();
+		assert.match(menu.tui.render().join("\n"), /File Context Settings/u);
+		assert.match(menu.tui.render().join("\n"), /Open shortcut\s+ctrl\+shift\+x/u);
+		assert.ok(menu.tui.render(28).every((line) => visibleWidth(line) <= 28));
+
+		menu.tui.press("tui.select.confirm");
+		await menu.tui.waitForPending();
+		await menu.tui.waitForOpen();
+		if (scenario.input) menu.tui.type(scenario.input);
+		menu.tui.press("tui.input.submit");
+		await menu.tui.waitForPending();
+		await running;
+
+		assert.deepEqual(saved, [scenario.expected]);
+		assert.equal(menu.reloadCalls, 1);
+		assert.match(menu.notifications.at(-1)?.message ?? "", /Reloading Pi/u);
+	}
+});
+
+test("Settings rejects invalid keys without saving or reloading", async () => {
+	const menu = menuContext(44, 14);
 	const saved: Array<string | null> = [];
 	const controller = new AbortController();
 	const running = showFileContextMenu(
-		ctx,
-		options(() => current, {
+		menu.ctx,
+		options(() => state(), {
 			signal: controller.signal,
 			saveShortcut: (shortcut) => {
 				saved.push(shortcut);
-				current = state([], { shortcut });
 			},
 		}),
+	);
+	await menu.tui.waitForOpen();
+	menu.tui.press("tui.select.down");
+	menu.tui.press("tui.select.down");
+	menu.tui.press("tui.select.confirm");
+	await menu.tui.waitForOpen();
+	menu.tui.press("tui.select.confirm");
+	await menu.tui.waitForPending();
+	await menu.tui.waitForOpen();
+	menu.tui.type("ctrl+not-a-key");
+	menu.tui.press("tui.input.submit");
+	await menu.tui.waitForPending();
+	assert.deepEqual(saved, []);
+	assert.equal(menu.reloadCalls, 0);
+	assert.match(menu.notifications.at(-1)?.message ?? "", /Invalid key identifier/u);
+	controller.abort();
+	menu.tui.dispose();
+	await running;
+});
+
+test("Settings is unavailable while selected context would be lost by reload", async () => {
+	const { tui, ctx } = menuContext(52, 14);
+	const running = showFileContextMenu(
+		ctx,
+		options(() => state([quote("quote-1")])),
 	);
 	await tui.waitForOpen();
 	tui.press("tui.select.down");
 	tui.press("tui.select.down");
-	tui.press("tui.select.confirm");
-	await tui.waitForOpen();
-	assert.match(tui.render().join("\n"), /File Context Settings/u);
-	assert.match(tui.render().join("\n"), /Open shortcut\s+ctrl\+x/u);
-	assert.ok(tui.render(28).every((line) => visibleWidth(line) <= 28));
-
+	const frame = tui.render().join("\n");
+	assert.match(frame, /\[-\].*Settings/u);
+	assert.match(frame, /Submit or remove selected context\s+first/u);
 	tui.press("tui.select.confirm");
 	await tui.waitForPending();
-	await tui.waitForOpen();
-	tui.type("ctrl+y");
-	tui.press("tui.input.submit");
-	await tui.waitForPending();
-	await tui.waitForOpen();
-	assert.deepEqual(saved, ["ctrl+y"]);
-	assert.match(tui.render().join("\n"), /Open shortcut\s+ctrl\+y/u);
-
-	tui.press("tui.select.confirm");
-	await tui.waitForPending();
-	await tui.waitForOpen();
-	tui.press("tui.input.submit");
-	await tui.waitForPending();
-	await tui.waitForOpen();
-	assert.deepEqual(saved, ["ctrl+y", null]);
-	assert.match(tui.render().join("\n"), /Open shortcut\s+none/u);
-
-	tui.press("tui.select.confirm");
-	await tui.waitForPending();
-	await tui.waitForOpen();
-	tui.type("ctrl+not-a-key");
-	tui.press("tui.input.submit");
-	await tui.waitForPending();
-	assert.deepEqual(saved, ["ctrl+y", null]);
-	assert.match(notifications.at(-1)?.message ?? "", /Invalid key identifier/u);
-	controller.abort();
-	tui.dispose();
+	assert.equal(tui.isOpen, true);
+	tui.press("ctrl+c");
 	await running;
 });
 
@@ -273,6 +317,37 @@ test("invalid settings are read-only and save failures preserve the displayed sh
 		tui.dispose();
 		await running;
 	}
+});
+
+test("a reload failure keeps the saved value and gives a safe recovery instruction", async () => {
+	const menu = menuContext(48, 14, async () => {
+		throw new Error("reload failed\u001b]52;c;payload\u0007");
+	});
+	const saved: Array<string | null> = [];
+	const running = showFileContextMenu(
+		menu.ctx,
+		options(() => state(), {
+			saveShortcut: (shortcut) => {
+				saved.push(shortcut);
+			},
+		}),
+	);
+	await menu.tui.waitForOpen();
+	menu.tui.press("tui.select.down");
+	menu.tui.press("tui.select.down");
+	menu.tui.press("tui.select.confirm");
+	await menu.tui.waitForOpen();
+	menu.tui.press("tui.select.confirm");
+	await menu.tui.waitForPending();
+	await menu.tui.waitForOpen();
+	menu.tui.type("ctrl+y");
+	menu.tui.press("tui.input.submit");
+	await menu.tui.waitForPending();
+	await running;
+	assert.deepEqual(saved, ["ctrl+y"]);
+	assert.equal(menu.reloadCalls, 1);
+	assert.match(menu.notifications.at(-1)?.message ?? "", /settings were saved.*run \/reload/iu);
+	assert.ok(!(menu.notifications.at(-1)?.message ?? "").includes("\u001b"));
 });
 
 test("Settings disposal aborts an in-flight shortcut save without reporting a stale error", async () => {
