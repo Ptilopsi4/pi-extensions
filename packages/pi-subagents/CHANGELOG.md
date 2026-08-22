@@ -1,5 +1,13 @@
 # @narumitw/pi-subagents
 
+## 2.0.6
+
+### Patch Changes
+
+- Updated dependencies [6574232]
+- Updated dependencies [cddc265]
+  - @narumitw/pi-tui-kit@0.57.0
+
 ## 2.0.5
 
 ### Patch Changes

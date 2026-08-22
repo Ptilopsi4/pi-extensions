@@ -1,5 +1,13 @@
 # @narumitw/pi-fleet
 
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [6574232]
+- Updated dependencies [cddc265]
+  - @narumitw/pi-tui-kit@0.57.0
+
 ## 0.3.2
 
 ### Patch Changes
