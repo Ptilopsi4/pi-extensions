@@ -223,6 +223,327 @@ test("explorer adds exact context and keeps browsing with visible capacity and a
 	});
 });
 
+test("preview uses the effective external-editor binding and reloads edited content", async () => {
+	let lines = ["one", "two", "three"];
+	let editCount = 0;
+	const explorer = new FileQuoteExplorer({
+		tui: { terminal: { rows: 16 }, requestRender() {} } as never,
+		theme: {
+			fg: (_color: string, text: string) => text,
+			bg: (_color: string, text: string) => text,
+			bold: (text: string) => text,
+		} as never,
+		keybindings: {
+			matches(data: string, key: string) {
+				return (
+					(data === "enter" && key === "tui.select.confirm") ||
+					(data === "down" && key === "tui.select.down") ||
+					(data === "alt-e" && key === "app.editor.external")
+				);
+			},
+			getKeys(key: string) {
+				return key === "app.editor.external" ? ["alt+e"] : [];
+			},
+		} as never,
+		files: ["src/edit.ts"],
+		loadFile: async () => ({ path: "src/edit.ts", lines }),
+		editFile: async (path) => {
+			assert.equal(path, "src/edit.ts");
+			editCount += 1;
+			lines = ["edited"];
+		},
+		done() {},
+	});
+
+	explorer.handleInput("enter");
+	explorer.handleInput("enter");
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	explorer.handleInput("down");
+	explorer.handleInput(" ");
+	explorer.handleInput("down");
+	const preview = explorer.render(80).join("\n");
+	assert.match(preview, /Alt\+E edit/u);
+	assert.match(preview, /B blame · H history · R revision · D diff · \[\/\] hunk/u);
+	assert.doesNotMatch(preview, /Ctrl\+G/u);
+	const narrow = explorer.render(36);
+	assert.ok(narrow.every((line) => visibleWidth(line) <= 36));
+	assert.match(narrow.join("\n"), /Alt\+E edit/u);
+	explorer.handleInput("ctrl-g");
+	assert.equal(editCount, 0);
+	explorer.handleInput("alt-e");
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	assert.equal(editCount, 1);
+	assert.match(explorer.render(80).join("\n"), /> 1 │ edited/u);
+});
+
+test("preview invokes the default external-editor action and explains an unbound action", async () => {
+	let edits = 0;
+	const keybindings = {
+		matches(data: string, key: string) {
+			return (
+				(data === "enter" && key === "tui.select.confirm") ||
+				(data === "ctrl-g" && key === "app.editor.external")
+			);
+		},
+		getKeys(key: string) {
+			return key === "app.editor.external" ? ["ctrl+g"] : [];
+		},
+	};
+	const explorer = new FileQuoteExplorer({
+		tui: { terminal: { rows: 16 }, requestRender() {} } as never,
+		theme: {
+			fg: (_color: string, text: string) => text,
+			bg: (_color: string, text: string) => text,
+			bold: (text: string) => text,
+		} as never,
+		keybindings: keybindings as never,
+		files: ["edit.ts"],
+		loadFile: async () => ({ path: "edit.ts", lines: ["one"] }),
+		editFile: async () => {
+			edits += 1;
+		},
+		done() {},
+	});
+
+	explorer.handleInput("enter");
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	assert.match(explorer.render(80).join("\n"), /Ctrl\+G edit/u);
+	explorer.handleInput("ctrl-g");
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	assert.equal(edits, 1);
+
+	const unbound = new FileQuoteExplorer({
+		tui: { terminal: { rows: 16 }, requestRender() {} } as never,
+		theme: {
+			fg: (_color: string, text: string) => text,
+			bg: (_color: string, text: string) => text,
+			bold: (text: string) => text,
+		} as never,
+		keybindings: {
+			matches(data: string, key: string) {
+				return data === "enter" && key === "tui.select.confirm";
+			},
+			getKeys() {
+				return [];
+			},
+		} as never,
+		files: ["edit.ts"],
+		loadFile: async () => ({ path: "edit.ts", lines: ["one"] }),
+		editFile: async () => {},
+		done() {},
+	});
+	unbound.handleInput("enter");
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	unbound.handleInput("?");
+	assert.match(unbound.render(80).join("\n"), /External editor action is unbound/u);
+});
+
+test("configured external-editor action takes priority over preview-owned shortcuts", async () => {
+	let edits = 0;
+	let historyLoads = 0;
+	const explorer = new FileQuoteExplorer({
+		tui: { terminal: { rows: 16 }, requestRender() {} } as never,
+		theme: {
+			fg: (_color: string, text: string) => text,
+			bg: (_color: string, text: string) => text,
+			bold: (text: string) => text,
+		} as never,
+		keybindings: {
+			matches(data: string, key: string) {
+				return (
+					(data === "enter" && key === "tui.select.confirm") ||
+					(data === "h" && key === "app.editor.external")
+				);
+			},
+			getKeys(key: string) {
+				return key === "app.editor.external" ? ["h"] : [];
+			},
+		} as never,
+		files: ["src/edit.ts"],
+		loadFile: async () => ({ path: "src/edit.ts", lines: ["one"] }),
+		editFile: async () => {
+			edits += 1;
+		},
+		gitContext: {
+			async getFileContext() {
+				return { status: undefined, blob: undefined, hunks: [] };
+			},
+			async getHistory() {
+				historyLoads += 1;
+				return [];
+			},
+		} as never,
+		done() {},
+	});
+
+	explorer.handleInput("enter");
+	explorer.handleInput("enter");
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	explorer.handleInput("h");
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	assert.equal(edits, 1);
+	assert.equal(historyLoads, 0);
+});
+
+for (const reloadError of [
+	"Cannot open src/edit.ts: file was deleted",
+	"src/edit.ts appears to be binary",
+	"src/edit.ts exceeds 1000000 bytes",
+]) {
+	test(`preview keeps reload failure visible after external editing: ${reloadError}`, async () => {
+		let loads = 0;
+		const explorer = new FileQuoteExplorer({
+			tui: { terminal: { rows: 16 }, requestRender() {} } as never,
+			theme: {
+				fg: (_color: string, text: string) => text,
+				bg: (_color: string, text: string) => text,
+				bold: (text: string) => text,
+			} as never,
+			keybindings: {
+				matches(data: string, key: string) {
+					return (
+						(data === "enter" && key === "tui.select.confirm") ||
+						(data === "edit" && key === "app.editor.external")
+					);
+				},
+				getKeys(key: string) {
+					return key === "app.editor.external" ? ["ctrl+g"] : [];
+				},
+			} as never,
+			files: ["src/edit.ts"],
+			loadFile: async () => {
+				loads += 1;
+				if (loads > 1) throw new Error(reloadError);
+				return { path: "src/edit.ts", lines: ["original"] };
+			},
+			editFile: async () => {},
+			done() {},
+		});
+
+		explorer.handleInput("enter");
+		explorer.handleInput("enter");
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		explorer.handleInput("edit");
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		assert.match(explorer.render(100).join("\n"), new RegExp(reloadError, "u"));
+	});
+}
+
+test("disposing a preview aborts external editing and rejects its stale continuation", async () => {
+	let resolveEdit: (() => void) | undefined;
+	let editSignal: AbortSignal | undefined;
+	let loads = 0;
+	let result: unknown = "pending";
+	const explorer = new FileQuoteExplorer({
+		tui: { terminal: { rows: 16 }, requestRender() {} } as never,
+		theme: {
+			fg: (_color: string, text: string) => text,
+			bg: (_color: string, text: string) => text,
+			bold: (text: string) => text,
+		} as never,
+		keybindings: {
+			matches(data: string, key: string) {
+				return (
+					(data === "enter" && key === "tui.select.confirm") ||
+					(data === "edit" && key === "app.editor.external")
+				);
+			},
+			getKeys() {
+				return ["ctrl+g"];
+			},
+		} as never,
+		files: ["src/edit.ts"],
+		loadFile: async () => {
+			loads += 1;
+			return { path: "src/edit.ts", lines: ["original"] };
+		},
+		editFile: (_path, signal) => {
+			editSignal = signal;
+			return new Promise<void>((resolve) => {
+				resolveEdit = resolve;
+			});
+		},
+		done(value) {
+			result = value;
+		},
+	});
+
+	explorer.handleInput("enter");
+	explorer.handleInput("enter");
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	explorer.handleInput("edit");
+	explorer.dispose();
+	assert.equal(editSignal?.aborted, true);
+	resolveEdit?.();
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	assert.equal(loads, 1);
+	assert.equal(result, undefined);
+});
+
+test("historical revision previews remain read-only", async () => {
+	let edits = 0;
+	const explorer = new FileQuoteExplorer({
+		tui: { terminal: { rows: 16 }, requestRender() {} } as never,
+		theme: {
+			fg: (_color: string, text: string) => text,
+			bg: (_color: string, text: string) => text,
+			bold: (text: string) => text,
+		} as never,
+		keybindings: {
+			matches(data: string, key: string) {
+				return (
+					(data === "enter" && key === "tui.select.confirm") ||
+					(data === "edit" && key === "app.editor.external")
+				);
+			},
+			getKeys(key: string) {
+				return key === "app.editor.external" ? ["ctrl+g"] : [];
+			},
+		} as never,
+		files: ["src/edit.ts"],
+		loadFile: async () => ({ path: "src/edit.ts", lines: ["worktree"] }),
+		editFile: async () => {
+			edits += 1;
+		},
+		gitContext: {
+			project: {
+				repositoryRoot: "/repo",
+				projectPrefix: "",
+				branch: "main",
+				head: "a".repeat(40),
+				dirty: false,
+			},
+			statuses: new Map(),
+			async getFileContext() {
+				return { status: undefined, blob: undefined, hunks: [] };
+			},
+			async loadRevision() {
+				return {
+					path: "src/edit.ts",
+					lines: ["historical"],
+					revision: "HEAD~1",
+					commit: "b".repeat(40),
+					blob: "c".repeat(40),
+				};
+			},
+		} as never,
+		done() {},
+	});
+
+	explorer.handleInput("enter");
+	explorer.handleInput("enter");
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	explorer.handleInput("r");
+	explorer.handleInput("enter");
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	explorer.handleInput("?");
+	assert.match(explorer.render(100).join("\n"), /Historical revisions are read-only/u);
+	explorer.handleInput("\u001b");
+	explorer.handleInput("edit");
+	assert.equal(edits, 0);
+	assert.match(explorer.render(100).join("\n"), /Historical revisions are read-only/u);
+});
+
 test("short narrow previews keep primary add controls visible", async () => {
 	const explorer = new FileQuoteExplorer({
 		tui: { terminal: { rows: 8 }, requestRender() {} } as never,
@@ -235,9 +556,13 @@ test("short narrow previews keep primary add controls visible", async () => {
 			matches(data: string, key: string) {
 				return data === "enter" && key === "tui.select.confirm";
 			},
+			getKeys(key: string) {
+				return key === "app.editor.external" ? ["ctrl+g"] : [];
+			},
 		} as never,
 		files: ["short.ts"],
 		loadFile: async () => ({ path: "short.ts", lines: ["short"] }),
+		editFile: async () => {},
 		onAddAndContinue() {},
 		done() {},
 	});
@@ -248,6 +573,8 @@ test("short narrow previews keep primary add controls visible", async () => {
 	assert.ok(preview.every((line) => visibleWidth(line) <= 36));
 	assert.match(preview.join("\n"), /Enter add/u);
 	assert.match(preview.join("\n"), /A keep browsing/u);
+	assert.match(preview.join("\n"), /Ctrl\+G edit/u);
+	assert.match(preview.join("\n"), /\? actions/u);
 });
 
 test("compact preview help keeps every advanced action visible on short terminals", async () => {

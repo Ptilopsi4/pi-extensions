@@ -56,6 +56,7 @@ interface FileQuoteExplorerOptions {
 	files: readonly string[];
 	cwd?: string;
 	loadFile: (path: string, signal?: AbortSignal) => Promise<LoadedProjectTextFile>;
+	editFile?: (path: string, signal?: AbortSignal) => Promise<void>;
 	gitContext?: GitContext;
 	rootNavigation?: boolean;
 	getSelectedContextState?: () => SelectedContextState;
@@ -64,6 +65,10 @@ interface FileQuoteExplorerOptions {
 	done: (result: FileQuoteExplorerResult | undefined) => void;
 }
 
+/**
+ * Keeps the explorer's coupled mode transitions and request generations in one controller so every
+ * cancellation path invalidates the same state instead of coordinating lifecycle across components.
+ */
 export class FileQuoteExplorer implements Component, Focusable {
 	private readonly search = new Input();
 	private readonly contentSearch: ContentSearchSession;
@@ -101,6 +106,8 @@ export class FileQuoteExplorer implements Component, Focusable {
 	private detailController: AbortController | undefined;
 	private openRequest = 0;
 	private openController: AbortController | undefined;
+	private editRequest = 0;
+	private editController: AbortController | undefined;
 	private loading = false;
 	private error: string | undefined;
 	private finished = false;
@@ -181,6 +188,7 @@ export class FileQuoteExplorer implements Component, Focusable {
 		this.contentSearch.dispose();
 		this.cancelOpenRequest();
 		this.cancelDetailRequest();
+		this.cancelEditRequest();
 		if (!this.finished) {
 			this.finished = true;
 			this.options.done(undefined);
@@ -229,6 +237,7 @@ export class FileQuoteExplorer implements Component, Focusable {
 		if (!this.loadedFile) return [this.options.theme.fg("warning", "Loading preview…")];
 		return renderFilePreview({
 			theme: this.options.theme,
+			keybindings: this.options.keybindings,
 			width,
 			availableRows,
 			file: this.loadedFile,
@@ -243,12 +252,19 @@ export class FileQuoteExplorer implements Component, Focusable {
 			error: this.error,
 			selectedContext: this.options.getSelectedContextState?.(),
 			canContinue: this.options.onAddAndContinue !== undefined,
+			canEdit: this.options.editFile !== undefined && this.loadedRevision === undefined,
 		});
 	}
 
 	private renderPreviewHelp(width: number): string[] {
 		const availableRows = Math.max(1, this.options.tui.terminal.rows - RESERVED_APP_ROWS);
-		return renderFilePreviewHelp(this.options.theme, width, availableRows);
+		return renderFilePreviewHelp(
+			this.options.theme,
+			this.options.keybindings,
+			width,
+			availableRows,
+			this.options.editFile !== undefined && this.loadedRevision === undefined,
+		);
 	}
 
 	private renderRevisionInput(width: number): string[] {
@@ -435,6 +451,16 @@ export class FileQuoteExplorer implements Component, Focusable {
 		const loadedFile = this.loadedFile;
 		if (!loadedFile) return;
 		const lines = loadedFile.lines;
+		if (this.options.keybindings.matches(data, "app.editor.external")) {
+			if (this.loadedRevision) {
+				this.error = "Historical revisions are read-only; return to the worktree preview to edit";
+			} else if (this.options.editFile && !this.loading) {
+				void this.editCurrentFile();
+			} else if (!this.options.editFile) {
+				this.error = "External editing is unavailable";
+			}
+			return;
+		}
 		if (matchesKey(data, Key.escape)) {
 			this.returnToOrigin();
 			return;
@@ -628,6 +654,57 @@ export class FileQuoteExplorer implements Component, Focusable {
 			} catch (error: unknown) {
 				this.error = formatError(error);
 			}
+		}
+	}
+
+	private async editCurrentFile(): Promise<void> {
+		const path = this.loadedFile?.path;
+		const editFile = this.options.editFile;
+		if (!path || !editFile || this.loadedRevision) return;
+		this.cancelOpenRequest();
+		this.cancelDetailRequest();
+		this.cancelEditRequest();
+		const request = this.editRequest;
+		const controller = new AbortController();
+		this.editController = controller;
+		this.loading = true;
+		this.error = undefined;
+		this.options.tui.requestRender();
+		try {
+			await editFile(path, controller.signal);
+			if (!this.isCurrentEditRequest(request, controller, path)) return;
+			const gitContext = this.options.gitContext;
+			const [loadedFile, loadedGit] = await Promise.all([
+				this.options.loadFile(path, controller.signal),
+				gitContext
+					? (gitContext.refreshFileContext?.(path, controller.signal) ??
+						gitContext.getFileContext(path, controller.signal))
+					: undefined,
+			]);
+			if (!this.isCurrentEditRequest(request, controller, path)) return;
+			const maximumIndex = Math.max(0, loadedFile.lines.length - 1);
+			this.loadedFile = loadedFile;
+			this.loadedGit = loadedGit;
+			this.previewCursor = Math.min(this.previewCursor, maximumIndex);
+			if (this.previewAnchor !== undefined) {
+				this.previewAnchor = Math.min(this.previewAnchor, maximumIndex);
+			}
+			this.previewScrollOffset = Math.min(this.previewScrollOffset, maximumIndex);
+			this.activeContentMatch = undefined;
+			this.hunkIndex = -1;
+			this.blame = undefined;
+			this.history = [];
+			this.error = undefined;
+		} catch (error: unknown) {
+			if (this.isCurrentEditRequest(request, controller, path) && !isAbortError(error)) {
+				this.error = formatError(error);
+			}
+		} finally {
+			if (request === this.editRequest && this.editController === controller) {
+				this.loading = false;
+				this.editController = undefined;
+			}
+			if (!this.finished && !this.disposed) this.options.tui.requestRender(true);
 		}
 	}
 
@@ -877,6 +954,23 @@ export class FileQuoteExplorer implements Component, Focusable {
 		);
 	}
 
+	private isCurrentEditRequest(
+		request: number,
+		controller: AbortController,
+		path: string,
+	): boolean {
+		return (
+			!this.finished &&
+			!this.disposed &&
+			this.mode === "preview" &&
+			this.loadedRevision === undefined &&
+			this.loadedFile?.path === path &&
+			request === this.editRequest &&
+			this.editController === controller &&
+			!controller.signal.aborted
+		);
+	}
+
 	private beginDetailRequest(): { request: number; signal: AbortSignal } {
 		this.cancelDetailRequest();
 		const request = this.detailRequest;
@@ -898,6 +992,13 @@ export class FileQuoteExplorer implements Component, Focusable {
 		this.detailRequest += 1;
 		this.detailController?.abort();
 		this.detailController = undefined;
+		this.loading = false;
+	}
+
+	private cancelEditRequest(): void {
+		this.editRequest += 1;
+		this.editController?.abort();
+		this.editController = undefined;
 		this.loading = false;
 	}
 
@@ -937,6 +1038,7 @@ export class FileQuoteExplorer implements Component, Focusable {
 	private returnToOrigin(): void {
 		this.cancelDetailRequest();
 		this.cancelOpenRequest();
+		this.cancelEditRequest();
 		this.mode = this.previewReturnMode;
 		this.loadedFile = undefined;
 		this.loadedGit = undefined;
@@ -953,6 +1055,7 @@ export class FileQuoteExplorer implements Component, Focusable {
 		this.contentSearch.dispose();
 		this.cancelOpenRequest();
 		this.cancelDetailRequest();
+		this.cancelEditRequest();
 		this.options.done(result);
 	}
 

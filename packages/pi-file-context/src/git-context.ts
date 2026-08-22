@@ -67,11 +67,19 @@ export interface GitRevisionFile {
 }
 
 export class GitContext {
+	private readonly statusMap: Map<string, GitFileStatus>;
+
 	constructor(
 		readonly projectRoot: string,
 		readonly project: GitProjectInfo,
-		readonly statuses: ReadonlyMap<string, GitFileStatus>,
-	) {}
+		statuses: ReadonlyMap<string, GitFileStatus>,
+	) {
+		this.statusMap = new Map(statuses);
+	}
+
+	get statuses(): ReadonlyMap<string, GitFileStatus> {
+		return this.statusMap;
+	}
 
 	async getFileContext(projectPath: string, signal?: AbortSignal): Promise<GitFileContext> {
 		this.assertProjectPath(projectPath);
@@ -85,10 +93,38 @@ export class GitContext {
 		]);
 		signal?.throwIfAborted();
 		return {
-			status: this.statuses.get(projectPath),
+			status: this.statusMap.get(projectPath),
 			blob: blobResult.ok ? blobResult.stdout.trim() || undefined : undefined,
 			hunks: diffResult.ok ? parseUnifiedDiff(diffResult.stdout) : [],
 		};
+	}
+
+	async refreshFileContext(projectPath: string, signal?: AbortSignal): Promise<GitFileContext> {
+		const [fileContext, statusResult] = await Promise.all([
+			this.getFileContext(projectPath, signal),
+			this.run(
+				[
+					"-c",
+					"status.relativePaths=true",
+					"status",
+					"--porcelain=v1",
+					"-z",
+					"--untracked-files=all",
+					"--ignored=traditional",
+					"--",
+					".",
+				],
+				true,
+				signal,
+			),
+		]);
+		signal?.throwIfAborted();
+		if (!statusResult.ok) return fileContext;
+		const statuses = parseStatuses(statusResult.stdout, this.project.projectPrefix);
+		this.statusMap.clear();
+		for (const [path, status] of statuses) this.statusMap.set(path, status);
+		this.project.dirty = [...statuses.values()].some((status) => !status.ignored);
+		return { ...fileContext, status: this.statusMap.get(projectPath) };
 	}
 
 	async getBlame(

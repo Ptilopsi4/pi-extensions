@@ -7,6 +7,7 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { editProjectFileInExternalEditor } from "./external-editor.js";
 import { FileQuoteExplorer, type FileQuoteExplorerResult } from "./file-context-explorer.js";
 import { type FileContextMenuQuote, showFileContextMenu } from "./file-context-menu.js";
 import {
@@ -447,6 +448,15 @@ export async function registerFileQuoteExtension(
 						loadFile: (path, signal) =>
 							loadProjectTextFile(ctx.cwd, path, {
 								signal: signal ? AbortSignal.any([signal, interactionSignal]) : interactionSignal,
+							}),
+						editFile: (path, signal) =>
+							editProjectFileInExternalEditor({
+								root: ctx.cwd,
+								projectPath: path,
+								tui,
+								projectTrusted: ctx.isProjectTrusted(),
+								signal: signal ? AbortSignal.any([signal, interactionSignal]) : interactionSignal,
+								isCurrent: () => isCurrentSession(owner, generation) && !interactionSignal.aborted,
 							}),
 						gitContext,
 						rootNavigation: options.menuOwned,
