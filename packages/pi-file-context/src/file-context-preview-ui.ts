@@ -1,7 +1,8 @@
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import type { KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { ContentSearchMatch } from "./content-search.js";
 import { highlightContentRanges } from "./content-search-ui.js";
+import { bindingHint } from "./file-browser-ui.js";
 import type { LoadedProjectTextFile } from "./file-context.js";
 import type {
 	GitBlameInfo,
@@ -21,6 +22,7 @@ export interface SelectedContextState {
 
 interface FilePreviewRenderOptions {
 	theme: Theme;
+	keybindings: KeybindingsManager;
 	width: number;
 	availableRows: number;
 	file: LoadedProjectTextFile;
@@ -35,6 +37,7 @@ interface FilePreviewRenderOptions {
 	error?: string;
 	selectedContext?: SelectedContextState;
 	canContinue: boolean;
+	canEdit: boolean;
 }
 
 export function renderFilePreview(options: FilePreviewRenderOptions): string[] {
@@ -43,8 +46,9 @@ export function renderFilePreview(options: FilePreviewRenderOptions): string[] {
 	const selectedText = file.lines.slice(range.start, range.end + 1).join("\n");
 	const selectedBytes = Buffer.byteLength(selectedText, "utf8");
 	const estimatedTokens = Math.max(1, Math.ceil(selectedBytes / 4));
-	const footerLines = options.error
-		? [escapeTerminalControls(options.error)]
+	const externalEditorKey = bindingHint(options.keybindings, "app.editor.external", []);
+	const footer = options.error
+		? { lines: [escapeTerminalControls(options.error)], primaryIndexes: [0] }
 		: previewFooterLines(
 				width,
 				range.start + 1,
@@ -53,10 +57,11 @@ export function renderFilePreview(options: FilePreviewRenderOptions): string[] {
 				selectedBytes,
 				options.selectedContext,
 				options.canContinue,
+				options.canEdit ? externalEditorKey : "",
 			);
 	const previewHeight = Math.max(
 		1,
-		options.availableRows - 1 - (options.blame ? 1 : 0) - footerLines.length,
+		options.availableRows - 1 - (options.blame ? 1 : 0) - footer.lines.length,
 	);
 	const scrollOffset = visiblePreviewOffset(options.scrollOffset, options.cursor, previewHeight);
 	const digits = String(Math.max(1, file.lines.length)).length;
@@ -113,7 +118,7 @@ export function renderFilePreview(options: FilePreviewRenderOptions): string[] {
 	const blameLine = blameLabel
 		? truncateToWidth(theme.fg("muted", blameLabel), width, "")
 		: undefined;
-	const renderedFooter = footerLines.map((line) =>
+	const renderedFooter = footer.lines.map((line) =>
 		truncateToWidth(theme.fg(options.error ? "error" : "muted", line), width, ""),
 	);
 	return fitPreviewRows(
@@ -121,16 +126,29 @@ export function renderFilePreview(options: FilePreviewRenderOptions): string[] {
 		blameLine,
 		previewLines,
 		renderedFooter,
-		options.error ? 0 : Math.min(1, renderedFooter.length - 1),
+		footer.primaryIndexes,
 		options.availableRows,
 	);
 }
 
 export function renderFilePreviewHelp(
 	theme: Theme,
+	keybindings: KeybindingsManager,
 	width: number,
 	availableRows: number,
+	canEdit: boolean,
 ): string[] {
+	const externalEditorKey = bindingHint(keybindings, "app.editor.external", []);
+	const editDetailed = canEdit
+		? externalEditorKey
+			? `${externalEditorKey.padEnd(6, " ")} Edit the current worktree file in the external editor`
+			: "Edit   External editor action is unbound"
+		: "Edit   Historical revisions are read-only";
+	const editCompact = canEdit
+		? externalEditorKey
+			? `${externalEditorKey} edit worktree`
+			: "External editor unbound"
+		: "Historical revision · read-only";
 	const detailed = [
 		theme.fg("accent", theme.bold("Preview actions")),
 		"Enter  Add selected lines and close File Context",
@@ -141,6 +159,7 @@ export function renderFilePreviewHelp(
 		"H      History: browse earlier versions of this file",
 		"R      Revision: open a commit, branch, or tag",
 		"D      Git diff: review and add one explicit changed hunk",
+		editDetailed,
 		"Esc    Return to the preview without changing selected context",
 	];
 	const compact = [
@@ -148,6 +167,7 @@ export function renderFilePreviewHelp(
 		"Enter add · A keep browsing · Space range",
 		"↑↓ extend · [/] hunk · B blame",
 		"H history · R revision · D Git diff",
+		editCompact,
 		"Esc back without changing context",
 	];
 	const lines = availableRows < detailed.length ? compact : detailed;
@@ -165,7 +185,8 @@ function previewFooterLines(
 	selectedBytes: number,
 	state: SelectedContextState | undefined,
 	canContinue: boolean,
-): string[] {
+	externalEditorKey: string,
+): { lines: string[]; primaryIndexes: number[] } {
 	const nextCount = state ? state.count + 1 : undefined;
 	const nextBytes = state ? state.totalBytes + selectedBytes : undefined;
 	const selectedLines = endLine - startLine + 1;
@@ -185,11 +206,17 @@ function previewFooterLines(
 	if (width < 74) {
 		const selection = `L${startLine}-${endLine} · ~${tokens} tok`;
 		const capacity = state ? (warning ?? `Next ${nextCount}/${state.maximumCount}`) : undefined;
-		return [
+		const lines = [
 			[selection, capacity].filter(Boolean).join(" · "),
 			canContinue ? "Enter add · A keep browsing" : "Enter add & close",
-			"Space range · ? actions · Esc back",
+			"↑↓ move · Space range · Esc back",
+			[externalEditorKey ? `${externalEditorKey} edit` : "", "? actions"]
+				.filter(Boolean)
+				.join(" · "),
+			"B blame · H history · R revision",
+			"D diff · [/] hunk",
 		];
+		return { lines, primaryIndexes: [1, 3] };
 	}
 	const selection = `Lines ${startLine}-${endLine} · ~${tokens} tokens`;
 	const capacity = state
@@ -199,10 +226,21 @@ function previewFooterLines(
 				? "Next prompt limit exceeded; shorten the range or review selected context"
 				: `Next prompt: ${nextCount}/${state.maximumCount} snippets · ~${estimateTokens(nextBytes ?? 0)} tokens`
 		: undefined;
-	const actions = canContinue
-		? "Enter add & close · A add & continue · Space range · ? actions · Esc back"
-		: "Enter add & close · Space range · ? actions · Esc back";
-	return [[selection, capacity].filter(Boolean).join(" · "), actions];
+	const primaryActions = canContinue
+		? "Enter add & close · A add & continue · ↑↓ move · Space range · Esc back"
+		: "Enter add & close · ↑↓ move · Space range · Esc back";
+	const editActions = [externalEditorKey ? `${externalEditorKey} edit` : "", "? actions"]
+		.filter(Boolean)
+		.join(" · ");
+	return {
+		lines: [
+			[selection, capacity].filter(Boolean).join(" · "),
+			primaryActions,
+			editActions,
+			"B blame · H history · R revision · D diff · [/] hunk",
+		],
+		primaryIndexes: [1, 2],
+	};
 }
 
 function selectionRange(anchor: number | undefined, cursor: number) {
@@ -228,7 +266,7 @@ function fitPreviewRows(
 	blame: string | undefined,
 	previewLines: readonly string[],
 	footerLines: readonly string[],
-	primaryFooterIndex: number,
+	primaryFooterIndexes: readonly number[],
 	height: number,
 ): string[] {
 	let visibleTitle: string | undefined = title;
@@ -236,7 +274,7 @@ function fitPreviewRows(
 	const visiblePreview = [...previewLines];
 	const visibleFooter = footerLines.map((line, index) => ({
 		line,
-		primary: index === primaryFooterIndex,
+		primary: primaryFooterIndexes.includes(index),
 	}));
 	const rowCount = () =>
 		(visibleTitle ? 1 : 0) + (visibleBlame ? 1 : 0) + visiblePreview.length + visibleFooter.length;

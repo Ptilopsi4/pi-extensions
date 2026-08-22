@@ -15,6 +15,7 @@ Browse project files inside Pi, select exact lines or Git changes, and review ev
 - Opens from `/file-context` or a configurable shortcut that defaults to `Ctrl+Shift+X`.
 - Browses discovered project folders hierarchically, searches file names or contents globally, and previews bounded text with line numbers.
 - Adds whole-file references, exact line ranges, changed hunks, revisions, or Git diffs without using the clipboard.
+- Opens the current worktree file in Pi's configured external editor from the preview and reloads it after editing.
 - Shows Git state, blame, bounded file history, provenance, and a deterministic token estimate before attachment.
 - Reviews and removes exact queued snapshots before the next prompt.
 - Preserves selection order, supports repeated browsing, skips common generated directories, and never follows symlinks during discovery.
@@ -45,7 +46,7 @@ The package declares `dist/index.ts`, so an unbuilt local checkout must run the 
 ## 🚀 Quick start
 
 1. Press `Ctrl+Shift+X` or run `/file-context browse`.
-2. Find a file, preview it, select the exact lines or Git change, and press `Enter` to attach the snapshot.
+2. Find a file, use the visible preview hints to edit or select exact lines or Git changes, and press `Enter` to attach the snapshot.
 3. Review queued snapshots from `/file-context`, write the request, and submit normally.
 
 ## 🧭 Browser workflow
@@ -64,11 +65,15 @@ The package declares `dist/index.ts`, so an unbuilt local checkout must run the 
    Press `Tab` for a whole-file reference or `Enter` to preview the file at that line.
    `Escape` from the preview restores the query, result selection, and scroll position.
 5. In the preview, press `Space` to anchor the selection and extend the range with `Up`/`Down`.
-   The footer shows the selected lines, estimated tokens, and resulting next-prompt capacity.
+   The adaptive footer shows line selection, capacity, navigation, Git actions, external editing, and the `?` help action.
    Press `Enter` to add and close, or press `a` to add and return to the originating file or content results so you can keep browsing.
-6. Press `?` in the preview to review all actions.
+6. Use Pi's `app.editor.external` action, `Ctrl+G` by default, to open the current worktree file in the configured external editor.
+   File Context pauses its TUI, waits for the editor to exit, reloads bounded text and Git state, and keeps a reload failure visible in the preview.
+   A customized binding is matched and displayed directly, takes priority over File Context's additive letter shortcuts, and does not leave the old `Ctrl+G` active.
+7. Press `?` in the preview to review all actions.
    In a Git worktree, `[`/`]` selects changed hunks, `b` shows current-line blame, `h` opens file history, `r` opens a commit/branch/tag, and `d` reviews and adds explicit diff context.
-7. Open `/file-context` and choose **Review selected context** to inspect each exact snapshot.
+   Historical revision previews are read-only and never overwrite the current worktree through the external-editor action.
+8. Open `/file-context` and choose **Review selected context** to inspect each exact snapshot.
    `Enter` opens the snapshot first and then offers **Remove from next prompt**.
    `Escape` goes back without changing selected context, while `Ctrl+C` closes File Context.
    Write the question and submit normally; selected snippets are attached in order and cleared together.
@@ -112,6 +117,9 @@ A successful menu save reloads Pi automatically so the new shortcut becomes acti
 ```
 
 Set `openShortcut` to any valid Pi key identifier, or set it to `null` to disable the direct browser shortcut and use `/file-context browse`.
+External editing uses Pi's own `app.editor.external` keybinding and `externalEditor` setting rather than a File Context setting.
+Customize those through Pi's `keybindings.json` and `settings.json`; File Context reads the effective values and does not register a competing external-editor shortcut.
+Use an editor wait option such as `code --wait` when the editor command would otherwise return before editing finishes.
 Run `/reload` after editing the JSON file manually.
 
 Missing settings use `Ctrl+Shift+X` without creating the file.
@@ -141,6 +149,8 @@ JSON and print modes do not enter interactive UI.
 
 - Extensions run with the user's full permissions; install only trusted code.
 - File paths and symlink targets are checked against the real project root before reading.
+- External editing accepts only a canonical project-contained regular worktree file, rejects a final symlink, and serializes the full editing period with Pi's file mutation queue.
+- The configured external editor runs with the user's full permissions and may modify other files or access external services according to that program's behavior.
 - Preview files are limited to 1 MB and NUL-containing files are treated as binary.
 - Discovery is limited to 5,000 files, skips symlinks, and prioritizes shallow files before deeper files.
 - File-name and content-search queries are limited to 256 characters.
@@ -161,6 +171,8 @@ JSON and print modes do not enter interactive UI.
 ## 🚧 Limitations
 
 - Keyboard line selection only; mouse drag selection is not implemented.
+- External editing is available only from a current worktree File Preview, not from historical revisions, Git diffs, history lists, revision input, file lists, or search results.
+- On Windows, File Context rejects editor target paths containing command-shell metacharacters instead of passing an unsafe path through Pi's shell-compatible editor launch.
 - Up to eight selected snippets; exact review and repeated removal are supported, but there are not yet bulk clear, undo, or reorder actions.
 - Selected context does not survive `/reload`, session replacement, or shutdown.
 - The configurable shortcut is registered without replacing another extension's custom editor; `/file-context` remains available if the shortcut is disabled or conflicts.
@@ -180,7 +192,8 @@ src/index.ts                   Thin Pi entrypoint
 src/file-context.ts            Lifecycle, routes, filesystem boundaries, selected state, prompt injection
 src/file-context-menu.ts       Add, review, Settings, Status, Help, and removal flow
 src/file-context-settings.ts   Shortcut validation, coordinated reads, and atomic persistence
-src/file-context-explorer.ts   Folder, file, content, Git, and line-range interaction controller
+src/external-editor.ts          Safe configured-editor process, path, queue, and TUI lifecycle
+src/file-context-explorer.ts   Folder, file, content, Git, editing, and line-range controller
 src/file-browser.ts            Safe hierarchy model for discovered project paths
 src/file-browser-ui.ts         Width-safe folder and file list rendering with effective key hints
 src/file-context-preview-ui.ts Width-safe preview, capacity, and progressive action help
@@ -200,6 +213,7 @@ test/file-context-menu.test.ts  Menu, shortcut settings, exact review, removal, 
 test/file-context-command-menu.test.ts  Command routes, loading, and direct browser compatibility tests
 test/pending-quotes.test.ts     Exact selected-context removal, cancellation, and stale-flow tests
 test/file-context-settings.test.ts  Shortcut defaults, validation, ordering, and atomic-write tests
+test/external-editor.test.ts    External process, path, queue, and cancellation tests
 test/git-context.test.ts        Git repository behavior and parser tests
 ```
 

@@ -97,7 +97,7 @@ function navigationHint(keybindings: KeybindingsManager): string {
 	return uniqueKeys([...up, ...down]).join("/");
 }
 
-function bindingHint(
+export function bindingHint(
 	keybindings: KeybindingsManager,
 	binding: Parameters<KeybindingsManager["getKeys"]>[0],
 	fallback: readonly string[],

@@ -63,6 +63,20 @@ test("captures deterministic repository identity and staged, unstaged, and untra
 	});
 });
 
+test("refreshes file and repository status when a preview is reloaded", async () => {
+	await withGitProject(async (root) => {
+		const context = await createGitContext(root);
+		assert.ok(context);
+		assert.equal(context.project.dirty, false);
+		assert.equal(context.statuses.get("tracked.ts"), undefined);
+		await writeFile(join(root, "tracked.ts"), "edited\ntwo\nthree\n");
+		const fileContext = await context.refreshFileContext("tracked.ts");
+		assert.equal(fileContext.status?.label, "modified (unstaged)");
+		assert.equal(context.statuses.get("tracked.ts")?.label, "modified (unstaged)");
+		assert.equal(context.project.dirty, true);
+	});
+});
+
 test("reports ignored files without marking an otherwise clean repository dirty", async () => {
 	await withGitProject(async (root) => {
 		await writeFile(join(root, ".gitignore"), "ignored.ts\n");
