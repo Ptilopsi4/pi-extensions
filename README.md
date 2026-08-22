@@ -58,12 +58,10 @@ pi -e npm:@narumitw/pi-goal \
 | [`pi-btw`](./packages/pi-btw) | Ask a quick `/btw` side question without adding it to the main conversation. | `pi install npm:@narumitw/pi-btw` |
 | [`pi-caffeinate`](./packages/pi-caffeinate) | Prevent system sleep while Pi processes a long-running prompt. | `pi install npm:@narumitw/pi-caffeinate` |
 | [`pi-goal`](./packages/pi-goal) | Keep the agent working until a goal is verified complete; optionally enable an experimental ordered queue. | `pi install npm:@narumitw/pi-goal` |
-| [`pi-workflow`](./packages/pi-workflow) | Combine `/plan` and `/goal` in one package with an integrated, recoverable Plan-to-Goal handoff. | `pi install npm:@narumitw/pi-workflow` |
 | [`pi-worktree`](./packages/pi-worktree) | Create, switch, remove, and prune Git worktrees while carrying the Pi session into another workspace. | `pi install npm:@narumitw/pi-worktree` |
 
-If you use both `pi-plan-mode` and `pi-goal`, consider replacing them with `pi-workflow` for one integrated Plan-to-Goal experience.
-Do not install `pi-workflow` together with either `pi-plan-mode` or `pi-goal`.
-`pi-workflow` includes the Plan and Goal interfaces from those packages and intentionally reuses their commands, tools, flags, event channels, and session-state names, so loading it with either package would register duplicate handlers and create competing state owners.
+Current Plan and Goal releases can coexist on the characterized Pi runtime through their anonymous cooperative workflow mutex.
+The deprecated combined `pi-workflow` package has no atomic Plan-to-Goal replacement; follow its [migration guide](./docs/pi-workflow-migration.md).
 
 ### Accounts and data
 
@@ -241,6 +239,7 @@ The following packages remain available as source references but are excluded fr
 - `pi-retry` — replaced by Pi's built-in provider retry and timeout behavior
 - `pi-google-genai` — replaced by the `grounding-with-google-genai` agent skill
 - `pi-image-drop` — deprecated without a replacement
+- [`pi-workflow`](./deprecated/pi-workflow) — replaced by focused Plan and Goal products; atomic Plan-to-Goal handoff has [no replacement](./docs/pi-workflow-migration.md)
 - `pi-jupyter` — deprecated without a replacement
 - `pi-webui` — deprecated without a replacement
 - `pi-auto-thinking`

@@ -328,7 +328,7 @@ test("legacy cleanup uses Pi agent directory tilde expansion", () => {
 		const persistenceUrl = pathToFileURL(
 			join(
 				process.cwd(),
-				"node_modules/.cache/pi-extensions-test/packages/pi-workflow/src/goal/persistence.js",
+				"node_modules/.cache/pi-extensions-test/deprecated/pi-workflow/src/goal/persistence.js",
 			),
 		).href;
 		const script = `const { clearLegacyPersistedGoal } = await import(${JSON.stringify(persistenceUrl)}); clearLegacyPersistedGoal(${JSON.stringify(cwd)});`;

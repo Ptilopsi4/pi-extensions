@@ -1,7 +1,7 @@
 {
 	"name": "@narumitw/pi-workflow",
 	"version": "0.6.1",
-	"description": "Pi extension combining Plan mode and Goal execution with an integrated handoff.",
+	"description": "Deprecated Pi extension that combined Plan mode and Goal execution with an integrated handoff.",
 	"type": "module",
 	"license": "MIT",
 	"private": false,
@@ -24,9 +24,6 @@
 		"extensions": [
 			"./dist/index.ts"
 		]
-	},
-	"piExtension": {
-		"lifecycle": "stable"
 	},
 	"scripts": {
 		"build": "node scripts/build-runtime.mjs",
@@ -58,6 +55,6 @@
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/narumiruna/pi-extensions",
-		"directory": "packages/pi-workflow"
+		"directory": "deprecated/pi-workflow"
 	}
 }

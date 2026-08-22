@@ -118,7 +118,6 @@ dev:
         -e ./packages/pi-sync \
         -e ./packages/pi-tool \
         -e ./packages/pi-usage \
-        -e ./packages/pi-workflow \
         -e ./packages/pi-worktree
 
 # Install a package through pi, falling back to the local workspace if unpublished
