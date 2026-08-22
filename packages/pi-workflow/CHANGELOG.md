@@ -1,5 +1,11 @@
 # @narumitw/pi-workflow
 
+## 0.6.0
+
+### Minor Changes
+
+- 416da47: Add tabbed TUI Plan questions with answer notes and final review.
+
 ## 0.5.0
 
 ### Minor Changes

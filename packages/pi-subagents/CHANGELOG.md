@@ -1,5 +1,11 @@
 # @narumitw/pi-subagents
 
+## 2.0.5
+
+### Patch Changes
+
+- e7c41f1: Include the generated child peer bridge in the published runtime so retained subprocess and RPC agents can launch from npm installs.
+
 ## 2.0.4
 
 ### Patch Changes
