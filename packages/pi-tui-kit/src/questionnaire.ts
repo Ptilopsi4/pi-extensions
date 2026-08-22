@@ -66,7 +66,7 @@ const DEFAULT_LABELS: QuestionnaireLabels = {
 	note: "Note",
 };
 
-/** Run a standalone multi-question interaction with TUI and RPC adapters. */
+/** Run a standalone questionnaire interaction with TUI and RPC adapters. */
 export async function runQuestionnaire<
 	const QuestionId extends string,
 	Context extends MenuContext = ExtensionCommandContext,

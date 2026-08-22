@@ -268,7 +268,8 @@ RPC deliberately degrades to a signal-aware ordinary selector: it never runs liv
 Print and JSON return `unsupported`.
 Results distinguish `selected`, `shortcut`, `closed`, `stale`, `unsupported`, and `error`.
 
-Use `runQuestionnaire()` for a bounded sequence of required choices with optional free-form answers, notes, and a final read-only review:
+Use `runQuestionnaire()` for a bounded sequence of required choices with optional free-form answers and notes.
+Single-question TUI flows submit immediately after answer confirmation, while multi-question flows end with a read-only review:
 
 ```ts
 import { runQuestionnaire } from "@narumitw/pi-tui-kit";
@@ -296,7 +297,9 @@ if (result.kind === "submitted") {
 }
 ```
 
-TUI preserves Pi selector framing, effective keybindings, Back versus Ctrl+C Close, exact editor input, optional notes, and a plain non-selectable review.
+TUI preserves Pi selector framing, effective keybindings, Back versus Ctrl+C Close, exact editor input, optional notes, and a plain non-selectable review for multiple questions.
+A single question renders its header as plain muted text, omits Review and question-navigation controls, labels answer confirmation as submission, and returns immediately after a preset or free-form answer is confirmed.
+Add an optional note before confirming a single preset answer because that confirmation submits the interaction.
 Free-form answers are enabled by default, notes require `allowNotes`, and `maxTextLength` applies to free-form answers and notes.
 RPC preserves the existing sequential `select()` and `editor()` fallback for choices and free-form answers, but does not collect TUI-only notes or show the final review.
 RPC preserves the editor response verbatim, including an empty string, for compatibility with existing Pi dialogs.
@@ -742,7 +745,7 @@ Consumer fixtures continue to own domain state, persistence, generation checks, 
 - `runTask()` — runs typed abort-aware work with a cancellable TUI loader and direct non-TUI fallback.
 - `runConfirmation()` — preserves Confirmed, Back, Close, Stale, Unsupported, and Error for one standalone confirmation without owning the confirmed side effect.
 - `runLiveChoice()` — adapts a live-preview choice to TUI and ordinary RPC selection while preserving typed selection, confirmation-only gating, shortcuts, Back, Close, Stale, Unsupported, and Error.
-- `runQuestionnaire()` — adapts required multi-question choices, free-form answers, optional TUI notes, and read-only review to TUI and sequential RPC while preserving typed Submitted, Back, Close, Stale, Unsupported, and Error outcomes.
+- `runQuestionnaire()` — adapts required choices, free-form answers, optional TUI notes, direct single-question submission, multi-question read-only review, and sequential RPC while preserving typed Submitted, Back, Close, Stale, Unsupported, and Error outcomes.
 - `formatInteractionHints()` — formats sanitized, normalized, de-duplicated injected bindings and literal shortcut keys for specialized interaction hints; the lightweight `@narumitw/pi-tui-kit/interaction-hints` subpath exports it and its public types.
 - `sanitizeTerminalText()` — removes terminal and bidirectional display controls from untrusted single-line presentation text without mutating raw payloads; the lightweight `@narumitw/pi-tui-kit/terminal-text` subpath exports it.
 - `runCustomInteraction()` — owns cancellation, stale checks, exactly-once disposal, optional pending work draining, and typed results around one extension-owned custom TUI component.
