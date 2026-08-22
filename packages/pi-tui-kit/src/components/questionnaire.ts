@@ -88,7 +88,7 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 		const padding = safeWidth > 1 ? " " : "";
 		const contentWidth = Math.max(1, safeWidth - visibleWidth(padding));
 		const border = this.border.render(safeWidth)[0] ?? "";
-		const lines = [border, "", ...this.renderTabs(contentWidth), ""];
+		const lines = [border, "", ...this.renderHeader(contentWidth), ""];
 		if (this.isReviewPage()) lines.push(...this.renderReview(contentWidth));
 		else lines.push(...this.renderQuestion(contentWidth));
 		if (this.message) {
@@ -191,12 +191,19 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 		const cancel = cancelHint(theme, keybindings);
 		if (this.editorKind) {
 			return [
-				keybindingHint(theme, keybindings, "tui.input.submit", "save"),
+				keybindingHint(
+					theme,
+					keybindings,
+					"tui.input.submit",
+					this.editorKind === "answer" && !this.hasReviewPage() ? "submit" : "save",
+				),
 				keybindingHint(theme, keybindings, "tui.input.newLine", "newline"),
 				cancel,
 			];
 		}
-		const questions = rawKeyHint(theme, questionNavigationKeys(keybindings), "questions");
+		const questions = this.hasReviewPage()
+			? rawKeyHint(theme, questionNavigationKeys(keybindings), "questions")
+			: "";
 		if (this.isReviewPage()) {
 			return [
 				keybindingHint(theme, keybindings, "tui.select.confirm", "submit"),
@@ -206,7 +213,12 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 		}
 		return [
 			rawKeyHint(theme, selectionNavigationKeys(keybindings), "navigate"),
-			keybindingHint(theme, keybindings, "tui.select.confirm", "select"),
+			keybindingHint(
+				theme,
+				keybindings,
+				"tui.select.confirm",
+				this.hasReviewPage() ? "select" : "submit",
+			),
 			cancel,
 			questions,
 			...(this.options.allowNotes && noteShortcutAvailable(keybindings)
@@ -216,7 +228,7 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 	}
 
 	private movePage(delta: number): void {
-		const pageCount = this.options.questions.length + 1;
+		const pageCount = this.options.questions.length + Number(this.hasReviewPage());
 		this.page = (this.page + delta + pageCount) % pageCount;
 		const answer = this.answers[this.page];
 		const question = this.options.questions[this.page];
@@ -228,6 +240,16 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 		this.message = undefined;
 	}
 
+	private renderHeader(width: number): string[] {
+		if (!this.hasReviewPage()) {
+			const question = this.options.questions[0];
+			if (!question) return [];
+			const header = sanitizeQuestionnaireText(question.header) || "Question 1";
+			return [this.options.theme.fg("muted", truncateToWidth(header, width, "…"))];
+		}
+		return this.renderTabs(width);
+	}
+
 	private renderTabs(width: number): string[] {
 		const reviewTab = sanitizeQuestionnaireText(this.options.labels.reviewTab) || "Review";
 		const tabs = [
@@ -236,7 +258,7 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 				const answered = this.answers[index] ? "✓ " : "";
 				return this.page === index ? `[${answered}${label}]` : `${answered}${label}`;
 			}),
-			this.isReviewPage() ? `[${reviewTab}]` : reviewTab,
+			...(this.hasReviewPage() ? [this.isReviewPage() ? `[${reviewTab}]` : reviewTab] : []),
 		];
 		const lines: string[] = [];
 		let line = "";
@@ -461,12 +483,23 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 	}
 
 	private advance(): void {
+		if (!this.hasReviewPage()) {
+			const answers = this.answers.filter(
+				(answer): answer is QuestionnaireAnswer<QuestionId> => answer !== undefined,
+			);
+			this.finish({ kind: "submitted", answers });
+			return;
+		}
 		this.page = Math.min(this.page + 1, this.options.questions.length);
 		this.message = undefined;
 	}
 
+	private hasReviewPage(): boolean {
+		return this.options.questions.length > 1;
+	}
+
 	private isReviewPage(): boolean {
-		return this.page === this.options.questions.length;
+		return this.hasReviewPage() && this.page === this.options.questions.length;
 	}
 
 	private finish(value: QuestionnaireInteractionValue<QuestionId>): void {

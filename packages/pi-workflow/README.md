@@ -161,11 +161,14 @@ It works in TUI and RPC modes and rejects print and JSON modes before opening in
 
 `/plan` retains the Plan-mode read-only tool policy, structured `plan_mode_question` interaction, standalone `plan_mode_complete` completion contract, saved-plan slot, export safety, session persistence, and compaction-aware linked-Plan context.
 
-In TUI mode, `plan_mode_question` shows one question at a time with question tabs and a final Review tab.
+In TUI mode, a single `plan_mode_question` shows its header as plain muted text, submits as soon as its preset or custom answer is confirmed, and does not show tabs, Review, or question-navigation controls.
+Add an optional note with `n` before confirming a single preset answer.
+With two or three questions, the interaction shows one question at a time with question tabs and a final Review tab.
 Use Tab, Shift+Tab, left, or right to visit any question or Review, including unanswered future questions.
-Use up and down to choose an option, Enter to record it and advance, or `n` to record the highlighted option and open its optional note editor. Press `n` again on an answered item to edit or clear its note.
+Use up and down to choose an option, Enter to record it and advance, or `n` to record the highlighted option and open its optional note editor.
+Press `n` again on an answered item to edit or clear its note.
 Revisiting a question can replace its answer, and changing the selected option clears its prior note.
-Review lists every answer and note, supports note editing for the selected answer, blocks incomplete submission, and submits all answers together.
+Review lists every answer and note, blocks incomplete submission, and requires returning to a question to edit its answer or note.
 Custom answers and notes retain their raw submitted text in the tool result, while terminal rendering is sanitized.
 The TUI rejects either field above 4,000 characters instead of truncating it.
 RPC keeps the existing sequential `select` and `editor` dialogs because Pi RPC cannot render custom TUI components.
