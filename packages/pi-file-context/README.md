@@ -12,7 +12,7 @@ Browse project files inside Pi, select exact lines or Git changes, and review ev
 
 ## ✨ Features
 
-- Opens from `/file-context` or a configurable shortcut that defaults to `F8`.
+- Opens from `/file-context` or a configurable shortcut that defaults to `Ctrl+X`.
 - Browses discovered project folders hierarchically, searches file names or contents globally, and previews bounded text with line numbers.
 - Adds whole-file references, exact line ranges, changed hunks, revisions, or Git diffs without using the clipboard.
 - Shows Git state, blame, bounded file history, provenance, and a deterministic token estimate before attachment.
@@ -44,14 +44,14 @@ The package declares `dist/index.ts`, so an unbuilt local checkout must run the 
 
 ## 🚀 Quick start
 
-1. Press `F8` or run `/file-context browse`.
+1. Press `Ctrl+X` or run `/file-context browse`.
 2. Find a file, preview it, select the exact lines or Git change, and press `Enter` to attach the snapshot.
 3. Review queued snapshots from `/file-context`, write the request, and submit normally.
 
 ## 🧭 Browser workflow
 
 1. Run `/file-context` and choose **Add context snippet**.
-   Press `F8` or run `/file-context browse` to open the browser directly.
+   Press `Ctrl+X` or run `/file-context browse` to open the browser directly.
    Every route shows the same cancellable project scan before browsing.
 2. Use `Up`/`Down` to select an immediate child folder or file, and press `Enter` to open it.
    `Escape`, `Left`, or `Backspace` returns to the parent folder when the search field is empty.
@@ -101,28 +101,31 @@ File Context reads optional user settings from `~/.pi/agent/pi-file-context.json
 
 The file is not created when defaults are used.
 
+Open `/file-context`, choose **Settings**, then choose **Open shortcut** to change or disable it.
+Menu changes are saved and applied immediately in the current Pi session.
+
 ```json
 {
-  "openShortcut": "f8"
+  "openShortcut": "ctrl+x"
 }
 ```
 
-Set `openShortcut` to any valid Pi key identifier, or set it to `null` to disable the direct browser shortcut and use the `/file-context` menu.
+Set `openShortcut` to any valid Pi key identifier, or set it to `null` to disable the direct browser shortcut and use `/file-context browse`.
+Run `/reload` after editing the JSON file manually; menu changes do not require reload.
 
-Run `/reload` after editing the file because Pi registers extension shortcuts during extension loading.
+Missing settings use `Ctrl+X` without creating the file.
+Invalid JSON or values leave the source file unchanged, use the safe default on load, show a warning, and make the Settings screen read-only until the file is fixed.
+Failed saves preserve the previous effective shortcut.
+Interactive saves preserve unknown fields, run in request order within the Pi process, and publish atomically with private file permissions.
 
-Invalid JSON or values leave the source file unchanged, use the default shortcut, and produce a warning.
-
-Choose a shortcut that does not conflict with Pi or another extension; `Ctrl+F` is already Pi's cursor-right binding and File Context's internal search-mode toggle.
-
-The previous `Ctrl+Alt+F` default depended on terminal modifier support and may not reach Pi.
-An explicit `"openShortcut": "ctrl+alt+f"` value remains supported but is not migrated automatically; replace it with `"f8"` and run `/reload` to adopt the reliable default.
+Choose a shortcut that does not conflict with Pi or another extension; `Ctrl+F` is already File Context's internal search-mode toggle.
+Explicit `F8` and `Ctrl+Alt+F` values remain supported, but the default is now `Ctrl+X`.
 
 ## 💬 Commands
 
 | Command | Mode | Description |
 | --- | --- | --- |
-| `/file-context` | TUI only | Open the Add, Review, and Help menu. |
+| `/file-context` | TUI only | Open the Add, Review, Settings, Status, and Help menu. |
 | `/file-context browse` | TUI only | Scan and open the file explorer directly. |
 | `/file-context remove` | TUI only | Open selected-context review directly for compatibility. |
 
@@ -171,8 +174,8 @@ dist/                         Generated TypeScript runtime loaded by Jiti
 scripts/build-runtime.mjs      Deterministic runtime builder and boundary validator
 src/index.ts                   Thin Pi entrypoint
 src/file-context.ts            Lifecycle, routes, filesystem boundaries, selected state, prompt injection
-src/file-context-menu.ts       Standard Add, selected-context review, Help, and removal flow
-src/file-context-settings.ts   User shortcut loading and validation
+src/file-context-menu.ts       Add, review, Settings, Status, Help, and removal flow
+src/file-context-settings.ts   Shortcut validation, coordinated reads, and atomic persistence
 src/file-context-explorer.ts   Folder, file, content, Git, and line-range interaction controller
 src/file-browser.ts            Safe hierarchy model for discovered project paths
 src/file-browser-ui.ts         Width-safe folder and file list rendering with effective key hints
@@ -189,10 +192,10 @@ test/file-context-search.test.ts  File-name ranking, typo tolerance, and query-b
 test/file-context-folder-browser.test.ts  Folder hierarchy, navigation, keybinding, and terminal-safety tests
 test/file-context.test.ts       Filesystem, prompt, lifecycle, shortcut, and explorer tests
 test/file-context-selection.test.ts  Add-and-continue, capacity, and progressive-help tests
-test/file-context-menu.test.ts  Menu states, exact review, removal, limits, and responsive rendering tests
+test/file-context-menu.test.ts  Menu, shortcut settings, exact review, removal, and rendering tests
 test/file-context-command-menu.test.ts  Command routes, loading, and direct browser compatibility tests
 test/pending-quotes.test.ts     Exact selected-context removal, cancellation, and stale-flow tests
-test/file-context-settings.test.ts  Shortcut settings defaults and validation tests
+test/file-context-settings.test.ts  Shortcut defaults, validation, ordering, and atomic-write tests
 test/git-context.test.ts        Git repository behavior and parser tests
 ```
 
