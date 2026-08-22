@@ -1,6 +1,7 @@
 # Pi Plan and Goal Coexistence Roadmap
 
-- **Status:** Proposed direction; not an implementation, deprecation, or release commitment.
+- **Status:** Phases 1–3 are implemented and merged; release publication and the Phase 4 product decision remain pending.
+- **Last verified:** 2026-08-22.
 - **Audience:** Maintainers and users of `pi-plan-mode`, `pi-goal`, and `pi-workflow`.
 
 ## Vision
@@ -22,41 +23,30 @@ Retire the duplicated `pi-workflow` product only after coexistence is proven and
 
 ## Current State
 
-- `pi-plan-mode`, `pi-goal`, and `pi-workflow` are stable extensions.
-- `pi-workflow` contains package-local copies of the focused Plan and Goal implementations plus combined-product behavior.
-- Pi exposes one process-wide active-tool array, and `setActiveTools()` replaces the complete array.
-- Plan mode temporarily applies a restrictive tool set and later restores a saved snapshot.
-- Goal requires `goal_complete` and `goal_blocked`, and currently pauses instead of widening another extension's restrictive tool set.
-- The existing policy is fail-safe but order-dependent and does not prevent contradictory Plan and Goal workflows from becoming active together.
-- `pi.events` is process-local, returns `void`, and does not await asynchronous listeners.
-- Repository guidance now permits documented, versioned, extension-neutral protocols when they identify no participant and preserve standalone behavior when no peer participates.
+- `pi-plan-mode`, `pi-goal`, and `pi-workflow` remain stable extensions.
+- Workflow Mutex Protocol v1 is implemented independently by Plan and Goal on `main` without extension-to-extension imports or dependencies.
+- [PR #895](https://github.com/narumiruna/pi-extensions/pull/895), [PR #897](https://github.com/narumiruna/pi-extensions/pull/897), [PR #899](https://github.com/narumiruna/pi-extensions/pull/899), and [PR #900](https://github.com/narumiruna/pi-extensions/pull/900) are merged.
+- Pi `0.84.2` is the characterized runtime for synchronous event delivery, shared event-bus behavior, session identity, and stale-listener cleanup.
+- Deterministic source and generated-entry tests verify both load orders, both acquisition orders, restore collisions, release and reacquisition, lifecycle cleanup, and standalone behavior.
+- Merged Changesets record the first protocol-aware release intent as Plan `0.52.0` and Goal `0.53.0`.
+- The npm registry still serves Plan `0.51.1` and Goal `0.52.3`, so the documented coexistence floors are not yet available to registry installers.
+- Pi still exposes one process-wide active-tool array, and `setActiveTools()` still replaces the complete array, so the mutex remains a cooperative boundary rather than tool-policy composition.
+- `pi-workflow` still provides atomic `/workflow` Plan-to-Goal behavior that the focused products do not replace.
+- No release publication, tag, npm deprecation, repository archival, or `pi-workflow` product decision has been approved by this roadmap.
 
 ## Current Flow
 
 ```mermaid
 flowchart TD
-    A["Plan or Goal starts"] --> B["Extension checks only its own state"]
-    B --> C["Extension changes workflow state and active tools"]
-    C --> D{"Another workflow also changes tools?"}
-    D -->|"No"| E["Workflow continues"]
-    D -->|"Yes"| F["Last setActiveTools call wins"]
-    F --> G["Plan restrictions or Goal terminal tools disappear"]
-    G --> H["Goal pauses or conflicting policies coexist"]
-```
-
-## Target Flow
-
-```mermaid
-flowchart TD
-    A["Plan, Goal, or another participating workflow wants to start"] --> B["Finish asynchronous preflight"]
-    B --> C["Attempt to enter the workflow mutex for this session"]
+    A["A participating workflow wants to start"] --> B["Finish asynchronous preflight"]
+    B --> C["Attempt to enter the session workflow mutex"]
     C --> D{"Is the mutex busy?"}
     D -->|"Yes"| E["Reject without changing state or tools"]
-    D -->|"No"| F["Synchronously become the mutex holder"]
-    F --> G["Apply the workflow's own prompt and tool policy"]
-    G --> H["Workflow remains the mutex holder"]
-    H --> I["Workflow exits its mutex-holding state"]
-    I --> J["The mutex becomes available"]
+    D -->|"No"| F["Synchronously record local ownership"]
+    F --> G["Apply the workflow's prompt and tool policy"]
+    G --> H["Hold ownership while work can run or resume"]
+    H --> I["Exit the mutex-holding state"]
+    I --> J["Release ownership for another participant"]
 ```
 
 ## Workflow Mutex Contract
@@ -99,6 +89,8 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 
 **Outcome:** Any workflow extension can implement the same small mutex without knowing which other extensions are installed.
 
+**Evidence:** [PR #895](https://github.com/narumiruna/pi-extensions/pull/895) merged the runtime characterization and bounded protocol updates.
+
 ### Phase 2: Make Plan and Goal participate
 
 - [x] Every transition from inactive to a Plan mutex-holding state performs final admission after all asynchronous preflight and before any state, persistence, prompt, or tool mutation.
@@ -112,6 +104,8 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 
 **Outcome:** Supported Plan and Goal versions coexist without becoming active at the same time and without importing or identifying one another.
 
+**Evidence:** [PR #897](https://github.com/narumiruna/pi-extensions/pull/897) and [PR #899](https://github.com/narumiruna/pi-extensions/pull/899) merged the independent Plan and Goal implementations.
+
 ### Phase 3: Prove lifecycle and tool safety
 
 - [x] Co-installation tests cover both extension load orders and both acquisition orders.
@@ -122,6 +116,8 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 - [x] Both repository gates, focused package tests, package dry runs, and isolated Pi loading smokes pass before release readiness is claimed.
 
 **Outcome:** Coexistence is supported by deterministic lifecycle evidence rather than event timing assumptions alone.
+
+**Evidence:** [PR #900](https://github.com/narumiruna/pi-extensions/pull/900) and the [release-readiness record](../implementation-notes/2026-08-22_plan-goal-coexistence-release-readiness.md) document the final coexistence matrix and verification gates.
 
 ### Phase 4: Decide and execute pi-workflow deprecation
 
@@ -154,6 +150,7 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 | `pi.events.emit()` has no awaited request-response contract | Keep every listener synchronous, characterize the installed runtime, and stop if Pi changes this behavior. |
 | An `await` appears between admission and state commit | Centralize the critical section and test concurrent starts from both orders. |
 | An older counterpart does not participate | Guarantee coexistence only for documented version floors and retain the current fail-safe behavior. |
+| The protocol-aware version floors are not published yet | Keep release intent distinct from registry availability and do not claim installable coexistence until both versions are verified after publication. |
 | A non-participating extension changes tools or starts work | Describe the mutex as cooperative and keep existing tool-loss guards; do not claim ecosystem-wide enforcement. |
 | An anonymous busy result gives limited recovery guidance | Report that another workflow is active without guessing its owner or offering cross-extension control. |
 | Goal has many automatic re-entry paths | Define mutex-holding Goal states once and audit every activation and continuation boundary against them. |
@@ -172,9 +169,10 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 
 ## Assumptions and Unknowns
 
-- The cooperative mutex is accepted as the long-term Plan and Goal coexistence boundary.
+- The cooperative mutex is the implemented Plan and Goal coexistence boundary for the characterized Pi `0.84.2` runtime.
 - Both focused extensions remain stable products with their existing public commands and persisted state.
-- Mixed-version coexistence before both packages implement the protocol is unsupported rather than silently claimed safe.
+- Registry-installed coexistence remains unsupported until Plan `0.52.0` and Goal `0.53.0` are both published and verified.
+- Mixed-version coexistence below either protocol-aware floor remains unsupported rather than silently claimed safe.
 - It remains unknown whether enough users depend on atomic `/workflow` behavior to retain the combined product.
 - No delivery date, publication, npm deprecation, or package removal is committed.
 
@@ -186,3 +184,5 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 - **2026-08-22 — Keep the protocol minimal:** Do not expose identity or add workflow control, state synchronization, or Plan-to-Goal handoff.
 - **2026-08-22 — Reject side-thread planning:** Keep the existing inline Plan architecture and its optional fresh implementation handoff.
 - **2026-08-22 — Defer deprecation:** Keep `pi-workflow` active until coexistence is proven and a separate explicit decision approves its migration.
+- **2026-08-22 — Merge coexistence implementation:** Merge runtime characterization, independent Plan and Goal mutex participation, and deterministic coexistence evidence through PRs #895, #897, #899, and #900.
+- **2026-08-22 — Separate readiness from release:** Record Plan `0.52.0` and Goal `0.53.0` as Changeset release intent without treating merged code as published registry availability.
