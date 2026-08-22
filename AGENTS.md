@@ -67,8 +67,10 @@ Run commands from the repository root unless a command says otherwise.
 - List every stable extension's `src/index.ts` repository entrypoint in the root `package.json` under `pi.extensions`.
 - Do not list experimental extension entrypoints in the root `package.json` under `pi.extensions`.
 - Add a root workspace script or recipe only for a workflow users must run from the repository root.
-- Use `@narumitw/pi-tui-kit` for new standard action, detail, settings, and multi-select menus.
+- Choose the first TUI layer that fully supports the flow: Pi core `ctx.ui` APIs and `@earendil-works/pi-tui` components, then `@narumitw/pi-tui-kit`, and finally an extension-owned custom component.
+- Create a new custom component only when the earlier layers cannot preserve the required state, interaction, or lifecycle behavior.
 - Keep domain state, persistence, confirmations, and specialized UI inside the owning extension.
+- When changing either `packages/pi-plan-mode/src/question-tool.ts` or `packages/pi-workflow/src/plan/question-tool.ts`, inspect both implementations and their mirrored tests, and either keep compatibility changes aligned or document why package behavior intentionally differs.
 - Preserve each README's emoji title; npm, Pi, and license badges; and applicable `✨ Features`, `📦 Install`, `🚀 Quick start`, `⚙️ Settings`, `💬 Commands`, `🗂️ Package layout`, `🔎 Keywords`, and `📄 License` sections.
 - Show a user-facing warning for experimental extensions and features.
 - Keep experimental packages in root checks unless they are private.
@@ -99,6 +101,14 @@ Run commands from the repository root unless a command says otherwise.
 
 ## TUI and rendering safety
 
+- When custom TUI extends or replaces a Pi UI API or component, preserve the layout, theme hierarchy, keybindings, editing semantics, and cancellation behavior demonstrated by the installed implementation and existing tests.
+- Document an intentional compatibility deviation in the package README or an adjacent code comment.
+- Use callback-provided theme roles instead of hard-coded terminal colors, and render secondary descriptions and key hints with a muted theme role.
+- Show selection cursors and highlights only for content that users can activate, and render read-only reviews or summaries without selection affordances.
+- Use callback-provided keybindings for standard actions, derive displayed key hints from the effective bindings, and give configured standard actions priority over additive shortcuts.
+- Keep `Ctrl+C` available as a hard-cancel path in dismissible custom flows even when configurable cancellation is remapped.
+- Preserve Pi's Backspace, newline, submission, and paste behavior when embedding `Input` or `Editor`, and ensure screen-level shortcuts respect input focus and paste state.
+- Test custom key handling with at least one non-default keybinding set, and test changed review or editor behavior for non-interactive rendering or editing and paste behavior respectively.
 - Treat model IDs, session text, paths, and pasted search text as untrusted terminal input.
 - Strip terminal controls at the display boundary without mutating raw payloads, and sanitize before path splitting, filtering, wrapping, or truncation.
 - Do not use `wrapTextWithAnsi` for exact code or text previews because it trims whitespace at word-wrap boundaries; use cell-aware hard wrapping or horizontal scrolling.
