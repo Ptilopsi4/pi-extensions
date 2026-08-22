@@ -6,13 +6,7 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": [
-			"**",
-			"!deprecated",
-			"!package-lock.json",
-			"!packages/pi-image-drop/src/web/{app.js,state.js,styles.css}",
-			"!packages/pi-webui/src/web/{app.css,app.js,image-drag.js,markdown.js,state.js,transcript.js}"
-		]
+		"includes": ["**", "!deprecated", "!package-lock.json"]
 	},
 	"formatter": {
 		"enabled": true,
