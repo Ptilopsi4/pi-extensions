@@ -94,7 +94,7 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 		if (this.message) {
 			lines.push(...hardWrap(this.options.theme.fg("warning", this.message), contentWidth));
 		}
-		lines.push("", truncateToWidth(this.renderHints(), contentWidth), "", border);
+		lines.push("", ...wrapHintGroups(this.renderHintGroups(), contentWidth), "", border);
 		return lines.map((line) => {
 			if (!line || line === border) return line;
 			return `${padding}${truncateToWidth(line, contentWidth)}`;
@@ -186,7 +186,7 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 		}
 	}
 
-	private renderHints(): string {
+	private renderHintGroups(): string[] {
 		const { keybindings, theme } = this.options;
 		const cancel = cancelHint(theme, keybindings);
 		if (this.editorKind) {
@@ -194,7 +194,7 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 				keybindingHint(theme, keybindings, "tui.input.submit", "save"),
 				keybindingHint(theme, keybindings, "tui.input.newLine", "newline"),
 				cancel,
-			].join("  ");
+			];
 		}
 		const questions = rawKeyHint(theme, questionNavigationKeys(keybindings), "questions");
 		if (this.isReviewPage()) {
@@ -202,7 +202,7 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 				keybindingHint(theme, keybindings, "tui.select.confirm", "submit"),
 				cancel,
 				questions,
-			].join("  ");
+			];
 		}
 		return [
 			rawKeyHint(theme, selectionNavigationKeys(keybindings), "navigate"),
@@ -212,7 +212,7 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 			...(this.options.allowNotes && noteShortcutAvailable(keybindings)
 				? [rawKeyHint(theme, "n", "note")]
 				: []),
-		].join("  ");
+		];
 	}
 
 	private movePage(delta: number): void {
@@ -699,7 +699,21 @@ function selectionNavigationKeys(keybindings: KeybindingsManager): string {
 }
 
 function questionNavigationKeys(keybindings: KeybindingsManager): string {
-	return formatHintKeys([...keybindings.getKeys("tui.input.tab"), "shift+tab", "←→"]);
+	const conflictingKeys = new Set(
+		["tui.select.cancel", "tui.select.up", "tui.select.down", "tui.select.confirm"].flatMap(
+			(binding) => keybindings.getKeys(binding as QuestionnaireKeybinding),
+		),
+	);
+	const keys: string[] = keybindings
+		.getKeys("tui.input.tab")
+		.filter((key) => !conflictingKeys.has(key));
+	const left = !conflictingKeys.has("left");
+	const right = !conflictingKeys.has("right");
+	if (!conflictingKeys.has("shift+tab")) keys.push("shift+tab");
+	if (left && right) keys.push("←→");
+	else if (left) keys.push("←");
+	else if (right) keys.push("→");
+	return formatHintKeys(keys);
 }
 
 function noteShortcutAvailable(keybindings: KeybindingsManager): boolean {
@@ -739,6 +753,28 @@ function labeledRaw(label: string, value: string, width: number, theme: Theme): 
 			? `${theme.fg("muted", prefix)}${line}`
 			: `${" ".repeat(visibleWidth(prefix))}${line}`,
 	);
+}
+
+function wrapHintGroups(groups: readonly string[], width: number): string[] {
+	const safeWidth = Math.max(1, width);
+	const lines: string[] = [];
+	let line = "";
+	for (const group of groups) {
+		const candidate = line ? `${line}  ${group}` : group;
+		if (line && visibleWidth(candidate) > safeWidth) {
+			lines.push(line);
+			line = "";
+		}
+		if (visibleWidth(group) <= safeWidth) {
+			line = line ? `${line}  ${group}` : group;
+			continue;
+		}
+		const wrapped = hardWrap(group, safeWidth);
+		lines.push(...wrapped.slice(0, -1));
+		line = wrapped.at(-1) ?? "";
+	}
+	if (line) lines.push(line);
+	return lines.length > 0 ? lines : [""];
 }
 
 function hardWrapWithIndent(value: string, width: number, indent: number): string[] {

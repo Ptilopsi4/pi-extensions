@@ -126,6 +126,7 @@ test("runQuestionnaire preserves select framing, theme hierarchy, and read-only 
 	);
 	assert.ok(bold.includes("How broad?"));
 	assert.match(questionFrame.join("\n"), /↑↓ navigate {2}enter select {2}escape\/ctrl\+c cancel/u);
+	assert.match(questionFrame.join("\n"), /tab\/shift\+tab\/←→ questions {2}n note/u);
 	assert.doesNotMatch(questionFrame.join("\n"), /[○●]/u);
 	tui.invalidate();
 	assert.deepEqual(tui.render(), questionFrame);
@@ -191,6 +192,25 @@ test("runQuestionnaire uses configured standard actions before additive shortcut
 	assert.equal(tui.isOpen, true);
 	tui.send("q");
 	assert.deepEqual(await running, { kind: "closed", reason: "back" });
+});
+
+test("runQuestionnaire omits additive page keys that conflict with standard actions", async () => {
+	const keybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+		"tui.select.confirm": "right",
+	});
+	const tui = createTuiHarness({ width: 80, rows: 30, keybindings });
+	const context = createMockContext({ mode: "tui", hasUI: true, custom: tui.custom });
+	const running = runQuestionnaire(context.ctx, { questions });
+	await tui.waitForOpen();
+	const frame = tui.render().join("\n");
+	assert.match(frame, /right select/u);
+	assert.match(frame, /tab\/shift\+tab\/← questions/u);
+	assert.doesNotMatch(frame, /←→ questions/u);
+
+	tui.send("\u001b[C");
+	assert.match(tui.render().join("\n"), /✓ Scope {2}\[Tests\]/u);
+	tui.press("ctrl+c");
+	assert.deepEqual(await running, { kind: "closed", reason: "close" });
 });
 
 test("runQuestionnaire gives configured standard actions priority over additive shortcuts", async () => {
