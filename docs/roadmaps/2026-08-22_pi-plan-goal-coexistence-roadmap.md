@@ -61,7 +61,7 @@ flowchart TD
 
 ## Workflow Mutex Contract
 
-The [Workflow Mutex Protocol v1](../implementation-notes/workflow-mutex-v1.md) channel is `workflow:mutex:v1`.
+The [Workflow Mutex Protocol v1](../api/workflow-mutex-v1.md) channel is `workflow:mutex:v1`.
 
 An attempt contains only:
 
@@ -92,7 +92,7 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 ### Phase 1: Establish the bounded protocol
 
 - [x] Repository guidance permits documented, versioned, extension-neutral protocols that preserve standalone behavior.
-- [x] [Workflow Mutex Protocol v1](../implementation-notes/workflow-mutex-v1.md) defines the channel, schema, synchronous critical section, session scoping, mutex groups, ownership states, malformed-input behavior, and version policy.
+- [x] [Workflow Mutex Protocol v1](../api/workflow-mutex-v1.md) defines the channel, schema, synchronous critical section, session scoping, mutex groups, ownership states, malformed-input behavior, and version policy.
 - [x] The v1 contract explicitly prohibits participant identity, workflow control, state transfer, start or cancel RPC, plan handoff, and completion forwarding.
 - [ ] Pi's current synchronous listener-start behavior is characterized by a deterministic test, and any unsupported runtime version is stated explicitly.
 - [x] The v1 version policy states that pre-protocol Plan or Goal releases cannot provide guaranteed coexistence with a protocol-aware peer.
