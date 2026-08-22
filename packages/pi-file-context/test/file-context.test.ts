@@ -760,7 +760,7 @@ test("allows disabling the shortcut and reports settings warnings after session 
 	await registerFileQuoteExtension(mock.pi, {
 		loadSettings: async () => ({
 			settings: { openShortcut: null },
-			warning: "Invalid File Context settings; using the default.",
+			warning: "Invalid File Context settings\u001b]52;c;payload\u0007; using the default.",
 		}),
 	});
 	assert.equal(mock.shortcuts.size, 0);
@@ -768,6 +768,7 @@ test("allows disabling the shortcut and reports settings warnings after session 
 	const context = createMockContext({ mode: "tui", hasUI: true });
 	await mock.events.get("session_start")?.[0]?.({}, context.ctx);
 	assert.ok(context.notifications.some(({ message }) => message.includes("Invalid File Context")));
+	assert.ok(context.notifications.every(({ message }) => !message.includes("\u001b")));
 
 	const rpc = createMockContext({ mode: "rpc", hasUI: true });
 	await mock.events.get("session_start")?.[0]?.({}, rpc.ctx);

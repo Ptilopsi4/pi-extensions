@@ -1,18 +1,20 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import {
-	type ExtensionAPI,
-	type ExtensionCommandContext,
-	type ExtensionContext,
-	getAgentDir,
+import { isAbsolute, relative, resolve, sep } from "node:path";
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { FileQuoteExplorer, type FileQuoteExplorerResult } from "./file-context-explorer.js";
 import { type FileContextMenuQuote, showFileContextMenu } from "./file-context-menu.js";
 import {
+	awaitFileContextSettingsWrites,
+	fileContextSettingsPath,
 	type LoadedFileContextSettings,
 	loadFileContextSettings,
+	updateFileContextSettings,
 } from "./file-context-settings.js";
 import { createGitContext } from "./git-context.js";
 
@@ -292,7 +294,9 @@ export function formatQuoteContext(quotes: readonly FileQuote[]): string {
 }
 
 interface FileQuoteExtensionDependencies {
+	settingsPath?: string;
 	loadSettings?: () => Promise<LoadedFileContextSettings>;
+	updateSettings?: typeof updateFileContextSettings;
 	discoverFiles?: typeof discoverProjectFiles;
 	createGit?: typeof createGitContext;
 }
@@ -301,10 +305,10 @@ export async function registerFileQuoteExtension(
 	pi: ExtensionAPI,
 	dependencies: FileQuoteExtensionDependencies = {},
 ): Promise<void> {
-	const loadedSettings = await (
-		dependencies.loadSettings ??
-		(() => loadFileContextSettings(join(getAgentDir(), "pi-file-context.json")))
-	)();
+	const settingsPath = dependencies.settingsPath ?? fileContextSettingsPath();
+	const loadSettings = dependencies.loadSettings ?? (() => loadFileContextSettings(settingsPath));
+	const updateSettings = dependencies.updateSettings ?? updateFileContextSettings;
+	let loadedSettings = await loadSettings();
 	const discoverFiles = dependencies.discoverFiles ?? discoverProjectFiles;
 	const createGit = dependencies.createGit ?? createGitContext;
 	let pendingQuotes: PendingQuote[] = [];
@@ -520,6 +524,15 @@ export async function registerFileQuoteExtension(
 		return launch.promise;
 	};
 
+	// Pi snapshots extension shortcuts when the TUI binds them, so settings changes reload Pi.
+	const registeredOpenShortcut = loadedSettings.settings.openShortcut;
+	if (registeredOpenShortcut) {
+		pi.registerShortcut(registeredOpenShortcut, {
+			description: "Open File Context",
+			handler: openExplorer,
+		});
+	}
+
 	const openMenu = (
 		ctx: ExtensionCommandContext,
 		start: "main" | "remove" = "main",
@@ -557,9 +570,19 @@ export async function registerFileQuoteExtension(
 						(total, quote) => total + Buffer.byteLength(quote.text, "utf8"),
 						0,
 					),
+					settingsPath,
+					settingsInvalidReason: loadedSettings.invalidReason,
 				};
 			},
 			addQuote: (signal) => runExplorer(ctx, { menuOwned: true, signal }),
+			saveShortcut: async (shortcut, signal) => {
+				if (!isCurrent() || signal.aborted) {
+					throw new DOMException("File Context session replaced", "AbortError");
+				}
+				const saved = await updateSettings(shortcut, { settingsPath, signal });
+				if (!isCurrent() || signal.aborted) return;
+				loadedSettings = { settings: saved };
+			},
 			removeQuote: (id, signal) => {
 				if (!isCurrent() || signal.aborted) return { kind: "missing" };
 				const index = pendingQuotes.findIndex((item) => item.id === id);
@@ -611,27 +634,31 @@ export async function registerFileQuoteExtension(
 		},
 		handler: handleFileContextCommand,
 	});
-	if (loadedSettings.settings.openShortcut) {
-		pi.registerShortcut(loadedSettings.settings.openShortcut, {
-			description: "Open File Context",
-			handler: openExplorer,
-		});
-	}
-
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
 		sessionController.abort(new DOMException("File Context session replaced", "AbortError"));
 		sessionController = new AbortController();
+		const ownerController = sessionController;
 		activeMenuLaunch = undefined;
 		cancelExplorers();
 		activeSessionManager = ctx.sessionManager;
-		sessionGeneration += 1;
+		const generation = ++sessionGeneration;
 		clearPending(ctx);
-		if (loadedSettings.warning && ctx.hasUI) ctx.ui.notify(loadedSettings.warning, "warning");
+		const refreshedSettings = await loadSettings();
+		if (
+			!isCurrentSession(ctx.sessionManager, generation) ||
+			ownerController !== sessionController ||
+			ownerController.signal.aborted
+		) {
+			return;
+		}
+		loadedSettings = refreshedSettings;
+		if (loadedSettings.warning && ctx.hasUI) {
+			ctx.ui.notify(escapeTerminalControls(loadedSettings.warning), "warning");
+		}
 		if (ctx.mode !== "tui") return;
-		const shortcut = loadedSettings.settings.openShortcut;
 		ctx.ui.notify(
-			shortcut
-				? `Experimental File Context loaded. Press ${shortcut} to browse or run /file-context to review selected context.`
+			registeredOpenShortcut
+				? `Experimental File Context loaded. Press ${registeredOpenShortcut} to browse or run /file-context to review selected context.`
 				: "Experimental File Context loaded. Run /file-context to add or review selected context.",
 			"warning",
 		);
@@ -650,12 +677,13 @@ export async function registerFileQuoteExtension(
 		};
 	});
 
-	pi.on("session_shutdown", (_event, ctx) => {
+	pi.on("session_shutdown", async (_event, ctx) => {
 		if (ctx.sessionManager !== activeSessionManager) return;
 		sessionController.abort(new DOMException("File Context session shut down", "AbortError"));
 		activeMenuLaunch = undefined;
 		cancelExplorers();
 		clearPending(ctx);
+		await awaitFileContextSettingsWrites(settingsPath);
 	});
 }
 

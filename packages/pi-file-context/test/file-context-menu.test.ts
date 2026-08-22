@@ -29,21 +29,33 @@ function state(
 ): FileContextMenuState {
 	return {
 		quotes,
-		shortcut: "f8",
+		shortcut: "ctrl+shift+x",
 		maximumQuotes: 8,
 		maximumBytes: 100_000,
 		totalBytes: quotes.reduce((total, item) => total + Buffer.byteLength(item.text), 0),
+		settingsPath: "/tmp/pi-file-context.json",
 		...overrides,
 	};
 }
 
-function menuContext(width = 80, rows = 24) {
+function menuContext(width = 80, rows = 24, reload: () => Promise<void> = async () => {}) {
 	const tui = createTuiHarness({ width, rows });
-	const base = createMockContext({ mode: "tui", hasUI: true });
+	let reloadCalls = 0;
+	const base = createMockContext({
+		mode: "tui",
+		hasUI: true,
+		async reload() {
+			reloadCalls += 1;
+			await reload();
+		},
+	});
 	const baseCtx = base.ctx as unknown as { ui: Record<string, unknown> } & Record<string, unknown>;
 	return {
 		tui,
 		notifications: base.notifications,
+		get reloadCalls() {
+			return reloadCalls;
+		},
 		ctx: {
 			...baseCtx,
 			ui: { ...baseCtx.ui, custom: tui.custom },
@@ -61,6 +73,7 @@ function options(
 		signal: new AbortController().signal,
 		addQuote: async () => "close" as const,
 		removeQuote: () => ({ kind: "missing" }),
+		saveShortcut() {},
 		...overrides,
 	};
 }
@@ -91,8 +104,10 @@ test("shows the primary menu immediately with visible state and disabled reasons
 	const initial = tui.render().join("\n");
 	assert.match(initial, /File Context/u);
 	assert.match(initial, /Next prompt context: 0\/8 snippets/u);
-	assert.match(initial, /Shortcut: F8/u);
+	assert.match(initial, /Shortcut: CTRL\+SHIFT\+X/u);
 	assert.match(initial, /Add context snippet/u);
+	assert.match(initial, /Settings/u);
+	assert.match(initial, /Status/u);
 
 	tui.press("tui.select.down");
 	const disabled = tui.render().join("\n");
@@ -125,6 +140,27 @@ test("closes the menu before handing off to Add", async () => {
 	assert.equal(menuWasOpenDuringAdd, false);
 });
 
+test("opens Status with current limits and settings", async () => {
+	const { tui, ctx } = menuContext(44, 14);
+	const running = showFileContextMenu(
+		ctx,
+		options(() => state([quote("quote-1")])),
+	);
+	await tui.waitForOpen();
+	tui.press("tui.select.down");
+	tui.press("tui.select.down");
+	tui.press("tui.select.down");
+	tui.press("tui.select.confirm");
+	await tui.waitForOpen();
+	const frame = tui.render().join("\n");
+	assert.match(frame, /File Context Status/u);
+	assert.match(frame, /Next prompt context: 1\/8 snippets/u);
+	assert.match(frame, /Open shortcut: ctrl\+shift\+x/u);
+	assert.match(frame, /pi-file-context\.json/u);
+	tui.press("ctrl+c");
+	await running;
+});
+
 test("opens Help from the menu and Escape returns without side effects", async () => {
 	const { tui, ctx } = menuContext();
 	let addCalls = 0;
@@ -140,6 +176,8 @@ test("opens Help from the menu and Escape returns without side effects", async (
 	await tui.waitForOpen();
 	tui.press("tui.select.down");
 	tui.press("tui.select.down");
+	tui.press("tui.select.down");
+	tui.press("tui.select.down");
 	tui.press("tui.select.confirm");
 	await tui.waitForOpen();
 	assert.match(tui.render().join("\n"), /Selected context is attached.*next prompt/u);
@@ -149,6 +187,206 @@ test("opens Help from the menu and Escape returns without side effects", async (
 	assert.equal(addCalls, 0);
 	tui.press("ctrl+c");
 	await running;
+});
+
+test("Settings saves or disables the shortcut and reloads Pi", async () => {
+	for (const scenario of [
+		{ input: "ctrl+y", expected: "ctrl+y" },
+		{ input: "", expected: null },
+	] as const) {
+		const menu = menuContext(44, 14);
+		const saved: Array<string | null> = [];
+		const running = showFileContextMenu(
+			menu.ctx,
+			options(() => state(), {
+				saveShortcut: (shortcut) => {
+					saved.push(shortcut);
+				},
+			}),
+		);
+		await menu.tui.waitForOpen();
+		menu.tui.press("tui.select.down");
+		menu.tui.press("tui.select.down");
+		menu.tui.press("tui.select.confirm");
+		await menu.tui.waitForOpen();
+		assert.match(menu.tui.render().join("\n"), /File Context Settings/u);
+		assert.match(menu.tui.render().join("\n"), /Open shortcut\s+ctrl\+shift\+x/u);
+		assert.ok(menu.tui.render(28).every((line) => visibleWidth(line) <= 28));
+
+		menu.tui.press("tui.select.confirm");
+		await menu.tui.waitForPending();
+		await menu.tui.waitForOpen();
+		if (scenario.input) menu.tui.type(scenario.input);
+		menu.tui.press("tui.input.submit");
+		await menu.tui.waitForPending();
+		await running;
+
+		assert.deepEqual(saved, [scenario.expected]);
+		assert.equal(menu.reloadCalls, 1);
+		assert.match(menu.notifications.at(-1)?.message ?? "", /Reloading Pi/u);
+	}
+});
+
+test("Settings rejects invalid keys without saving or reloading", async () => {
+	const menu = menuContext(44, 14);
+	const saved: Array<string | null> = [];
+	const controller = new AbortController();
+	const running = showFileContextMenu(
+		menu.ctx,
+		options(() => state(), {
+			signal: controller.signal,
+			saveShortcut: (shortcut) => {
+				saved.push(shortcut);
+			},
+		}),
+	);
+	await menu.tui.waitForOpen();
+	menu.tui.press("tui.select.down");
+	menu.tui.press("tui.select.down");
+	menu.tui.press("tui.select.confirm");
+	await menu.tui.waitForOpen();
+	menu.tui.press("tui.select.confirm");
+	await menu.tui.waitForPending();
+	await menu.tui.waitForOpen();
+	menu.tui.type("ctrl+not-a-key");
+	menu.tui.press("tui.input.submit");
+	await menu.tui.waitForPending();
+	assert.deepEqual(saved, []);
+	assert.equal(menu.reloadCalls, 0);
+	assert.match(menu.notifications.at(-1)?.message ?? "", /Invalid key identifier/u);
+	controller.abort();
+	menu.tui.dispose();
+	await running;
+});
+
+test("Settings is unavailable while selected context would be lost by reload", async () => {
+	const { tui, ctx } = menuContext(52, 14);
+	const running = showFileContextMenu(
+		ctx,
+		options(() => state([quote("quote-1")])),
+	);
+	await tui.waitForOpen();
+	tui.press("tui.select.down");
+	tui.press("tui.select.down");
+	const frame = tui.render().join("\n");
+	assert.match(frame, /\[-\].*Settings/u);
+	assert.match(frame, /Submit or remove selected context\s+first/u);
+	tui.press("tui.select.confirm");
+	await tui.waitForPending();
+	assert.equal(tui.isOpen, true);
+	tui.press("ctrl+c");
+	await running;
+});
+
+test("invalid settings are read-only and save failures preserve the displayed shortcut", async () => {
+	for (const failure of ["invalid", "save"] as const) {
+		const { tui, ctx, notifications } = menuContext(48, 14);
+		const current = state(
+			[],
+			failure === "invalid" ? { settingsInvalidReason: "invalid JSON" } : {},
+		);
+		const controller = new AbortController();
+		const running = showFileContextMenu(
+			ctx,
+			options(() => current, {
+				signal: controller.signal,
+				saveShortcut: async () => {
+					throw new Error("disk full\u001b]52;c;payload\u0007");
+				},
+			}),
+		);
+		await tui.waitForOpen();
+		tui.press("tui.select.down");
+		tui.press("tui.select.down");
+		tui.press("tui.select.confirm");
+		await tui.waitForOpen();
+		if (failure === "invalid") {
+			assert.match(tui.render().join("\n"), /Read only/u);
+			assert.match(tui.render().join("\n"), /invalid JSON/u);
+		} else {
+			tui.press("tui.select.confirm");
+			await tui.waitForPending();
+			await tui.waitForOpen();
+			tui.type("ctrl+y");
+			tui.press("tui.input.submit");
+			await tui.waitForPending();
+			assert.match(notifications.at(-1)?.message ?? "", /previous shortcut remains/u);
+			assert.ok(!(notifications.at(-1)?.message ?? "").includes("\u001b"));
+		}
+		controller.abort();
+		tui.dispose();
+		await running;
+	}
+});
+
+test("a reload failure keeps the saved value and gives a safe recovery instruction", async () => {
+	const menu = menuContext(48, 14, async () => {
+		throw new Error("reload failed\u001b]52;c;payload\u0007");
+	});
+	const saved: Array<string | null> = [];
+	const running = showFileContextMenu(
+		menu.ctx,
+		options(() => state(), {
+			saveShortcut: (shortcut) => {
+				saved.push(shortcut);
+			},
+		}),
+	);
+	await menu.tui.waitForOpen();
+	menu.tui.press("tui.select.down");
+	menu.tui.press("tui.select.down");
+	menu.tui.press("tui.select.confirm");
+	await menu.tui.waitForOpen();
+	menu.tui.press("tui.select.confirm");
+	await menu.tui.waitForPending();
+	await menu.tui.waitForOpen();
+	menu.tui.type("ctrl+y");
+	menu.tui.press("tui.input.submit");
+	await menu.tui.waitForPending();
+	await running;
+	assert.deepEqual(saved, ["ctrl+y"]);
+	assert.equal(menu.reloadCalls, 1);
+	assert.match(menu.notifications.at(-1)?.message ?? "", /settings were saved.*run \/reload/iu);
+	assert.ok(!(menu.notifications.at(-1)?.message ?? "").includes("\u001b"));
+});
+
+test("Settings disposal aborts an in-flight shortcut save without reporting a stale error", async () => {
+	const { tui, ctx, notifications } = menuContext(48, 14);
+	const controller = new AbortController();
+	let saveSignal: AbortSignal | undefined;
+	let markStarted!: () => void;
+	const started = new Promise<void>((resolve) => {
+		markStarted = resolve;
+	});
+	const running = showFileContextMenu(
+		ctx,
+		options(() => state(), {
+			signal: controller.signal,
+			saveShortcut: async (_shortcut, signal) => {
+				saveSignal = signal;
+				markStarted();
+				return new Promise<void>((_resolve, reject) => {
+					signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+				});
+			},
+		}),
+	);
+	await tui.waitForOpen();
+	tui.press("tui.select.down");
+	tui.press("tui.select.down");
+	tui.press("tui.select.confirm");
+	await tui.waitForOpen();
+	tui.press("tui.select.confirm");
+	await tui.waitForPending();
+	await tui.waitForOpen();
+	tui.type("ctrl+y");
+	tui.press("tui.input.submit");
+	await started;
+	controller.abort();
+	tui.dispose();
+	await running;
+	assert.equal(saveSignal?.aborted, true);
+	assert.deepEqual(notifications, []);
 });
 
 test("reviews exact snippets before repeatedly removing them by stable ID", async () => {
