@@ -17,7 +17,7 @@ Retire the duplicated `pi-workflow` product only after coexistence is proven and
 - **Anonymous coordination** — The protocol never identifies or requires a particular extension.
 - **Independent products** — Plan and Goal remain installable and functional by themselves.
 - **Minimal architecture** — No workflow engine, coordinator package, shared runtime singleton, or distributed workflow state machine is introduced.
-- **No failed-start side effects** — A denied workflow start changes no state, tools, prompt, queue, or persistent entry.
+- **No failed-start side effects** — A rejected workflow start changes no state, tools, prompt, queue, or persistent entry.
 - **Evidence before deprecation** — `pi-workflow` remains active until supported Plan and Goal versions pass coexistence and migration gates.
 
 ## Current State
@@ -49,28 +49,27 @@ flowchart TD
 ```mermaid
 flowchart TD
     A["Plan, Goal, or another participating workflow wants to start"] --> B["Finish asynchronous preflight"]
-    B --> C["Emit anonymous try-acquire for this session and lock group"]
-    C --> D{"Any active participant denies?"}
+    B --> C["Attempt to enter the workflow mutex for this session"]
+    C --> D{"Is the mutex busy?"}
     D -->|"Yes"| E["Reject without changing state or tools"]
-    D -->|"No"| F["Synchronously commit active workflow state"]
+    D -->|"No"| F["Synchronously become the mutex holder"]
     F --> G["Apply the workflow's own prompt and tool policy"]
-    G --> H["Workflow remains the cooperative lock holder"]
-    H --> I["Workflow exits its lock-owning state"]
-    I --> J["Future acquisitions are no longer denied"]
+    G --> H["Workflow remains the mutex holder"]
+    H --> I["Workflow exits its mutex-holding state"]
+    I --> J["The mutex becomes available"]
 ```
 
 ## Workflow Mutex Contract
 
-The [Workflow Mutex Protocol v1](../implementation-notes/workflow-mutex-v1.md) channel is `extension:workflow-lock:try-acquire:v1`.
+The [Workflow Mutex Protocol v1](../implementation-notes/workflow-mutex-v1.md) channel is `workflow:mutex:v1`.
 
-A request contains only:
+An attempt contains only:
 
 ```ts
-interface WorkflowLockAttempt {
-	version: 1;
-	sessionManager: object;
+interface WorkflowMutexAttempt {
+	session: object;
 	group: string;
-	denied: boolean;
+	busy: boolean;
 }
 ```
 
@@ -78,13 +77,13 @@ Plan and Goal use the `agent-workflow` group.
 
 Every participant follows these rules:
 
-- A listener checks only its own state and sets `denied = true` when it already holds the matching session and group.
+- A listener checks only its own state and sets `busy = true` when it holds the matching session and group.
 - A listener never reports its identity, state schema, tools, command, or lifecycle operations.
 - The listener is synchronous and performs no asynchronous work.
 - A requester completes every `await` before emitting the attempt.
-- A successful requester commits its active state immediately, with no `await` between the result and the commit.
-- Leaving the lock-owning state releases the cooperative lock by making later attempts no longer denied.
-- No listener means no denial, so every extension remains functional when installed alone.
+- A successful requester commits local ownership immediately, with no `await` between the result and the commit.
+- Leaving the mutex-holding state releases local ownership.
+- No listener leaves `busy` as `false`, so every extension remains functional when installed alone.
 
 This is an advisory mutex among participating extensions, not a Pi-enforced lock or general tool-policy composition API.
 
@@ -93,7 +92,7 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 ### Phase 1: Establish the bounded protocol
 
 - [x] Repository guidance permits documented, versioned, extension-neutral protocols that preserve standalone behavior.
-- [x] [Workflow Mutex Protocol v1](../implementation-notes/workflow-mutex-v1.md) defines the channel, schema, synchronous critical section, session scoping, lock groups, ownership states, malformed-input behavior, and version policy.
+- [x] [Workflow Mutex Protocol v1](../implementation-notes/workflow-mutex-v1.md) defines the channel, schema, synchronous critical section, session scoping, mutex groups, ownership states, malformed-input behavior, and version policy.
 - [x] The v1 contract explicitly prohibits participant identity, workflow control, state transfer, start or cancel RPC, plan handoff, and completion forwarding.
 - [ ] Pi's current synchronous listener-start behavior is characterized by a deterministic test, and any unsupported runtime version is stated explicitly.
 - [x] The v1 version policy states that pre-protocol Plan or Goal releases cannot provide guaranteed coexistence with a protocol-aware peer.
@@ -102,13 +101,13 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 
 ### Phase 2: Make Plan and Goal participate
 
-- [ ] Every transition from inactive to a Plan lock-owning state performs final admission after all asynchronous preflight and before any state, persistence, prompt, or tool mutation.
-- [ ] Every Goal activation path, including direct start, queue activation, resume, retry recovery, and restored automatic continuation, respects one documented lock-ownership rule.
-- [ ] Plan denies acquisitions while planning, ready, or revising, and stops denying after implementation handoff, save, export-and-exit, discard, or exit.
-- [ ] Goal denies acquisitions for every state that can execute or resume automatically and stops denying only after its existing terminal, stop, clear, or non-resumable transition.
+- [ ] Every transition from inactive to a Plan mutex-holding state performs final admission after all asynchronous preflight and before any state, persistence, prompt, or tool mutation.
+- [ ] Every Goal activation path, including direct start, queue activation, resume, retry recovery, and restored automatic continuation, respects one documented mutex-ownership rule.
+- [ ] Plan reports the mutex as busy while planning, ready, or revising, and releases it after implementation handoff, save, export-and-exit, discard, or exit.
+- [ ] Goal reports the mutex as busy for every state that can execute or resume automatically and releases it only after its existing terminal, stop, clear, or non-resumable transition.
 - [ ] An inactive Goal path that would widen active tools performs the same final busy check and defers its tool change while another workflow holds the group.
-- [ ] Restored active state begins denying before it can schedule work, and an unsupported legacy collision falls back to the existing restrictive-wins pause behavior without starting autonomous work.
-- [ ] A denied start is observable in every supported command mode and preserves the exact prior state and active tools.
+- [ ] Restored active state holds the mutex before it can schedule work, and an unsupported legacy collision falls back to the existing restrictive-wins pause behavior without starting autonomous work.
+- [ ] A rejected start is observable in every supported command mode and preserves the exact prior state and active tools.
 - [ ] Loading either package alone preserves its current commands, tools, settings, persistence, and runtime behavior.
 
 **Outcome:** Supported Plan and Goal versions coexist without becoming active at the same time and without importing or identifying one another.
@@ -117,7 +116,7 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 
 - [ ] Co-installation tests cover both extension load orders and both acquisition orders.
 - [ ] Tests cover session restore, queued Goal activation, continuation, retry, Plan ready and revision states, cancellation, replacement, reload, shutdown, and stale callbacks.
-- [ ] Tests prove that denial never invokes `setActiveTools()`, Goal visibility changes cannot widen an active Plan tool set, and Plan restores the exact pre-Plan set when it exits.
+- [ ] Tests prove that a busy result never invokes `setActiveTools()`, Goal visibility changes cannot widen an active Plan tool set, and Plan restores the exact pre-Plan set when it exits.
 - [ ] The current restrictive-wins Goal fail-safe remains as defense in depth for unsupported or non-participating tool policies.
 - [ ] Package documentation states the minimum counterpart versions for guaranteed coexistence and distinguishes standalone support from mixed-version guarantees.
 - [ ] Both repository gates, focused package tests, package dry runs, and isolated Pi loading smokes pass before release readiness is claimed.
@@ -140,7 +139,7 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 | --- | --- |
 | Active participating agent workflows per session | At most one |
 | Participant identities in the mutex request | Zero |
-| State or active-tool changes after denied acquisition | Zero |
+| State or active-tool changes after a rejected attempt | Zero |
 | Extension-to-extension imports or package dependencies | Zero |
 | Standalone Plan and Goal behavior lost | Zero unapproved changes |
 | Automatic Goal work started while Plan holds the group | Zero |
@@ -156,17 +155,17 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 | An `await` appears between admission and state commit | Centralize the critical section and test concurrent starts from both orders. |
 | An older counterpart does not participate | Guarantee coexistence only for documented version floors and retain the current fail-safe behavior. |
 | A non-participating extension changes tools or starts work | Describe the mutex as cooperative and keep existing tool-loss guards; do not claim ecosystem-wide enforcement. |
-| Anonymous denial gives limited recovery guidance | Report that another workflow is active without guessing its owner or offering cross-extension control. |
-| Goal has many automatic re-entry paths | Define lock-owning Goal states once and audit every activation and continuation boundary against them. |
+| An anonymous busy result gives limited recovery guidance | Report that another workflow is active without guessing its owner or offering cross-extension control. |
+| Goal has many automatic re-entry paths | Define mutex-holding Goal states once and audit every activation and continuation boundary against them. |
 | The protocol grows into workflow RPC | Keep the schema boolean and anonymous, and require a separate proposal for every additional capability. |
 | Deprecation removes atomic Plan-to-Goal behavior | Treat that loss as an explicit product decision, not an automatic consequence of coexistence. |
 
 ## Non-Goals
 
-- Create `pi-workflow-engine`, a workflow-lock package, or a coordinator extension.
+- Create `pi-workflow-engine`, a workflow-mutex package, or a coordinator extension.
 - Make Plan import Goal, Goal import Plan, or either detect the other's commands, tools, settings, events, package, or version.
 - Transfer a Plan into Goal or recreate `/workflow` as a distributed event protocol.
-- Identify the lock holder or allow one extension to start, stop, resume, or cancel another.
+- Identify the mutex holder or allow one extension to start, stop, resume, or cancel another.
 - Replace Pi's active-tool array with a general policy engine inside this repository.
 - Guarantee exclusion against extensions that do not participate in the protocol.
 - Deprecate, move, publish, or npm-deprecate `pi-workflow` without the Phase 4 approvals.
@@ -183,7 +182,7 @@ This is an advisory mutex among participating extensions, not a Pi-enforced lock
 
 - **2026-08-03 — Earlier direction:** A shared `pi-workflow-engine` and three adapters were proposed.
 - **2026-08-22 — Select focused products:** Prefer maintaining `pi-plan-mode` and `pi-goal` over extracting a workflow engine.
-- **2026-08-22 — Select an anonymous cooperative mutex:** Coordinate only session and lock-group occupancy through a versioned extension-neutral `pi.events` protocol.
+- **2026-08-22 — Select an anonymous cooperative mutex:** Coordinate only session and mutex-group occupancy through a versioned extension-neutral `pi.events` protocol.
 - **2026-08-22 — Keep the protocol minimal:** Do not expose identity or add workflow control, state synchronization, or Plan-to-Goal handoff.
 - **2026-08-22 — Reject side-thread planning:** Keep the existing inline Plan architecture and its optional fresh implementation handoff.
 - **2026-08-22 — Defer deprecation:** Keep `pi-workflow` active until coexistence is proven and a separate explicit decision approves its migration.

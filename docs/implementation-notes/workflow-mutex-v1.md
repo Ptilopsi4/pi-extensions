@@ -2,13 +2,13 @@
 
 - **Status:** Draft protocol for implementation and characterization.
 - **Transport:** Pi's process-local `pi.events` bus.
-- **Purpose:** Prevent two participating agent workflows from owning the same Pi session at the same time.
+- **Purpose:** Ensure at most one participating agent workflow is active in the same Pi session.
 
 ## Scope
 
-This protocol is an anonymous cooperative admission interlock.
+This protocol is an anonymous cooperative mutex.
 
-It coordinates only whether a workflow group is already held in one session.
+It coordinates only whether a workflow group is busy in one session.
 
 It does not identify the holder, control another workflow, transfer state, or compose tool policies.
 
@@ -19,17 +19,18 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 The v1 channel is:
 
 ```text
-extension:workflow-lock:try-acquire:v1
+workflow:mutex:v1
 ```
+
+The channel identifies the version, so the payload does not repeat it.
 
 The v1 payload is:
 
 ```ts
 interface WorkflowMutexAttemptV1 {
-	version: 1;
-	sessionManager: object;
+	session: object;
 	group: string;
-	denied: boolean;
+	busy: boolean;
 }
 ```
 
@@ -37,19 +38,17 @@ A conforming requester MUST create a fresh mutable object with exactly these val
 
 ```ts
 const attempt: WorkflowMutexAttemptV1 = {
-	version: 1,
-	sessionManager,
+	session: ctx.sessionManager,
 	group: "agent-workflow",
-	denied: false,
+	busy: false,
 };
 ```
 
 | Field | Meaning |
 | --- | --- |
-| `version` | Payload version and always `1` on the v1 channel. |
-| `sessionManager` | The current `ctx.sessionManager` object, compared by JavaScript identity. |
+| `session` | The current `ctx.sessionManager` object, compared by JavaScript identity. |
 | `group` | An opaque exclusion group compared by exact string equality. |
-| `denied` | A monotonic veto bit that starts as `false` and may only change to `true`. |
+| `busy` | A monotonic result that starts as `false` and may only change to `true`. |
 
 The only group defined by this specification is `agent-workflow`.
 
@@ -65,7 +64,7 @@ Each participant owns only local, session-bound state:
 type LocalWorkflowMutexOwner = symbol;
 
 interface LocalWorkflowMutexState {
-	sessionManager?: object;
+	session?: object;
 	heldGroups: Map<string, LocalWorkflowMutexOwner>;
 	generation: number;
 }
@@ -79,7 +78,7 @@ The owner symbol is never emitted, persisted, or shared.
 
 A workflow's persisted state does not itself hold the mutex.
 
-The participant MUST bind the current `ctx.sessionManager` before attempting acquisition or answering requests for that session.
+The participant MUST bind the current `ctx.sessionManager` to local `session` before attempting acquisition or answering requests for that session.
 
 The participant MUST invalidate the binding and stop owned work during `session_shutdown`.
 
@@ -96,16 +95,15 @@ The listener MUST ignore malformed payloads without throwing.
 A request is relevant only when all of these conditions hold:
 
 1. The payload is a non-null, non-array object.
-2. `version === 1`.
-3. `sessionManager === localState.sessionManager`.
-4. `group` is a string recognized by the participant.
-5. `denied` is a boolean.
+2. `session === localState.session`.
+3. `group` is a string recognized by the participant.
+4. `busy` is a boolean.
 
-For a relevant request, the listener MUST set `denied = true` when `heldGroups` has the requested group.
+For a relevant request, the listener MUST set `busy = true` when `heldGroups` has the requested group.
 
 Otherwise, the listener MUST leave the payload unchanged.
 
-The listener MUST NOT set `denied` to `false`.
+The listener MUST NOT set `busy` to `false`.
 
 The listener MUST NOT emit another event, start or stop work, change tools, persist state, show UI, or inspect another participant.
 
@@ -114,17 +112,16 @@ A listener failure is not reported to the requester by `pi.events`, so a conform
 A minimal listener has this shape:
 
 ```ts
-pi.events.on("extension:workflow-lock:try-acquire:v1", (data) => {
+pi.events.on("workflow:mutex:v1", (data) => {
 	if (!data || typeof data !== "object" || Array.isArray(data)) return;
 
 	const attempt = data as Partial<WorkflowMutexAttemptV1>;
-	if (attempt.version !== 1) return;
-	if (attempt.sessionManager !== localState.sessionManager) return;
+	if (attempt.session !== localState.session) return;
 	if (attempt.group !== "agent-workflow") return;
-	if (typeof attempt.denied !== "boolean") return;
+	if (typeof attempt.busy !== "boolean") return;
 	if (!localState.heldGroups.has(attempt.group)) return;
 
-	attempt.denied = true;
+	attempt.busy = true;
 });
 ```
 
@@ -140,11 +137,11 @@ Immediately before emitting, the requester MUST capture the current session bind
 
 The requester then MUST perform this sequence without an `await`:
 
-1. Create a fresh v1 attempt with `denied: false`.
+1. Create a fresh v1 attempt with `busy: false`.
 2. Emit the v1 channel.
 3. Revalidate the captured session, generation, and workflow candidate.
-4. Verify that `version`, `sessionManager`, and `group` are unchanged.
-5. Accept only when `denied === false`.
+4. Verify that `session` and `group` are unchanged.
+5. Accept only when `busy === false`.
 6. Create a new local owner symbol and add the group-owner pair to `heldGroups` as the first ownership mutation.
 7. Return the local owner symbol to the activating workflow.
 
@@ -166,7 +163,7 @@ Protocol listener purity prevents a nested acquisition from being started while 
 
 After adding the group-owner pair to `heldGroups`, the participant MAY perform the product-specific state, persistence, prompt, tool, and queue changes required to activate its workflow.
 
-The participant MUST continue denying matching attempts while activation is pending.
+The participant MUST continue reporting `busy: true` for matching attempts while activation is pending.
 
 If activation fails, the participant MUST roll back its partial activation before releasing the group.
 
@@ -186,7 +183,7 @@ Before release, the participant MUST:
 
 1. Prevent new owned work from being scheduled.
 2. Cancel or stale-guard every owned task that could resume the workflow.
-3. Complete the product-specific transition out of the lock-owning state.
+3. Complete the product-specific transition out of the mutex-holding state.
 4. Restore or clear the workflow's owned prompt and tool policy as required by that product.
 
 Removing the matching group-owner pair MUST be the final synchronous ownership step.
@@ -199,7 +196,7 @@ A workflow that requires a new explicit user admission MAY release it after all 
 
 A restored workflow MUST acquire the group before reapplying its active prompt or tool policy and before scheduling any automatic work.
 
-If restoration is denied, the workflow MUST enter an existing safe non-running state and MUST NOT alter the winning workflow's tools or prompt.
+If the mutex is busy during restoration, the workflow MUST enter an existing safe non-running state and MUST NOT alter the active workflow's tools or prompt.
 
 When unsupported historical state contains multiple active workflows, synchronous acquisition order selects at most one protocol holder.
 
@@ -207,17 +204,17 @@ Product-specific restrictive-tool fail-safes remain required for mixed versions 
 
 A session switch, fork, reload, or shutdown releases only the old runtime's in-memory ownership.
 
-The replacement runtime reconstructs product state and performs a new acquisition against the replacement session's `sessionManager` identity.
+The replacement runtime reconstructs product state and performs a new attempt with the replacement session's `ctx.sessionManager` object.
 
 ## Guarantees
 
 When every contender conforms to v1 within one Pi process and one shared event bus:
 
-- At most one participant holds `agent-workflow` for the same `sessionManager` object.
+- At most one participant holds `agent-workflow` for the same `ctx.sessionManager` object.
 - Different sessions and different groups do not block one another.
-- A denied acquisition has no workflow or tool-policy side effects.
+- A rejected attempt has no workflow or tool-policy side effects.
 - The decision exposes no holder identity.
-- Installing a participant alone preserves standalone behavior because no listener can deny it.
+- Installing a participant alone preserves standalone behavior because no listener reports the mutex as busy.
 
 ## Non-guarantees
 
@@ -236,9 +233,9 @@ The local owner symbol is only a stale-cleanup guard and is not a protocol token
 
 ## Versioning
 
-The channel suffix and payload version MUST change together for a breaking change.
+The versioned channel MUST change for a breaking change.
 
-Changing field meaning, listener timing, session identity, denial semantics, or release semantics is breaking.
+Changing field meaning, listener timing, session identity, busy-result semantics, or release semantics is breaking.
 
 V1 participants MUST NOT infer compatibility with an unknown channel version.
 
@@ -270,14 +267,14 @@ If a supported Pi version stops satisfying any property, participants MUST fail 
 A v1 implementation MUST cover:
 
 - No holder allows acquisition.
-- A holder denies the same session and group.
-- A holder does not deny another session or group.
-- Later listeners cannot clear an earlier denial.
+- A holder reports busy for the same session and group.
+- A holder does not report busy for another session or group.
+- Later listeners cannot clear an earlier `busy: true` result.
 - Malformed payloads do not throw or change local state.
-- Unexpected payload mutation and `emit()` failure deny acquisition.
+- Unexpected payload mutation and `emit()` failure reject the attempt.
 - Two contenders in either load and attempt order produce exactly one holder.
 - Synchronous event re-entry makes a stale requester fail before ownership commit.
-- Denial changes no workflow state, persistence, prompt, active tools, or queue.
+- A rejected attempt changes no workflow state, persistence, prompt, active tools, or queue.
 - Activation failure rolls back before release.
 - Restored state acquires before tools, prompt, or automatic work.
 - A stale release cannot clear a newer local owner for the same group.
