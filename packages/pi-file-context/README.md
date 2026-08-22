@@ -13,7 +13,7 @@ Browse project files inside Pi, select exact lines or Git changes, and review ev
 ## ✨ Features
 
 - Opens from `/file-context` or a configurable shortcut that defaults to `F8`.
-- Searches file names or file contents and previews bounded text with line numbers.
+- Browses discovered project folders hierarchically, searches file names or contents globally, and previews bounded text with line numbers.
 - Adds whole-file references, exact line ranges, changed hunks, revisions, or Git diffs without using the clipboard.
 - Shows Git state, blame, bounded file history, provenance, and a deterministic token estimate before attachment.
 - Reviews and removes exact queued snapshots before the next prompt.
@@ -53,8 +53,10 @@ The package declares `dist/index.ts`, so an unbuilt local checkout must run the 
 1. Run `/file-context` and choose **Add context snippet**.
    Press `F8` or run `/file-context browse` to open the browser directly.
    Every route shows the same cancellable project scan before browsing.
-2. Type to fuzzy-search file names in relevance order and use `Up`/`Down` to navigate.
-   Press `Tab` to insert a normal whole-file `@path` reference, or `Enter` to preview a file for quoting.
+2. Use `Up`/`Down` to select an immediate child folder or file, and press `Enter` to open it.
+   `Escape`, `Left`, or `Backspace` returns to the parent folder when the search field is empty.
+   Type to fuzzy-search file names across every discovered folder in relevance order.
+   Press `Tab` on a file to insert a normal whole-file `@path` reference, or `Enter` to preview it for quoting.
 3. Press `Ctrl+F` to switch between file-name and content search.
    Content search is literal and case-insensitive by default; `Alt+C` toggles case sensitivity and `Alt+F` toggles ordered fuzzy matching.
    The current states remain visible above the results.
@@ -71,9 +73,10 @@ The package declares `dist/index.ts`, so an unbuilt local checkout must run the 
    `Escape` goes back without changing selected context, while `Ctrl+C` closes File Context.
    Write the question and submit normally; selected snippets are attached in order and cleared together.
 
-`Escape` returns from a preview to its originating file-name or content results.
-When the browser was opened from the menu, `Escape` from a root search returns to the menu.
-Direct browser routes cancel instead.
+`Escape` returns from a preview to its originating folder, file-search results, or content results.
+With an empty file-search field, `Escape` from a nested folder returns to its parent.
+When the browser was opened from the menu, `Escape` from the root folder returns to the menu.
+Direct browser routes cancel at the root instead.
 `Ctrl+C` closes menus and browsers.
 During project scanning, either cancel key stops the scan; menu-owned scans return to the menu and direct scans close without opening a stale explorer.
 
@@ -170,7 +173,9 @@ src/index.ts                   Thin Pi entrypoint
 src/file-context.ts            Lifecycle, routes, filesystem boundaries, selected state, prompt injection
 src/file-context-menu.ts       Standard Add, selected-context review, Help, and removal flow
 src/file-context-settings.ts   User shortcut loading and validation
-src/file-context-explorer.ts   File, content, Git, and line-range interaction controller
+src/file-context-explorer.ts   Folder, file, content, Git, and line-range interaction controller
+src/file-browser.ts            Safe hierarchy model for discovered project paths
+src/file-browser-ui.ts         Width-safe folder and file list rendering with effective key hints
 src/file-context-preview-ui.ts Width-safe preview, capacity, and progressive action help
 src/content-search.ts          Bounded literal and fuzzy content matching
 src/content-search-session.ts  Search input, toggles, navigation, and cancellation
@@ -181,6 +186,7 @@ src/git-context.ts             Bounded read-only Git status, diff, blame, histor
 test/content-search.test.ts     Content matcher behavior and limits
 test/content-search-ui.test.ts  Content interaction, rendering, and lifecycle tests
 test/file-context-search.test.ts  File-name ranking, typo tolerance, and query-bound tests
+test/file-context-folder-browser.test.ts  Folder hierarchy, navigation, keybinding, and terminal-safety tests
 test/file-context.test.ts       Filesystem, prompt, lifecycle, shortcut, and explorer tests
 test/file-context-selection.test.ts  Add-and-continue, capacity, and progressive-help tests
 test/file-context-menu.test.ts  Menu states, exact review, removal, limits, and responsive rendering tests

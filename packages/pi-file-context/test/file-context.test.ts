@@ -223,6 +223,7 @@ test("explorer previews a file, selects a range, and keeps rendered rows width-s
 	assert.ok(fileRows.every((line) => !line.includes("\u001b[31m")));
 	assert.ok(fileRows.every((line) => visibleWidth(line) <= 32));
 	explorer.handleInput("enter");
+	explorer.handleInput("enter");
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	explorer.handleInput(" ");
 	explorer.handleInput("down");
@@ -250,6 +251,7 @@ test("explorer previews a file, selects a range, and keeps rendered rows width-s
 			result = value;
 		},
 	});
+	referenceExplorer.handleInput("enter");
 	referenceExplorer.handleInput("tab");
 	assert.deepEqual(result, { kind: "reference", path: "src/reference.ts" });
 
@@ -386,6 +388,7 @@ test("explorer shows Git status and provenance and selects changed hunks", async
 		},
 	});
 
+	explorer.handleInput("enter");
 	assert.ok(explorer.render(80).some((line) => line.includes(" M") && line.includes("changed.ts")));
 	explorer.handleInput("enter");
 	await new Promise<void>((resolve) => setImmediate(resolve));
@@ -470,6 +473,7 @@ test("explorer discloses current-line blame and bounded file history", async () 
 	});
 
 	explorer.handleInput("enter");
+	explorer.handleInput("enter");
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	explorer.handleInput("b");
 	await new Promise<void>((resolve) => setImmediate(resolve));
@@ -535,6 +539,7 @@ test("explorer cancellation releases detail loading and empty history stays widt
 		done() {},
 	});
 
+	explorer.handleInput("enter");
 	explorer.handleInput("enter");
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	explorer.handleInput("h");
@@ -639,6 +644,7 @@ test("explorer loads validated revisions and attaches explicit Git diff context"
 
 	const revisionExplorer = makeExplorer();
 	revisionExplorer.handleInput("enter");
+	revisionExplorer.handleInput("enter");
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	revisionExplorer.handleInput("r");
 	revisionExplorer.handleInput("HEAD~1");
@@ -659,6 +665,7 @@ test("explorer loads validated revisions and attaches explicit Git diff context"
 	);
 
 	const diffExplorer = makeExplorer();
+	diffExplorer.handleInput("enter");
 	diffExplorer.handleInput("enter");
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	diffExplorer.handleInput("d");

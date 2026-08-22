@@ -179,6 +179,7 @@ test("explorer adds exact context and keeps browsing with visible capacity and a
 	});
 
 	explorer.handleInput("enter");
+	explorer.handleInput("enter");
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	explorer.handleInput(" ");
 	explorer.handleInput("down");

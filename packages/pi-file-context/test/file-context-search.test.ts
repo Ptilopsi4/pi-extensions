@@ -28,6 +28,14 @@ test("ranks fuzzy file matches and tolerates typos", () => {
 	assert.deepEqual(search.search("  "), files);
 });
 
+test("searches terminal-safe copies without changing returned raw paths", () => {
+	const unsafePath = "src/unsafe\u001b[31m.ts";
+	const search = new ProjectFileSearch([unsafePath]);
+
+	assert.deepEqual(search.search("unsafe\\x1b"), [unsafePath]);
+	assert.deepEqual(search.search("unsafe\u001b"), [unsafePath]);
+});
+
 test("bounds fuzzy search before scoring overlong pasted queries", () => {
 	const maximumQuery = "a".repeat(256);
 	const overlongQuery = `${maximumQuery}a`;

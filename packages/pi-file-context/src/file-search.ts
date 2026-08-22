@@ -1,3 +1,5 @@
+import { safeTerminalText } from "./file-browser.js";
+
 const MAX_SEARCH_QUERY_LENGTH = 256;
 const MAX_SEARCH_QUERY_PARTS = 8;
 const PATH_SCORE_PENALTY = 50;
@@ -33,7 +35,7 @@ export class ProjectFileSearch {
 	constructor(files: readonly string[]) {
 		this.files = [...files];
 		this.entries = this.files.map((path, originalIndex) => {
-			const normalizedPath = path.toLowerCase();
+			const normalizedPath = safeTerminalText(path).toLowerCase();
 			const normalizedBasename = normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1);
 			return {
 				path,
@@ -47,7 +49,7 @@ export class ProjectFileSearch {
 	}
 
 	search(query: string): string[] {
-		const trimmedQuery = query.trim();
+		const trimmedQuery = safeTerminalText(query).trim();
 		if (!trimmedQuery) return [...this.files];
 		if (trimmedQuery.length > MAX_SEARCH_QUERY_LENGTH) return [];
 		const normalizedQuery = trimmedQuery.toLowerCase();
