@@ -93,6 +93,7 @@ export function validateEagerGraph(metadata) {
 		for (const imported of output.imports ?? []) {
 			if (
 				imported.external &&
+				imported.kind !== "dynamic-import" &&
 				FORBIDDEN_EAGER_EXTERNALS.some(
 					(dependency) =>
 						imported.path === dependency || imported.path.startsWith(`${dependency}/`),
