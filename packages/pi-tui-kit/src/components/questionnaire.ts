@@ -674,6 +674,7 @@ function keybindingHint(
 }
 
 function rawKeyHint(theme: Theme, keys: string, description: string): string {
+	if (!keys) return "";
 	return `${theme.fg("dim", keys)}${theme.fg("muted", ` ${description}`)}`;
 }
 
@@ -760,6 +761,7 @@ function wrapHintGroups(groups: readonly string[], width: number): string[] {
 	const lines: string[] = [];
 	let line = "";
 	for (const group of groups) {
+		if (!group) continue;
 		const candidate = line ? `${line}  ${group}` : group;
 		if (line && visibleWidth(candidate) > safeWidth) {
 			lines.push(line);

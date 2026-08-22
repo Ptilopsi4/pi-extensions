@@ -213,6 +213,22 @@ test("runQuestionnaire omits additive page keys that conflict with standard acti
 	assert.deepEqual(await running, { kind: "closed", reason: "close" });
 });
 
+test("runQuestionnaire omits question navigation when every additive key conflicts", async () => {
+	const keybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+		"tui.select.confirm": ["tab", "shift+tab", "left", "right"],
+	});
+	const tui = createTuiHarness({ width: 120, rows: 30, keybindings });
+	const context = createMockContext({ mode: "tui", hasUI: true, custom: tui.custom });
+	const running = runQuestionnaire(context.ctx, { questions });
+	await tui.waitForOpen();
+	const frame = tui.render().join("\n");
+	assert.match(frame, /tab\/shift\+tab\/left\/right select/u);
+	assert.doesNotMatch(frame, / questions/u);
+
+	tui.press("ctrl+c");
+	assert.deepEqual(await running, { kind: "closed", reason: "close" });
+});
+
 test("runQuestionnaire gives configured standard actions priority over additive shortcuts", async () => {
 	const bindings = {
 		"tui.input.tab": { data: "j", key: "j" },
