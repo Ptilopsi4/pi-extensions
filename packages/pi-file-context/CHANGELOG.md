@@ -1,5 +1,15 @@
 # @narumitw/pi-file-context
 
+## 0.53.3
+
+### Patch Changes
+
+- 1c7d26c: Use Ctrl+Shift+X as the default browser shortcut and configure it safely from the File Context Settings menu.
+- 01457d0: Browse discovered project folders hierarchically while keeping global file and content search.
+- e2a2055: Open current worktree files in Pi's configured external editor from File Preview and show effective preview shortcuts.
+- Updated dependencies [8540d0f]
+  - @narumitw/pi-tui-kit@0.57.1
+
 ## 0.53.2
 
 ### Patch Changes

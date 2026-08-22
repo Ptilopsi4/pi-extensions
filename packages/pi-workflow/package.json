@@ -1,6 +1,6 @@
 {
 	"name": "@narumitw/pi-workflow",
-	"version": "0.6.0",
+	"version": "0.6.1",
 	"description": "Pi extension combining Plan mode and Goal execution with an integrated handoff.",
 	"type": "module",
 	"license": "MIT",
@@ -37,7 +37,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@narumitw/pi-tui-kit": "^0.57.0"
+		"@narumitw/pi-tui-kit": "^0.57.1"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-ai": "*",
