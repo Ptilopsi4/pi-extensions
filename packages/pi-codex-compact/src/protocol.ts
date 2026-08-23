@@ -172,7 +172,7 @@ export function rewriteCheckpointMarker(
 	replacementHistory: readonly unknown[],
 ): JsonObject {
 	if (!isObject(payload) || !Array.isArray(payload.input)) {
-		throw new CodexCompactionProtocolError("OpenAI Codex payload is missing an input array");
+		throw new CodexCompactionProtocolError("Codex Responses payload is missing an input array");
 	}
 	const matches = payload.input
 		.map((item, index) => (markerTextFromItem(item) === marker ? index : -1))
@@ -195,7 +195,7 @@ export function rewriteCheckpointMarker(
 
 export function appendCompactionTrigger(payload: unknown): JsonObject {
 	if (!isObject(payload) || !Array.isArray(payload.input)) {
-		throw new CodexCompactionProtocolError("OpenAI Codex payload is missing an input array");
+		throw new CodexCompactionProtocolError("Codex Responses payload is missing an input array");
 	}
 	if (payload.input.some((item) => isObject(item) && item.type === "compaction_trigger")) {
 		throw new CodexCompactionProtocolError(

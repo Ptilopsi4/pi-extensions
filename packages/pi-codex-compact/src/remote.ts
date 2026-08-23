@@ -100,7 +100,7 @@ export async function requestRemoteCompaction(
 	for await (const event of stream) {
 		if (request.signal.aborted) throw abortError();
 		if (event.type === "error") {
-			throw new Error(event.error.errorMessage ?? "OpenAI Codex compaction request failed");
+			throw new Error(event.error.errorMessage ?? "Codex remote compaction request failed");
 		}
 		if (event.type === "done") usage = event.message.usage;
 	}

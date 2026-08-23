@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-codex-compact)](https://www.npmjs.com/package/@narumitw/pi-codex-compact) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-Use OpenAI Codex Remote Compaction V2 in Pi instead of generating a local plaintext summary for compatible `openai-codex` sessions.
+Use Codex Remote Compaction V2 in Pi instead of generating a local plaintext summary for models that use the `openai-codex-responses` API.
 
 The extension requests and stores an opaque server-generated checkpoint, then safely replays it in later Codex Responses requests.
 
@@ -10,7 +10,7 @@ Pi still decides when compaction runs and retains its normal `/compact`, thresho
 
 ## ✨ Features
 
-- Uses the active `openai-codex` OAuth credentials without persisting tokens or request headers.
+- Uses the active Codex Responses provider and credentials without persisting secrets or request headers.
 - Handles manual, threshold, and overflow compaction through Pi's existing lifecycle.
 - Validates and persists one bounded opaque checkpoint that survives compatible reloads, resumes, and forks.
 - Replays the latest checkpoint while preserving newer conversation and extension context.
@@ -45,14 +45,14 @@ Avoid loading a global npm installation and the local workspace at the same time
 
 ## 🚀 Quick start
 
-1. Sign in through Pi's built-in OpenAI Codex OAuth provider.
-2. Select a model whose provider is `openai-codex` and API is `openai-codex-responses`.
+1. Sign in through Pi's built-in OpenAI Codex provider, or configure a custom provider that routes to a compatible Codex backend.
+2. Select a model whose API is `openai-codex-responses`.
 3. Work normally.
    Pi's automatic compaction and built-in `/compact` continue to operate.
 4. Run `/codex-compact` to inspect the effective route or choose **Compact now**.
 5. After compaction, continue the session normally; compatible requests replay the opaque checkpoint.
 
-When the active model is unsupported, compaction remains entirely Pi-native.
+When the active model uses another API, compaction remains entirely Pi-native.
 
 ## 💬 Commands
 
@@ -129,31 +129,35 @@ This extension does **not** read `~/.codex/config.toml`.
 ## ✅ Requirements and compatibility
 
 - Pi APIs compatible with the package's declared peer dependencies.
-- The built-in provider `openai-codex`.
 - API `openai-codex-responses` on the active model.
-- A working OpenAI Codex OAuth login and Remote V2 entitlement.
+- A built-in or custom provider that routes that API to a backend supporting `compaction_trigger` and opaque `compaction` replay.
+- Working credentials and Remote V2 entitlement for that backend.
 
-OpenAI API-key, Azure, GitHub Copilot, proxies, and arbitrary Responses-compatible providers are not supported.
-Switching to another provider or model leaves Pi's visible fallback marker plus retained recent messages in context.
-Switching back to the checkpoint's original compatible model restores opaque replay.
+The built-in `openai-codex` provider is supported, and a custom provider or proxy is eligible when its model explicitly uses `openai-codex-responses`.
+Generic `openai-responses`, `azure-openai-responses`, GitHub Copilot, and other merely Responses-compatible API labels are not eligible.
+The extension does not probe provider capabilities before compaction; a provider that declares `openai-codex-responses` owns compatible routing, authentication, request transforms, SSE transport, and opaque replay.
+A failed Remote V2 compaction attempt falls back to Pi native, but an ordinary request cannot transparently recover after an incompatible provider has already received an existing opaque checkpoint.
+Provider provenance is stored for diagnosis but is not a replay gate.
+Switching providers can replay a checkpoint only when the API and exact model ID still match; switching model IDs leaves Pi's visible fallback marker plus retained recent messages in context.
 
 ## 🔄 How it works
 
 1. Pi prepares compaction and selects the recent message suffix it will retain.
-2. The extension projects an earlier compatible checkpoint, if present, into the current Responses input.
-3. It appends exactly one final `compaction_trigger` and sends a normal authenticated Codex Responses SSE request with cache retention disabled.
+2. If an earlier compatible checkpoint is present, the extension identifies its boundary from the summary persisted on the active `CompactionEntry` and validates the retained suffix fingerprints.
+3. It projects that checkpoint into the current Responses input, appends exactly one final `compaction_trigger`, and sends a normal authenticated Codex Responses SSE request with cache retention disabled.
 4. It requires a completed response containing exactly one non-empty opaque `compaction` item.
 5. It constructs bounded replacement history from recent raw user-role Responses items followed by the opaque item.
 6. It stores that history and fingerprints of Pi's retained suffix in versioned `CompactionEntry.details`.
 7. On later compatible requests, it replaces an exactly validated marker with the persisted replacement history immediately before provider dispatch.
 
-If fingerprints, model identity, payload shape, or marker count do not match exactly, the extension leaves Pi's visible fallback context unchanged instead of guessing.
+The persisted entry remains the summary identity source, so replay does not depend on the wording generated by the currently installed extension version.
+If persisted summary identity, fingerprints, model identity, payload shape, or marker count do not match exactly, the extension leaves Pi's visible fallback context unchanged instead of guessing.
 
 ## 🔒 Security and privacy
 
-Remote compaction sends the active conversation context, system prompt, and active tool schemas to the same OpenAI Codex backend used by the selected model.
-The Pi session stores the encrypted compaction item and bounded recent user-role Responses items.
-It does not store OAuth tokens, authorization headers, or request headers in checkpoint details.
+Remote compaction sends the active conversation context, system prompt, and active tool schemas to the configured backend used by the selected Codex Responses provider.
+The Pi session stores the producing provider ID, encrypted compaction item, and bounded recent user-role Responses items.
+It does not store credentials, authorization headers, or request headers in checkpoint details.
 
 | Boundary | Limit |
 | --- | ---: |
@@ -173,7 +177,7 @@ These hard byte ceilings are intentionally not configurable.
 
 - The wire contract is undocumented and can change independently of Pi or this package.
   Keep backups of important sessions.
-- Full older history depends on this extension and the same compatible model.
+- Full older history depends on this extension, the `openai-codex-responses` API, the exact checkpoint model ID, and a provider route whose backend accepts the opaque item.
   Removing the extension exposes only the portability fallback marker and Pi-retained recent messages.
 - The package does not reproduce Codex core's context-window UUID/number lineage, previous-model compatibility fallback, exact pre-turn ordering, or exact mid-turn model-session ownership.
 - Remote failure falls back to Pi's plaintext summary, so a session can contain both remote opaque and native compaction entries over time.
@@ -187,6 +191,7 @@ src/codex-compact.ts  Pi lifecycle, command, provider projection, and fallback
 src/remote.ts         Provider stream invocation, auth payload, timeout, and retry controls
 src/protocol.ts       Bounded SSE parsing and Remote V2 payload/output validation
 src/checkpoint.ts     Replacement history, fingerprints, persistence, and replay projection
+src/model-compatibility.ts  API-based Remote V2 model eligibility
 src/settings.ts       Global settings validation and atomic persistence
 src/settings-menu.ts  First-use manual compaction and settings TUI
 
@@ -232,7 +237,7 @@ See [`docs/implementation-notes/codex-compaction-mechanism.md`](../../docs/imple
 
 ## 🔎 Keywords
 
-Pi extension, Pi coding agent, OpenAI Codex, OAuth, Remote Compaction V2, opaque checkpoint, Responses API, context compaction.
+Pi extension, Pi coding agent, OpenAI Codex, custom provider, proxy, Remote Compaction V2, opaque checkpoint, Responses API, context compaction.
 
 ## 📄 License
 

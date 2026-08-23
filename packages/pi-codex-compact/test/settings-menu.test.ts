@@ -7,7 +7,11 @@ import {
 	type CodexCompactSettingsState,
 	DEFAULT_CODEX_COMPACT_SETTINGS,
 } from "../src/settings.js";
-import { createCodexCompactMenu, showCodexCompactMenu } from "../src/settings-menu.js";
+import {
+	compactMenuStatus,
+	createCodexCompactMenu,
+	showCodexCompactMenu,
+} from "../src/settings-menu.js";
 
 function memoryRuntime(kind: CodexCompactSettingsState["kind"] = "missing") {
 	let state: CodexCompactSettingsState = {
@@ -34,6 +38,21 @@ function memoryRuntime(kind: CodexCompactSettingsState["kind"] = "missing") {
 
 test("root menu makes manual compaction primary and exposes its effective route", () => {
 	const current = memoryRuntime();
+	const customModel = {
+		provider: "company-codex-proxy",
+		id: "gpt-5.6",
+		api: "openai-codex-responses",
+	};
+	const customContext = createMockContext({ model: customModel }).ctx;
+	assert.deepEqual(compactMenuStatus(customContext), {
+		model: "company-codex-proxy/gpt-5.6",
+		remoteCompatible: true,
+	});
+	assert.equal(
+		compactMenuStatus(createMockContext({ model: { ...customModel, api: "openai-responses" } }).ctx)
+			.remoteCompatible,
+		false,
+	);
 	const menu = createCodexCompactMenu(current.runtime, {
 		status: { model: "openai-codex/gpt-5.6", remoteCompatible: true },
 	});
