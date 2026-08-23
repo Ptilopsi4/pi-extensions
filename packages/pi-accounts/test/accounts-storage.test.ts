@@ -71,6 +71,58 @@ test("provider-scoped storage preserves independent active accounts and OAuth me
 	);
 });
 
+test("account alias settings default off and preserve unknown fields on save", async () => {
+	const backend = new InMemoryAccountStorageBackend();
+	const store = new AccountStore(backend);
+	await backend.withLockAsync(async () => ({
+		result: undefined,
+		next: JSON.stringify({
+			version: 1,
+			futureTopLevel: { enabled: true },
+			settings: { futureSetting: "kept" },
+			providers: {
+				anthropic: {
+					futureProviderField: 42,
+					accounts: { work: credential("work", { futureCredentialField: "kept" }) },
+				},
+			},
+		}),
+	}));
+
+	const initial = await store.readAsync();
+	assert.equal(initial.settings?.accountProviderAliases, undefined);
+	await store.update((data) => ({
+		...data,
+		settings: { ...(data.settings ?? {}), accountProviderAliases: true },
+	}));
+	const saved = await store.readAsync();
+
+	assert.equal(saved.settings?.accountProviderAliases, true);
+	assert.equal(saved.settings?.futureSetting, "kept");
+	assert.equal((saved.futureTopLevel as { enabled?: boolean }).enabled, true);
+	assert.equal(saved.providers.anthropic?.futureProviderField, 42);
+	assert.equal(saved.providers.anthropic?.accounts.work?.futureCredentialField, "kept");
+});
+
+test("invalid account alias settings block reads and writes without replacing the file", async () => {
+	const backend = new InMemoryAccountStorageBackend();
+	const store = new AccountStore(backend);
+	const raw = JSON.stringify({
+		version: 1,
+		settings: { accountProviderAliases: "yes" },
+		providers: {},
+	});
+	await backend.withLockAsync(async () => ({ result: undefined, next: raw }));
+
+	await assert.rejects(store.readAsync(), /accountProviderAliases must be a boolean/);
+	await assert.rejects(
+		store.update((data) => ({ ...data, settings: { accountProviderAliases: false } })),
+		/accountProviderAliases must be a boolean/,
+	);
+	const current = await backend.readAsync(async (value) => value);
+	assert.equal(current, raw);
+});
+
 test("parsed provider and account maps treat prototype-like names as own properties", () => {
 	const parsed = parseAccountsData(
 		JSON.stringify({

@@ -31,11 +31,19 @@ export type StoredOAuthCredential = OAuthCredential;
 export type ProviderAccountsData = {
 	active?: string;
 	accounts: Record<string, StoredOAuthCredential>;
+	[key: string]: unknown;
+};
+
+export type AccountSettings = {
+	accountProviderAliases?: boolean;
+	[key: string]: unknown;
 };
 
 export type AccountsData = {
 	version: 1;
 	providers: Record<string, ProviderAccountsData>;
+	settings?: AccountSettings;
+	[key: string]: unknown;
 };
 
 export class AccountStore {
@@ -149,6 +157,8 @@ function normalizeAccountsData(value: unknown): AccountsData {
 	if (value.version !== 1) throw new Error("Invalid accounts data: version must be 1.");
 	if (!isRecord(value.providers))
 		throw new Error("Invalid accounts data: providers must be an object.");
+	const normalized = cloneRecord(value, "accounts data") as AccountsData;
+	Object.setPrototypeOf(normalized, Object.prototype);
 	const providers = Object.create(null) as Record<string, ProviderAccountsData>;
 	for (const [providerId, state] of Object.entries(value.providers)) {
 		if (!isAccountProviderId(providerId)) {
@@ -161,11 +171,31 @@ function normalizeAccountsData(value: unknown): AccountsData {
 			writable: true,
 		});
 	}
-	return { version: 1, providers };
+	defineRecordValue(normalized, "version", 1);
+	defineRecordValue(normalized, "providers", providers);
+	if (value.settings !== undefined) {
+		if (!isRecord(value.settings)) {
+			throw new Error("Invalid accounts data: settings must be an object.");
+		}
+		const settings = cloneRecord(value.settings, "settings") as AccountSettings;
+		Object.setPrototypeOf(settings, Object.prototype);
+		if (
+			settings.accountProviderAliases !== undefined &&
+			typeof settings.accountProviderAliases !== "boolean"
+		) {
+			throw new Error("Invalid accounts data: accountProviderAliases must be a boolean.");
+		}
+		defineRecordValue(normalized, "settings", settings);
+	} else {
+		delete normalized.settings;
+	}
+	return normalized;
 }
 
 function normalizeProviderState(value: unknown): ProviderAccountsData {
 	if (!isRecord(value)) throw new Error("Invalid accounts data: provider state must be an object.");
+	const normalized = cloneRecord(value, "provider state") as ProviderAccountsData;
+	Object.setPrototypeOf(normalized, Object.prototype);
 	const active = parseActiveAccount(value.active);
 	if (!isRecord(value.accounts))
 		throw new Error("Invalid accounts data: accounts must be an object.");
@@ -180,7 +210,10 @@ function normalizeProviderState(value: unknown): ProviderAccountsData {
 			writable: true,
 		});
 	}
-	return active ? { active, accounts } : { accounts };
+	if (active) defineRecordValue(normalized, "active", active);
+	else delete normalized.active;
+	defineRecordValue(normalized, "accounts", accounts);
+	return normalized;
 }
 
 export function normalizeStoredCredential(
@@ -210,6 +243,19 @@ export function normalizeStoredCredential(
 		writable: true,
 	});
 	return cloned as StoredOAuthCredential;
+}
+
+function cloneRecord(value: Record<string, unknown>, path: string): Record<string, unknown> {
+	return cloneJsonValue(value, new Set(), path) as Record<string, unknown>;
+}
+
+function defineRecordValue<T extends object>(target: T, name: string, value: unknown): void {
+	Object.defineProperty(target, name, {
+		configurable: true,
+		enumerable: true,
+		value,
+		writable: true,
+	});
 }
 
 function cloneJsonValue(value: unknown, seen: Set<object>, path: string): unknown {
@@ -315,6 +361,9 @@ function createDefaultBackend(): AccountStorageBackend {
 		join(agentDir, OLDEST_CODEX_ACCOUNTS_FILE),
 	];
 	pendingMigrationNotice = undefined;
+	// Defer canonical validation to normal reads so a malformed settings field can be
+	// reported by /accounts instead of preventing the stable extension surface from loading.
+	if (pathEntryExists(canonical)) return new FileAccountStorageBackend(canonical);
 	for (const legacy of legacyCandidates) {
 		if (!pathEntryExists(legacy) && !pathEntryExists(canonical)) continue;
 		const result = migrateLegacyCodexAccountsFileSync(legacy, canonical);
@@ -452,10 +501,7 @@ function emptyProviderState(): ProviderAccountsData {
 }
 
 function cloneProviderState(state: ProviderAccountsData | undefined): ProviderAccountsData {
-	if (!state) return emptyProviderState();
-	return state.active
-		? { active: state.active, accounts: defineOwnMap(state.accounts) }
-		: { accounts: defineOwnMap(state.accounts) };
+	return state ? normalizeProviderState(state) : emptyProviderState();
 }
 
 export function defineOwnMap<T>(source: Record<string, T>): Record<string, T> {

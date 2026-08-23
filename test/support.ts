@@ -27,6 +27,7 @@ type MockPiApi = {
 	registerTool(tool: unknown): void;
 	registerMessageRenderer(customType: string, renderer: MockHandler): void;
 	registerEntryRenderer(customType: string, renderer: MockHandler): void;
+	registerProvider(provider: { id: string }): void;
 	registerProvider(name: string, config: unknown): void;
 	unregisterProvider(name: string): void;
 	on(name: string, handler: MockHandler): void;
@@ -123,19 +124,22 @@ export function createMockPi(
 		registerEntryRenderer(customType: string, renderer: MockHandler) {
 			entryRenderers.set(customType, renderer);
 		},
-		registerProvider(name: string, config: unknown) {
+		registerProvider(nameOrProvider: string | { id: string }, config?: unknown) {
+			const name = typeof nameOrProvider === "string" ? nameOrProvider : nameOrProvider.id;
+			const registration = typeof nameOrProvider === "string" ? config : nameOrProvider;
 			const previous = providers.get(name);
 			const effective =
+				typeof nameOrProvider === "string" &&
 				previous &&
 				typeof previous === "object" &&
 				!Array.isArray(previous) &&
-				config &&
-				typeof config === "object" &&
-				!Array.isArray(config)
-					? { ...previous, ...config }
-					: config;
+				registration &&
+				typeof registration === "object" &&
+				!Array.isArray(registration)
+					? { ...previous, ...registration }
+					: registration;
 			providers.set(name, effective);
-			providerRegistrations.push({ name, config });
+			providerRegistrations.push({ name, config: registration });
 		},
 		unregisterProvider(name: string) {
 			providers.delete(name);

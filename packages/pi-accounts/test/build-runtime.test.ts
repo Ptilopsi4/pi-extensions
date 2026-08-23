@@ -17,7 +17,7 @@ import { test } from "vitest";
 
 const packageRoot = resolve("packages/pi-accounts");
 const builderUrl = pathToFileURL(join(packageRoot, "scripts/build-runtime.mjs")).href;
-const forbiddenEagerInputs: readonly string[] = [];
+const forbiddenEagerInputs: readonly string[] = ["src/account-aliases.ts"];
 
 type BuildMetadata = {
 	outputs?: Record<
@@ -166,7 +166,7 @@ test("runtime builds are deterministic, mapped, external, and remove stale outpu
 	}
 });
 
-test("generated runtime is loadable by Pi's Jiti resource loader", async () => {
+test("generated runtime loads through Pi Jiti even when alias settings are invalid", async () => {
 	const builder = await loadBuilder();
 	const root = await mkdtemp(join(packageRoot, ".pi-accounts-build-test-"));
 	const agentDir = join(root, "agent");
@@ -175,6 +175,15 @@ test("generated runtime is loadable by Pi's Jiti resource loader", async () => {
 	try {
 		await builder.buildRuntime({ outputDirectory: output });
 		await mkdir(agentDir, { recursive: true });
+		await writeFile(
+			join(agentDir, "pi-accounts.json"),
+			JSON.stringify({
+				version: 1,
+				settings: { accountProviderAliases: "invalid" },
+				providers: {},
+			}),
+			{ mode: 0o600 },
+		);
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 		const loader = new DefaultResourceLoader({
 			cwd: root,

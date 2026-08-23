@@ -6,6 +6,9 @@ Save and switch named OpenAI Codex, Anthropic, and GitHub Copilot subscription a
 
 Each selection overrides only the chosen provider, and selecting `default` restores Pi's normal authentication without deleting saved accounts.
 
+> [!WARNING]
+> Account provider aliases are experimental, disabled by default, and may change while the existing active-account flow remains stable.
+
 ## ✨ Features
 
 - Manages named OpenAI Codex, Anthropic Claude Pro/Max, and GitHub Copilot OAuth accounts through `/accounts`.
@@ -14,6 +17,7 @@ Each selection overrides only the chosen provider, and selecting `default` resto
 - Refreshes rotating credentials safely and verifies effective runtime authentication before reporting success.
 - Stores credentials atomically in a private local file and fails closed for the affected provider on activation errors.
 - Migrates legacy `pi-codex-accounts.json` data while preserving its rollback source.
+- Optionally exposes every named account as an experimental provider that stays bound to that account.
 
 ## 🔌 Supported providers
 
@@ -57,6 +61,8 @@ The package declares `dist/index.ts`, so an unbuilt local checkout must be built
 
 Run `/accounts` in TUI or RPC mode, then choose a provider action from the account manager.
 Use the manager to log in, switch accounts, restore Pi's default login, or remove a saved account.
+Open **Settings** and explicitly enable **Account provider aliases (experimental)** to expose account-bound providers.
+Select an alias model through `/model`, `--provider openai-codex-work --model <model-id>`, or `--model openai-codex-work/<model-id>`.
 
 ## 💬 Commands
 
@@ -115,8 +121,28 @@ Choosing `default` restores Pi's built-in login for that provider.
 
 Removing an account lists named accounts as `Provider · account`, asks for confirmation, then removes the credential.
 Removing an active account automatically restores that provider to Pi's built-in login.
+The main menu also exposes Settings, Status, and Help for alias configuration and diagnostics.
 
-## 🔐 Auth and fail-closed behavior
+## ⚙️ Settings
+
+`/accounts` Settings owns one user-scoped setting in `~/.pi/agent/pi-accounts.json`:
+
+| Setting ID | Default | Meaning |
+| --- | --- | --- |
+| `accountProviderAliases` | `false` | Expose each saved named account as an experimental account-bound provider |
+
+The setting has no project, environment, or CLI override.
+A missing field is Disabled and does not cause an eager file rewrite.
+Malformed JSON, a non-object `settings` value, or a non-boolean known field makes Settings read only and blocks writes until the file is fixed.
+Settings saves preserve unknown top-level, settings, provider, and credential fields and use the same atomic private write path as credentials.
+Enabling requires confirmation and applies immediately to `/model`; each later session shows an experimental warning while it remains enabled.
+Status reports the settings path, managed and available alias counts, collisions, and redacted initialization errors.
+
+Alias IDs use `<provider-id>-<account-name>` without changing the account name, for example `openai-codex-work` or `github-copilot-enterprise`.
+`/model` displays them as provider badges such as `model-id [openai-codex-work]`.
+Account names that differ only by case, such as `Work` and `work`, produce ambiguous Pi CLI references, so every alias in that collision group is skipped and reported in Status.
+
+## 🔒 Security and privacy
 
 Each selected account is refreshed through the provider's own OAuth `refresh()` implementation and converted through `toAuth()`.
 The extension then applies the returned API key, headers, and endpoint, verifies the effective runtime state, and reports success.
@@ -132,6 +158,15 @@ GitHub Copilot's `availableModelIds` are projected into the active provider mode
 Switching Copilot accounts rebuilds the projection from the complete pre-overlay model catalog.
 A currently selected model that is unavailable to the named account is rejected before the turn starts.
 
+Experimental aliases read credentials directly from `pi-accounts.json` and never copy them into Pi `auth.json`.
+They do not appear in `/login`; create, replace, and remove their named credentials through `/accounts`.
+Each alias refreshes and converts only its bound credential through the provider-owned OAuth implementation.
+It never falls back to the original provider, environment auth, Pi `auth.json`, `default`, or another named account.
+Disablement, replacement, removal, and shutdown invalidate alias requests, and request dispatch rechecks the setting, credential, endpoint, headers, and Copilot entitlement.
+
+Disabling aliases switches to the same model on the original provider only when that provider already has the same named account active and authentication succeeds.
+Otherwise disablement still completes and asks the user to select another model with `/model` instead of silently changing account identity.
+
 ## 🗄️ Storage and migration
 
 The canonical file is:
@@ -141,7 +176,7 @@ The canonical file is:
 ```
 
 When `PI_CODING_AGENT_DIR` is set, the file is stored at `$PI_CODING_AGENT_DIR/pi-accounts.json` instead.
-Its versioned structure keeps account maps and active names under separate provider IDs.
+Its versioned structure keeps account maps, active names, and the optional user-scoped `settings` object under one file.
 Credential values are private and must not be committed.
 When neither canonical nor legacy storage exists, reads use an empty in-memory store without creating an agent directory or file; the first account mutation creates the private canonical file.
 
@@ -173,6 +208,10 @@ It is excluded from active workspace checks, version bumps, and publishing.
 - Continue using Pi's `auth.json`, environment variables, or `!command` secret-manager resolution for API keys.
 - It does not rotate accounts automatically, evade quotas, or report usage.
 - It does not support arbitrary custom providers in the first release.
+- Alias IDs are experimental and are not yet a permanent compatibility guarantee.
+- Case-insensitive alias collisions are skipped because Pi resolves CLI provider references case-insensitively.
+- Another extension using the same provider ID can still produce a startup load-order collision because Pi has no factory-time ownership preflight API.
+- Runtime cleanup uses provider object identity and does not remove a foreign provider that replaced an alias.
 - Live OAuth login and model requests depend on provider service availability and account entitlement.
 
 ## 🗂️ Package layout
@@ -181,7 +220,10 @@ It is excluded from active workspace checks, version bumps, and publishing.
 packages/pi-accounts/
 ├── src/
 │   ├── index.ts
+│   ├── account-alias-settings.ts
+│   ├── account-aliases.ts
 │   ├── account-store.ts
+│   ├── accounts-menu.ts
 │   ├── accounts.ts
 │   ├── oauth.ts
 │   ├── runtime-auth.ts
@@ -190,6 +232,8 @@ packages/pi-accounts/
 ├── scripts/
 │   └── build-runtime.mjs
 ├── test/
+│   ├── account-alias-settings.test.ts
+│   ├── account-aliases.test.ts
 │   ├── accounts-storage.test.ts
 │   ├── accounts.test.ts
 │   └── build-runtime.test.ts

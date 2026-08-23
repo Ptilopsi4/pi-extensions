@@ -8,6 +8,11 @@ import {
 	createMockContext,
 	createMockPi,
 } from "../../../test/support.js";
+import type {
+	AccountAliasModule,
+	AccountAliasRuntime,
+	AccountAliasStatus,
+} from "../src/account-aliases.js";
 import accountsExtension, {
 	ACCOUNTS_STATUS_KEY,
 	AccountStore,
@@ -65,6 +70,46 @@ function fakeProvider(
 			},
 		},
 	};
+}
+
+function fakeAliasModule(
+	store: AccountStore,
+	record: {
+		factoryInitializations: number;
+		reconciliations: number;
+		shutdowns: number;
+	},
+	binding?: {
+		aliasId: string;
+		providerId: AccountProviderAdapter["id"];
+		accountName: string;
+	},
+): AccountAliasModule {
+	let enabled = false;
+	const status = (): AccountAliasStatus => ({
+		enabled,
+		managed: enabled ? 1 : 0,
+		available: enabled ? 1 : 0,
+		collisions: [],
+	});
+	const runtime: AccountAliasRuntime = {
+		async initializeFactory(data) {
+			record.factoryInitializations += 1;
+			enabled = data.settings?.accountProviderAliases === true;
+		},
+		async reconcile() {
+			record.reconciliations += 1;
+			enabled = (await store.readAsync()).settings?.accountProviderAliases === true;
+			return status();
+		},
+		async shutdown() {
+			record.shutdowns += 1;
+			enabled = false;
+		},
+		getStatus: status,
+		getBinding: (providerId) => (enabled && providerId === binding?.aliasId ? binding : undefined),
+	};
+	return { createAccountAliasRuntime: async () => runtime };
 }
 
 function runtimeHarness(mock: ReturnType<typeof createMockPi>) {
@@ -378,13 +423,224 @@ test("accounts registers only the interactive /accounts command and lifecycle ho
 	]);
 });
 
+test("disabled aliases do not load their lazy runtime", () => {
+	let loads = 0;
+	const mock = createMockPi();
+	const result = accountsExtension(mock.pi, {
+		store: new AccountStore(new InMemoryAccountStorageBackend()),
+		providers: [
+			fakeProvider("openai-codex"),
+			fakeProvider("anthropic"),
+			fakeProvider("github-copilot"),
+		],
+		aliasModuleLoader: async () => {
+			loads += 1;
+			throw new Error("must stay lazy");
+		},
+	});
+
+	assert.equal(result, undefined);
+	assert.equal(loads, 0);
+});
+
+test("enabled aliases initialize in the awaited extension factory", async () => {
+	const store = new AccountStore(new InMemoryAccountStorageBackend());
+	await store.write({
+		version: 1,
+		settings: { accountProviderAliases: true },
+		providers: { anthropic: { accounts: { work: credential("work") } } },
+	});
+	const record = { factoryInitializations: 0, reconciliations: 0, shutdowns: 0 };
+	const mock = createMockPi();
+	const result = accountsExtension(mock.pi, {
+		store,
+		providers: [
+			fakeProvider("openai-codex"),
+			fakeProvider("anthropic"),
+			fakeProvider("github-copilot"),
+		],
+		aliasModuleLoader: async () => fakeAliasModule(store, record),
+	});
+
+	assert.ok(result instanceof Promise);
+	await result;
+	assert.equal(record.factoryInitializations, 1);
+	const { registry } = runtimeHarness(mock);
+	const { ctx, notifications } = createMockContext({ modelRegistry: registry, hasUI: true });
+	await mock.events.get("session_start")?.[0]?.({}, ctx);
+	assert.equal(record.reconciliations, 1);
+	assert.match(notifications.map((entry) => entry.message).join("\n"), /aliases are experimental/);
+});
+
+test("enabled factory registers native aliases with built-in model catalogs", async () => {
+	const store = new AccountStore(new InMemoryAccountStorageBackend());
+	await store.write({
+		version: 1,
+		settings: { accountProviderAliases: true },
+		providers: {
+			"openai-codex": { accounts: { work: credential("work") } },
+			anthropic: { accounts: { personal: credential("personal") } },
+			"github-copilot": {
+				accounts: {
+					enterprise: credential("enterprise", { availableModelIds: ["gpt-4.1"] }),
+				},
+			},
+		},
+	});
+	const mock = createMockPi();
+	await accountsExtension(mock.pi, {
+		store,
+		providers: [
+			fakeProvider("openai-codex"),
+			fakeProvider("anthropic"),
+			fakeProvider("github-copilot"),
+		],
+	});
+
+	for (const aliasId of ["openai-codex-work", "anthropic-personal", "github-copilot-enterprise"]) {
+		const provider = mock.providers.get(aliasId) as
+			| { id?: string; getModels?: () => Array<{ provider: string }> }
+			| undefined;
+		assert.equal(provider?.id, aliasId);
+		assert.ok((provider?.getModels?.().length ?? 0) > 0);
+		assert.equal(provider?.getModels?.()[0]?.provider, aliasId);
+	}
+});
+
+test("accounts Settings confirms and persists experimental aliases immediately", async () => {
+	const store = new AccountStore(new InMemoryAccountStorageBackend());
+	const record = { factoryInitializations: 0, reconciliations: 0, shutdowns: 0 };
+	const mock = createMockPi();
+	accountsExtension(mock.pi, {
+		store,
+		providers: [
+			fakeProvider("openai-codex"),
+			fakeProvider("anthropic"),
+			fakeProvider("github-copilot"),
+		],
+		aliasModuleLoader: async () => fakeAliasModule(store, record),
+	});
+	const { registry } = runtimeHarness(mock);
+	const interactive = createInteractiveAccountContext(
+		{ modelRegistry: registry },
+		{
+			selections: ["Settings", "Account provider aliases (experimental) (Disabled)"],
+			confirms: [true],
+		},
+	);
+
+	await mock.commands.get("accounts")?.handler("", interactive.ctx);
+
+	assert.equal((await store.readAsync()).settings?.accountProviderAliases, true);
+	assert.equal(record.reconciliations, 1);
+	assert.equal(interactive.confirmCalls.length, 1);
+	assert.match(interactive.notifications.at(-1)?.message ?? "", /experimental/i);
+});
+
+test("cancelling experimental alias confirmation leaves storage and runtime unchanged", async () => {
+	const store = new AccountStore(new InMemoryAccountStorageBackend());
+	let aliasLoads = 0;
+	const mock = createMockPi();
+	accountsExtension(mock.pi, {
+		store,
+		providers: [
+			fakeProvider("openai-codex"),
+			fakeProvider("anthropic"),
+			fakeProvider("github-copilot"),
+		],
+		aliasModuleLoader: async () => {
+			aliasLoads += 1;
+			return fakeAliasModule(store, {
+				factoryInitializations: 0,
+				reconciliations: 0,
+				shutdowns: 0,
+			});
+		},
+	});
+	const { registry } = runtimeHarness(mock);
+	const interactive = createInteractiveAccountContext(
+		{ modelRegistry: registry },
+		{
+			selections: ["Settings", "Account provider aliases (experimental) (Disabled)"],
+			confirms: [false],
+		},
+	);
+
+	await mock.commands.get("accounts")?.handler("", interactive.ctx);
+
+	assert.equal((await store.readAsync()).settings?.accountProviderAliases, undefined);
+	assert.equal(aliasLoads, 0);
+});
+
+test("disabling aliases falls back only through the already-active same account", async () => {
+	for (const active of ["work", "personal"] as const) {
+		const store = new AccountStore(new InMemoryAccountStorageBackend());
+		await store.write({
+			version: 1,
+			settings: { accountProviderAliases: true },
+			providers: {
+				anthropic: {
+					active,
+					accounts: {
+						work: credential("work"),
+						personal: credential("personal"),
+					},
+				},
+			},
+		});
+		const record = { factoryInitializations: 0, reconciliations: 0, shutdowns: 0 };
+		const mock = createMockPi();
+		const binding = {
+			aliasId: "anthropic-work",
+			providerId: "anthropic" as const,
+			accountName: "work",
+		};
+		const initialized = accountsExtension(mock.pi, {
+			store,
+			providers: [
+				fakeProvider("openai-codex"),
+				fakeProvider("anthropic"),
+				fakeProvider("github-copilot"),
+			],
+			aliasModuleLoader: async () => fakeAliasModule(store, record, binding),
+		});
+		await initialized;
+		const { registry } = runtimeHarness(mock);
+		const interactive = createInteractiveAccountContext(
+			{
+				model: { provider: "anthropic-work", id: "claude", api: "anthropic-messages" },
+				modelRegistry: registry,
+			},
+			{
+				selections: ["Settings", "Account provider aliases (experimental) (Enabled)"],
+			},
+		);
+
+		await mock.commands.get("accounts")?.handler("", interactive.ctx);
+
+		assert.equal((await store.readAsync()).settings?.accountProviderAliases, false);
+		if (active === "work") {
+			assert.equal(
+				(mock.setModels.at(-1) as { provider?: string } | undefined)?.provider,
+				"anthropic",
+			);
+		} else {
+			assert.equal(mock.setModels.length, 0);
+			assert.match(
+				interactive.notifications.map((entry) => entry.message).join("\n"),
+				/No safe same-account fallback/,
+			);
+		}
+	}
+});
+
 test("account names reserve default for Pi login", () => {
 	assert.equal(parseAccountName(" work-1 ").ok, true);
 	assert.equal(parseAccountName("../secret").ok, false);
 	assert.equal(parseAccountName("default").ok, true);
 });
 
-test("accounts command ignores arguments but requires interactive UI", async () => {
+test("accounts command rejects observably outside TUI and RPC modes", async () => {
 	const mock = createMockPi();
 	accountsExtension(mock.pi, {
 		store: new AccountStore(new InMemoryAccountStorageBackend()),
@@ -394,12 +650,13 @@ test("accounts command ignores arguments but requires interactive UI", async () 
 			fakeProvider("github-copilot"),
 		],
 	});
-	const { ctx, notifications } = createMockContext({ hasUI: false });
-
-	await mock.commands.get("accounts")?.handler("switch anthropic work", ctx);
-
-	assert.match(notifications.at(-1)?.message ?? "", /requires interactive UI/);
-	assert.equal(notifications.at(-1)?.level, "error");
+	for (const mode of ["print", "json"] as const) {
+		const { ctx } = createMockContext({ mode, hasUI: false });
+		await assert.rejects(
+			Promise.resolve(mock.commands.get("accounts")?.handler("switch anthropic work", ctx)),
+			/requires interactive UI/,
+		);
+	}
 });
 
 test("accounts empty state offers only login and ignores command arguments", async () => {
@@ -422,7 +679,7 @@ test("accounts empty state offers only login and ignores command arguments", asy
 	await mock.commands.get("accounts")?.handler("anything ignored", ctx);
 
 	assert.match(selectCalls[0]?.title ?? "", /No saved accounts yet/);
-	assert.deepEqual(selectCalls[0]?.options, ["Login new account"]);
+	assert.deepEqual(selectCalls[0]?.options, ["Login new account", "Settings", "Status", "Help"]);
 });
 
 test("accounts menu summarizes all supported providers and prioritizes current provider switch", async () => {
@@ -463,6 +720,9 @@ test("accounts menu summarizes all supported providers and prioritizes current p
 		"Login new account",
 		"Remove account",
 		"Switch another provider’s account",
+		"Settings",
+		"Status",
+		"Help",
 	]);
 });
 
@@ -493,6 +753,9 @@ test("accounts menu prioritizes login when the current provider has no saved acc
 		"Login new account",
 		"Switch another provider’s account",
 		"Remove account",
+		"Settings",
+		"Status",
+		"Help",
 	]);
 });
 
@@ -523,6 +786,9 @@ test("accounts menu uses generic provider switch for unsupported current models"
 		"Login new account",
 		"Switch provider account",
 		"Remove account",
+		"Settings",
+		"Status",
+		"Help",
 	]);
 });
 
