@@ -1,7 +1,0 @@
-{
-	"extends": "../../../tsconfig.json",
-	"compilerOptions": {
-		"noEmit": true
-	},
-	"include": ["./index.ts", "./index.test.ts", "./vitest.config.ts"]
-}
