@@ -1,6 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Api, Context, Model, Tool } from "@earendil-works/pi-ai";
-import { hasApi } from "@earendil-works/pi-ai";
 import {
 	buildContextEntries,
 	buildSessionContext,
@@ -19,6 +18,7 @@ import {
 	latestCheckpoint,
 	projectCheckpointContext,
 } from "./checkpoint.js";
+import { isCodexRemoteCompactionModel } from "./model-compatibility.js";
 import { hasCheckpointMarker, rewriteCheckpointMarker } from "./protocol.js";
 import { requestRemoteCompaction } from "./remote.js";
 import {
@@ -30,10 +30,6 @@ import {
 
 const STATUS_KEY = "codex-compact";
 
-function isSupportedModel(model: Model<Api> | undefined): model is Model<"openai-codex-responses"> {
-	return model?.provider === "openai-codex" && hasApi(model, "openai-codex-responses");
-}
-
 function activeCheckpoint(ctx: ExtensionContext) {
 	return latestCheckpoint(ctx.sessionManager.getBranch());
 }
@@ -42,7 +38,7 @@ function isCheckpointCompatible(
 	details: CodexCheckpointDetails,
 	model: Model<Api> | undefined,
 ): model is Model<"openai-codex-responses"> {
-	return isSupportedModel(model) && model.id === details.modelId;
+	return isCodexRemoteCompactionModel(model) && model.id === details.modelId;
 }
 
 function keptMessages(event: SessionBeforeCompactEvent): AgentMessage[] {
@@ -109,17 +105,15 @@ async function compactRemotely(
 	fetch?: typeof globalThis.fetch,
 ) {
 	const model = ctx.model;
-	if (!settings.enabled || !isSupportedModel(model)) return undefined;
+	if (!settings.enabled || !isCodexRemoteCompactionModel(model)) return undefined;
 	const sessionId = ctx.sessionManager.getSessionId();
 	ctx.ui.setStatus(STATUS_KEY, "Codex remote compaction…");
 	try {
 		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
 		if (!sessionStillOwned(ctx, sessionId, event.signal)) return { cancel: true };
-		if (!auth.ok || !auth.apiKey) {
-			throw new Error(auth.ok ? "OpenAI Codex OAuth token is unavailable" : auth.error);
-		}
+		if (!auth.ok) throw new Error(auth.error);
 		const provider = ctx.modelRegistry.getProvider(model.provider);
-		if (!provider) throw new Error("OpenAI Codex provider is unavailable");
+		if (!provider) throw new Error("The active Codex Responses provider is unavailable");
 		const current = projectedCurrentMessages(event, model);
 		const context: Context = {
 			systemPrompt: ctx.getSystemPrompt(),
@@ -149,6 +143,7 @@ async function compactRemotely(
 			tokenBudget: settings.replacementTokenBudget,
 		});
 		const details = createCheckpointDetails({
+			provider: model.provider,
 			modelId: model.id,
 			replacementHistory,
 			keptMessages: keptMessages(event),

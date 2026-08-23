@@ -58,13 +58,16 @@ function settingsRuntime(overrides = {}): CodexCompactSettingsRuntime {
 	};
 }
 
-function fakeProvider(onOptions?: (options: OpenAICodexResponsesOptions) => void): Provider {
+function fakeProvider(
+	onOptions?: (options: OpenAICodexResponsesOptions) => void,
+	providerModel: Model<"openai-codex-responses"> = model,
+): Provider {
 	return {
-		id: "openai-codex",
-		name: "OpenAI Codex",
+		id: providerModel.provider,
+		name: "Codex Responses proxy",
 		auth: {} as Provider["auth"],
-		getModels: () => [model],
-		stream(_model, context, options) {
+		getModels: () => [providerModel],
+		stream(activeModel, context, options) {
 			const codexOptions = options as OpenAICodexResponsesOptions;
 			onOptions?.(codexOptions);
 			const stream = createAssistantMessageEventStream();
@@ -77,7 +80,7 @@ function fakeProvider(onOptions?: (options: OpenAICodexResponsesOptions) => void
 							typeof content === "string" ? content : "text" in content ? content.text : "image";
 						return { role: "user", content: [{ type: "input_text", text }] };
 					});
-					const payload = await options?.onPayload?.({ model: model.id, input }, model);
+					const payload = await options?.onPayload?.({ model: activeModel.id, input }, activeModel);
 					assert.deepEqual((payload as { input: unknown[] }).input.at(-1), {
 						type: "compaction_trigger",
 					});
@@ -86,9 +89,9 @@ function fakeProvider(onOptions?: (options: OpenAICodexResponsesOptions) => void
 					const message = {
 						role: "assistant" as const,
 						content: [],
-						api: model.api,
-						provider: model.provider,
-						model: model.id,
+						api: activeModel.api,
+						provider: activeModel.provider,
+						model: activeModel.id,
 						usage,
 						stopReason: "stop" as const,
 						timestamp: Date.now(),
@@ -99,9 +102,9 @@ function fakeProvider(onOptions?: (options: OpenAICodexResponsesOptions) => void
 					const message = {
 						role: "assistant" as const,
 						content: [],
-						api: model.api,
-						provider: model.provider,
-						model: model.id,
+						api: activeModel.api,
+						provider: activeModel.provider,
+						model: activeModel.id,
 						usage,
 						stopReason: "error" as const,
 						errorMessage: error instanceof Error ? error.message : String(error),
@@ -174,8 +177,9 @@ function sseResponse() {
 	);
 }
 
-test("registers the settings command and returns a versioned Remote V2 compaction with usage", async () => {
+test("custom Codex Responses providers compact and replay by API and exact model ID", async () => {
 	const mock = createMockPi();
+	const customModel = { ...model, provider: "company-codex-proxy" };
 	let forwardedHeaders: OpenAICodexResponsesOptions["headers"];
 	const runtime = settingsRuntime();
 	createCodexCompactExtension({ settingsRuntime: runtime, fetch: async () => sseResponse() })(
@@ -189,7 +193,7 @@ test("registers the settings command and returns a versioned Remote V2 compactio
 	assert.ok(handler);
 	const entries = branch();
 	const { ctx, statuses } = createMockContext({
-		model,
+		model: customModel,
 		getSystemPrompt: () => "system",
 		sessionManager: {
 			getSessionId: () => "session",
@@ -198,23 +202,26 @@ test("registers the settings command and returns a versioned Remote V2 compactio
 		modelRegistry: {
 			getApiKeyAndHeaders: async () => ({
 				ok: true,
-				apiKey: "secret-oauth",
-				headers: { Authorization: null, "X-Provider-Token": "test" },
+				headers: { Authorization: null, "X-Provider-Token": "provider-secret" },
 			}),
 			getProvider: () =>
 				fakeProvider((options) => {
 					forwardedHeaders = options.headers;
-				}),
+				}, customModel),
 		},
 	});
 	const result = (await handler?.(event(), ctx)) as {
 		compaction: { usage: unknown; details: unknown; summary: string };
 	};
 	assert.deepEqual(result.compaction.usage, usage);
-	assert.deepEqual(forwardedHeaders, { Authorization: null, "X-Provider-Token": "test" });
+	assert.deepEqual(forwardedHeaders, {
+		Authorization: null,
+		"X-Provider-Token": "provider-secret",
+	});
 	const details = parseCheckpointDetails(result.compaction.details);
 	assert.ok(details);
-	assert.doesNotMatch(JSON.stringify(details), /secret-oauth/);
+	assert.equal(details.provider, customModel.provider);
+	assert.doesNotMatch(JSON.stringify(details), /provider-secret|X-Provider-Token/);
 	assert.match(result.compaction.summary, /requires @narumitw\/pi-codex-compact/);
 	assert.equal(statuses.get("codex-compact"), undefined);
 
@@ -229,12 +236,13 @@ test("registers the settings command and returns a versioned Remote V2 compactio
 		tokensBefore: 123,
 		details,
 	};
+	const replaySessionManager = {
+		getSessionId: () => "session",
+		getBranch: () => [...entries, compactionEntry],
+	};
 	const replayContext = createMockContext({
-		model,
-		sessionManager: {
-			getSessionId: () => "session",
-			getBranch: () => [...entries, compactionEntry],
-		},
+		model: { ...customModel, provider: "second-codex-proxy" },
+		sessionManager: replaySessionManager,
 	}).ctx;
 	const summaryMessage = {
 		role: "compactionSummary" as const,
@@ -248,10 +256,10 @@ test("registers the settings command and returns a versioned Remote V2 compactio
 		timestamp: 4,
 	};
 	const contextHandler = mock.events.get("context")?.[0];
-	const projected = (await contextHandler?.(
-		{ type: "context", messages: [summaryMessage, kept, later] },
-		replayContext,
-	)) as { messages: Array<{ content: Array<{ text: string }> }> };
+	const contextEvent = { type: "context" as const, messages: [summaryMessage, kept, later] };
+	const projected = (await contextHandler?.(contextEvent, replayContext)) as {
+		messages: Array<{ content: Array<{ text: string }> }>;
+	};
 	assert.equal(projected.messages.length, 2);
 	const marker = projected.messages[0].content[0].text;
 	const payloadHandler = mock.events.get("before_provider_request")?.[0];
@@ -269,6 +277,17 @@ test("registers the settings command and returns a versioned Remote V2 compactio
 	)) as { input: Array<Record<string, unknown>> };
 	assert.equal(rewritten.input.at(-2)?.type, "compaction");
 	assert.match(JSON.stringify(rewritten.input.at(-1)), /later/);
+
+	const differentModel = createMockContext({
+		model: { ...customModel, id: "gpt-5.6-different" },
+		sessionManager: replaySessionManager,
+	}).ctx;
+	assert.equal(await contextHandler?.(contextEvent, differentModel), undefined);
+	const differentApi = createMockContext({
+		model: { ...customModel, api: "openai-responses" },
+		sessionManager: replaySessionManager,
+	}).ctx;
+	assert.equal(await contextHandler?.(contextEvent, differentApi), undefined);
 });
 
 test("valid session startup reloads settings without a package warning", async () => {
@@ -324,26 +343,28 @@ test("session lifecycle reloads settings and drops stale reload continuations", 
 	assert.equal(statuses.get("codex-compact"), undefined);
 });
 
-test("disabled, unsupported, auth-failed, and aborted compaction paths remain safe", async () => {
+test("disabled, wrong-API, remote-failed, auth-failed, and aborted paths remain safe", async () => {
 	const run = async (options: {
 		settings?: CodexCompactSettingsRuntime;
 		model?: unknown;
 		auth?: unknown;
 		signal?: AbortSignal;
+		fetch?: typeof globalThis.fetch;
 	}) => {
 		const mock = createMockPi();
+		const activeModel = options.model ?? model;
 		createCodexCompactExtension({
 			settingsRuntime: options.settings ?? settingsRuntime(),
-			fetch: async () => sseResponse(),
+			fetch: options.fetch ?? (async () => sseResponse()),
 		})(mock.pi);
 		const handler = mock.events.get("session_before_compact")?.[0];
 		const { ctx, notifications, statuses } = createMockContext({
-			model: options.model ?? model,
+			model: activeModel,
 			getSystemPrompt: () => "system",
 			sessionManager: { getSessionId: () => "session", getBranch: () => branch() },
 			modelRegistry: {
 				getApiKeyAndHeaders: async () => options.auth ?? { ok: false, error: "missing auth" },
-				getProvider: () => fakeProvider(),
+				getProvider: () => fakeProvider(undefined, activeModel as Model<"openai-codex-responses">),
 			},
 			hasUI: true,
 		});
@@ -362,10 +383,18 @@ test("disabled, unsupported, auth-failed, and aborted compaction paths remain sa
 		).result,
 		undefined,
 	);
-	const failed = await run({});
-	assert.equal(failed.result, undefined);
-	assert.match(failed.notifications.at(-1)?.message ?? "", /using Pi compaction/);
-	assert.equal(failed.statuses.get("codex-compact"), undefined);
+	const remoteFailed = await run({
+		model: { ...model, provider: "misconfigured-codex-proxy" },
+		auth: { ok: true },
+		fetch: async () =>
+			new Response('data: {"type":"response.completed","response":{"output":[]}}\n\n'),
+	});
+	assert.equal(remoteFailed.result, undefined);
+	assert.match(remoteFailed.notifications.at(-1)?.message ?? "", /using Pi compaction/);
+	const authFailed = await run({ auth: { ok: false, error: "missing provider credentials" } });
+	assert.equal(authFailed.result, undefined);
+	assert.match(authFailed.notifications.at(-1)?.message ?? "", /missing provider credentials/);
+	assert.equal(authFailed.statuses.get("codex-compact"), undefined);
 	const controller = new AbortController();
 	controller.abort();
 	assert.deepEqual((await run({ signal: controller.signal })).result, { cancel: true });

@@ -27,8 +27,13 @@ function rawUser(text: string) {
 
 const opaque = { type: "compaction", encrypted_content: "opaque" };
 
-function checkpoint(kept: AgentMessage[] = [user("kept", 2)], id = "checkpoint-123") {
+function checkpoint(
+	kept: AgentMessage[] = [user("kept", 2)],
+	id = "checkpoint-123",
+	provider = "openai-codex",
+) {
 	return createCheckpointDetails({
+		provider,
 		modelId: "gpt-5.6",
 		replacementHistory: [rawUser("old"), opaque],
 		keptMessages: kept,
@@ -112,8 +117,12 @@ test("drops media that cannot fit the checkpoint byte budget", () => {
 
 test("validates versioned details and rejects malformed or unbounded persisted data", () => {
 	const details = checkpoint();
+	const customProvider = checkpoint([], "checkpoint-custom", "company-codex-proxy");
 	assert.deepEqual(parseCheckpointDetails(details), details);
+	assert.deepEqual(parseCheckpointDetails(customProvider), customProvider);
 	assert.equal(parseCheckpointDetails({ ...details, version: 2 }), undefined);
+	assert.equal(parseCheckpointDetails({ ...details, provider: "" }), undefined);
+	assert.equal(parseCheckpointDetails({ ...details, provider: "x".repeat(257) }), undefined);
 	assert.equal(parseCheckpointDetails({ ...details, replacementHistory: [] }), undefined);
 	assert.equal(parseCheckpointDetails({ ...details, keptMessageFingerprints: ["bad"] }), undefined);
 	assert.doesNotMatch(JSON.stringify(details), /token|authorization|header/i);

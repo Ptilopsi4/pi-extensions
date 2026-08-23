@@ -787,14 +787,14 @@ The transferable design is the checkpoint protocol rather than any one summary p
 
 This repository contains
 [`packages/pi-codex-compact`](../../packages/pi-codex-compact/README.md), a stable Pi extension for
-the built-in `openai-codex` OAuth provider. It implements the Remote V2 wire path
-inside Pi's public extension boundary:
+models using Pi's `openai-codex-responses` API through the built-in or a compatible custom provider.
+It implements the Remote V2 wire path inside Pi's public extension boundary:
 
 - add `compaction_trigger` to an extension-owned Codex Responses request;
 - validate and persist the opaque `compaction` item in versioned `CompactionEntry.details`;
 - collapse Pi's fallback summary and verified kept suffix to a marker;
 - replace that marker with bounded remote replacement history in `before_provider_request`;
-- fall back to native Pi compaction on unsupported providers or Remote V2 failure.
+- fall back to native Pi compaction for other model APIs or Remote V2 failure.
 
 The package deliberately keeps Pi's threshold, `/compact`, overflow retry, append-only session tree,
 and `CompactionEntry` publication. A TUI control menu, opened with `/codex-compact`, provides
@@ -803,5 +803,4 @@ manual compaction and writes bounded user options to `pi-codex-compact.json`.
 This is payload replay, not full Codex-core parity. A pure Pi extension cannot own Codex's context
 window generations, exact pre-turn and mid-turn continuation state, pending-input boundary,
 provider `comp_hash` compatibility checks, request lineage headers, or prompt-cache window identity.
-Successful opaque checkpoints also remain tied to the same Codex provider/model and require the
-extension for full resume history.
+Successful opaque checkpoints remain tied to the exact model ID and require both the extension and a compatible Codex Responses provider route for full resume history.

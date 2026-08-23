@@ -8,12 +8,13 @@ export const CHECKPOINT_VERSION = 1;
 export const REPLACEMENT_TOKEN_BUDGET = 64_000;
 export const REPLACEMENT_BYTE_BUDGET = 8 * 1024 * 1024;
 const MAX_MEDIA_ITEM_BYTES = 2 * 1024 * 1024;
+const MAX_PROVIDER_ID_LENGTH = 256;
 
 export interface CodexCheckpointDetails {
 	kind: typeof CHECKPOINT_KIND;
 	version: typeof CHECKPOINT_VERSION;
 	checkpointId: string;
-	provider: "openai-codex";
+	provider: string;
 	api: "openai-codex-responses";
 	modelId: string;
 	protocol: "remote-compaction-v2";
@@ -50,14 +51,14 @@ export function checkpointMarker(checkpointId: string): string {
 	return [
 		`[PI_CODEX_REMOTE_CHECKPOINT:${checkpointId}]`,
 		"Opaque checkpoint injection failed. Do not infer missing history; tell the user to re-enable",
-		"@narumitw/pi-codex-compact with an openai-codex model.",
+		"@narumitw/pi-codex-compact with a model using the openai-codex-responses API.",
 	].join(" ");
 }
 
 export function fallbackSummary(checkpointId: string): string {
 	return [
 		`OpenAI Codex Remote Compaction V2 checkpoint ${checkpointId} stores the older history opaquely.`,
-		"Full replay requires @narumitw/pi-codex-compact and an openai-codex model.",
+		"Full replay requires @narumitw/pi-codex-compact and the same model through a compatible Codex Responses provider.",
 		"Without them, only Pi's retained recent messages remain available.",
 	].join(" ");
 }
@@ -77,7 +78,9 @@ export function parseCheckpointDetails(value: unknown): CodexCheckpointDetails |
 		value.version !== CHECKPOINT_VERSION ||
 		typeof value.checkpointId !== "string" ||
 		value.checkpointId.length < 8 ||
-		value.provider !== "openai-codex" ||
+		typeof value.provider !== "string" ||
+		value.provider.length === 0 ||
+		value.provider.length > MAX_PROVIDER_ID_LENGTH ||
 		value.api !== "openai-codex-responses" ||
 		typeof value.modelId !== "string" ||
 		value.protocol !== "remote-compaction-v2" ||
@@ -254,6 +257,7 @@ export function buildReplacementHistory(
 }
 
 export function createCheckpointDetails(input: {
+	provider: string;
 	modelId: string;
 	replacementHistory: JsonObject[];
 	keptMessages: readonly AgentMessage[];
@@ -264,7 +268,7 @@ export function createCheckpointDetails(input: {
 		kind: CHECKPOINT_KIND,
 		version: CHECKPOINT_VERSION,
 		checkpointId: input.checkpointId ?? randomUUID(),
-		provider: "openai-codex",
+		provider: input.provider,
 		api: "openai-codex-responses",
 		modelId: input.modelId,
 		protocol: "remote-compaction-v2",

@@ -1,5 +1,6 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { MenuDefinition } from "@narumitw/pi-tui-kit";
+import { isCodexRemoteCompactionModel } from "./model-compatibility.js";
 import type {
 	CodexCompactSettings,
 	CodexCompactSettingsRuntime,
@@ -217,11 +218,11 @@ export async function showCodexCompactMenu(
 	});
 }
 
-function compactMenuStatus(ctx: ExtensionCommandContext): CompactMenuStatus {
+export function compactMenuStatus(ctx: ExtensionCommandContext): CompactMenuStatus {
 	const model = ctx.model;
 	return {
 		model: model ? `${model.provider}/${model.id}` : "none",
-		remoteCompatible: model?.provider === "openai-codex" && model.api === "openai-codex-responses",
+		remoteCompatible: isCodexRemoteCompactionModel(model),
 	};
 }
 
