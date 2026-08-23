@@ -14,6 +14,7 @@
 			"./packages/pi-caffeinate/src/index.ts",
 			"./packages/pi-chrome-devtools/src/index.ts",
 			"./packages/pi-codex-compact/src/index.ts",
+			"./packages/pi-file-context/src/index.ts",
 			"./packages/pi-firecrawl/src/index.ts",
 			"./packages/pi-github-pr/src/index.ts",
 			"./packages/pi-goal/src/index.ts",

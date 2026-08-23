@@ -767,12 +767,14 @@ test("allows disabling the shortcut and reports settings warnings after session 
 
 	const context = createMockContext({ mode: "tui", hasUI: true });
 	await mock.events.get("session_start")?.[0]?.({}, context.ctx);
-	assert.ok(context.notifications.some(({ message }) => message.includes("Invalid File Context")));
+	assert.equal(context.notifications.length, 1);
+	assert.ok(context.notifications[0]?.message.includes("Invalid File Context"));
 	assert.ok(context.notifications.every(({ message }) => !message.includes("\u001b")));
 
 	const rpc = createMockContext({ mode: "rpc", hasUI: true });
 	await mock.events.get("session_start")?.[0]?.({}, rpc.ctx);
-	assert.ok(rpc.notifications.some(({ message }) => message.includes("Invalid File Context")));
+	assert.equal(rpc.notifications.length, 1);
+	assert.ok(rpc.notifications[0]?.message.includes("Invalid File Context"));
 });
 
 test("captures an exact normalized line snapshot and formats one focused prompt", () => {

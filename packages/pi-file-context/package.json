@@ -1,7 +1,7 @@
 {
 	"name": "@narumitw/pi-file-context",
 	"version": "0.53.3",
-	"description": "Experimental Pi extension for attaching file ranges and Git provenance as context.",
+	"description": "Pi extension for attaching file ranges and Git provenance as context.",
 	"type": "module",
 	"license": "MIT",
 	"private": false,
@@ -26,7 +26,7 @@
 		]
 	},
 	"piExtension": {
-		"lifecycle": "experimental"
+		"lifecycle": "stable"
 	},
 	"scripts": {
 		"build": "node scripts/build-runtime.mjs",

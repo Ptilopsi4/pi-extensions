@@ -665,13 +665,6 @@ export async function registerFileQuoteExtension(
 		if (loadedSettings.warning && ctx.hasUI) {
 			ctx.ui.notify(escapeTerminalControls(loadedSettings.warning), "warning");
 		}
-		if (ctx.mode !== "tui") return;
-		ctx.ui.notify(
-			registeredOpenShortcut
-				? `Experimental File Context loaded. Press ${registeredOpenShortcut} to browse or run /file-context to review selected context.`
-				: "Experimental File Context loaded. Run /file-context to add or review selected context.",
-			"warning",
-		);
 	});
 
 	pi.on("before_agent_start", (_event, ctx) => {

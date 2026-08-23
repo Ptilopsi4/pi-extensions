@@ -4,10 +4,6 @@
 [![Pi Extension](https://img.shields.io/badge/Pi-extension-blue)](https://github.com/earendil-works/pi)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> [!WARNING]
-> This extension is experimental.
-> Its interaction model and package API may change between releases.
-
 Browse project files inside Pi, select exact lines or Git changes, and review every snapshot before it is attached to the next prompt.
 
 ## ✨ Features

@@ -40,6 +40,7 @@ pi -e npm:@narumitw/pi-goal \
 | Package | Use it for | Install |
 | --- | --- | --- |
 | [`pi-codex-compact`](./packages/pi-codex-compact) | Use OpenAI Codex Remote Compaction V2 to persist and replay bounded opaque checkpoints, with `/codex-compact` manual controls and safe Pi-native fallback. | `pi install npm:@narumitw/pi-codex-compact` |
+| [`pi-file-context`](./packages/pi-file-context) | Browse project files, preview text, select exact lines or Git diff hunks, and attach immutable snapshots with Git provenance to the next prompt. Open it with configurable `Ctrl+Shift+X` or `/file-context`. | `pi install npm:@narumitw/pi-file-context` |
 | [`pi-lsp`](./packages/pi-lsp) | Language-server diagnostics and code actions across JavaScript, TypeScript, Python, Rust, Go, Ruby, C/C++, JVM, .NET, Swift, shell, infrastructure formats, and more. | `pi install npm:@narumitw/pi-lsp` |
 | [`pi-plan-mode`](./packages/pi-plan-mode) | Codex-like, read-only `/plan` collaboration before implementation begins. | `pi install npm:@narumitw/pi-plan-mode` |
 | [`pi-subagents`](./packages/pi-subagents) | Delegate isolated work in single, parallel, or chained execution modes. | `pi install npm:@narumitw/pi-subagents` |
@@ -103,7 +104,6 @@ commands, settings persistence, confirmations, and specialized UI.
 | --- | --- | --- |
 | [`pi-analytics`](./packages/pi-analytics) | Review private, content-free local metrics for model calls, skills, tools, response cycles, and observed provider reliability through `/analytics`. | `pi install npm:@narumitw/pi-analytics` |
 | [`pi-chat`](./packages/pi-chat) | Join ephemeral peer-to-peer chat rooms that stay separate from Pi sessions, prompts, and model context. | `pi install npm:@narumitw/pi-chat` |
-| [`pi-file-context`](./packages/pi-file-context) | Browse project files, preview text, select exact lines or Git diff hunks, and attach immutable snapshots with Git provenance to the next prompt. Open it with configurable `F8` or `/file-context`. | `pi install npm:@narumitw/pi-file-context` |
 | [`pi-fleet`](./packages/pi-fleet) | Start a separate Pi process in a Ghostty split and connect explicit local Pi sessions for bounded messages and one-turn requests. | `pi install npm:@narumitw/pi-fleet` |
 | [`pi-recall`](./packages/pi-recall) | Save selected text messages locally and preview or quote them across Pi sessions. | `pi install npm:@narumitw/pi-recall` |
 
@@ -165,7 +165,7 @@ npm --workspace @narumitw/pi-goal run build --if-present
 pi -e ./packages/pi-goal
 just pack goal
 
-# Experimental packages use the same local flow and pack recipe
+# Another build-backed package uses the same local flow and pack recipe
 npm --workspace @narumitw/pi-file-context run build --if-present
 pi -e ./packages/pi-file-context
 just pack file-context

@@ -1,0 +1,5 @@
+---
+"@narumitw/pi-file-context": minor
+---
+
+Promote the extension to stable, include it in root Git installations, and remove its experimental startup warning.
