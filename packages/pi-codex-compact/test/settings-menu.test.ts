@@ -46,15 +46,14 @@ test("root menu makes manual compaction primary and exposes its effective route"
 	const customContext = createMockContext({ model: customModel }).ctx;
 	assert.deepEqual(compactMenuStatus(customContext), {
 		model: "company-codex-proxy/gpt-5.6",
-		remoteCompatible: true,
+		remoteEligible: true,
 	});
-	assert.equal(
-		compactMenuStatus(createMockContext({ model: { ...customModel, api: "openai-responses" } }).ctx)
-			.remoteCompatible,
-		false,
+	const ineligibleStatus = compactMenuStatus(
+		createMockContext({ model: { ...customModel, api: "openai-responses" } }).ctx,
 	);
+	assert.equal(ineligibleStatus.remoteEligible, false);
 	const menu = createCodexCompactMenu(current.runtime, {
-		status: { model: "openai-codex/gpt-5.6", remoteCompatible: true },
+		status: { model: "openai-codex/gpt-5.6", remoteEligible: true },
 	});
 	assert.equal(menu.start, "main");
 	const main = resolveMenuScreen(menu, "main", current.runtime.get());
@@ -66,6 +65,14 @@ test("root menu makes manual compaction primary and exposes its effective route"
 	);
 	assert.match(main.lines?.join("\n") ?? "", /openai-codex\/gpt-5\.6/);
 	assert.match(main.lines?.join("\n") ?? "", /Codex Remote V2/);
+	const ineligible = resolveMenuScreen(
+		createCodexCompactMenu(current.runtime, { status: ineligibleStatus }),
+		"main",
+		current.runtime.get(),
+	);
+	assert.equal(ineligible.kind, "actions");
+	if (ineligible.kind !== "actions") assert.fail("Expected ineligible actions screen");
+	assert.match(ineligible.lines?.join("\n") ?? "", /Pi native \(requires openai-codex-responses\)/);
 	const disabled = resolveMenuScreen(menu, "main", {
 		...current.runtime.get(),
 		settings: { ...current.runtime.get().settings, enabled: false },

@@ -74,7 +74,7 @@ Escape or Ctrl+C closes without compacting, and an obsolete menu cannot trigger 
 **Settings** opens the bounded settings editor.
 In non-TUI modes, the command reports the manual settings path instead of opening custom UI or compacting.
 
-Pi's built-in `/compact` remains available and follows the same extension hook when the active model is compatible.
+Pi's built-in `/compact` remains available and follows the same extension hook when the active model uses `openai-codex-responses`.
 
 ## ⚙️ Settings
 
@@ -99,7 +99,7 @@ There is no environment-variable or project-level override.
 
 | Setting | Default | Accepted values | Behavior | Recommendation |
 | --- | ---: | --- | --- | --- |
-| `enabled` | `true` | Boolean | Attempt Remote V2 for a compatible model. | Keep enabled unless diagnosing provider behavior. |
+| `enabled` | `true` | Boolean | Attempt Remote V2 when the active model uses `openai-codex-responses`. | Keep enabled unless diagnosing provider behavior. |
 | `requestTimeoutMs` | `300000` | Integer from 30,000 to 600,000 ms | Bound one extension-owned remote request. | Keep five minutes; increase only for a consistently slow connection. |
 | `maxRetries` | `2` | Integer from 0 to 2 | Retry transient provider transport failures before Pi fallback. | Keep two; use zero when diagnosing the first failure. |
 | `replacementTokenBudget` | `64000` | Integer from 8,000 to 128,000 tokens | Bound approximate retained user-message text beside the opaque item. | Keep 64K; lower it to reduce session size or raise it only when recent user context is being lost. |
@@ -191,7 +191,7 @@ src/codex-compact.ts  Pi lifecycle, command, provider projection, and fallback
 src/remote.ts         Provider stream invocation, auth payload, timeout, and retry controls
 src/protocol.ts       Bounded SSE parsing and Remote V2 payload/output validation
 src/checkpoint.ts     Replacement history, fingerprints, persistence, and replay projection
-src/model-compatibility.ts  API-based Remote V2 model eligibility
+src/model-api.ts      Codex Responses API detection for Remote V2 eligibility
 src/settings.ts       Global settings validation and atomic persistence
 src/settings-menu.ts  First-use manual compaction and settings TUI
 
