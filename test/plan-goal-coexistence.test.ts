@@ -226,6 +226,33 @@ for (const loadOrder of ["plan-first", "goal-first"] as const) {
 	}
 }
 
+for (const loadOrder of ["plan-first", "goal-first"] as const) {
+	test(`${loadOrder} lazy Plan activation appends only Plan helpers`, async () => {
+		const fixture = createFixture(loadOrder);
+		await startSession(fixture);
+		assert.deepEqual(fixture.mock.rawPi.getActiveTools(), [
+			"read",
+			"bash",
+			"write",
+			"goal_complete",
+			"goal_blocked",
+			"goal_wait",
+		]);
+
+		await startPlan(fixture);
+		assert.deepEqual(fixture.mock.rawPi.getActiveTools(), [
+			"read",
+			"bash",
+			"write",
+			"goal_complete",
+			"goal_blocked",
+			"goal_wait",
+			"plan_mode_question",
+			"plan_mode_complete",
+		]);
+	});
+}
+
 test("Plan ready and revision states reject Goal without changing Plan tools", async () => {
 	const fixture = createFixture("plan-first");
 	await startSession(fixture);
@@ -389,8 +416,6 @@ for (const loadOrder of ["plan-first", "goal-first"] as const) {
 				"goal_complete",
 				"goal_blocked",
 				"goal_wait",
-				"plan_mode_question",
-				"plan_mode_complete",
 			]);
 		}
 	});
