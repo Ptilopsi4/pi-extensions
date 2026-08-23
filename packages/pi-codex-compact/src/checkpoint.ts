@@ -138,10 +138,10 @@ function isOlderCompactionSummary(message: AgentMessage, timestamp: number): boo
 export function projectCheckpointContext(
 	messages: readonly AgentMessage[],
 	details: CodexCheckpointDetails,
+	checkpointSummary: string,
 ): AgentMessage[] | undefined {
-	const summary = fallbackSummary(details.checkpointId);
 	const summaryIndex = messages.findIndex(
-		(message) => message.role === "compactionSummary" && message.summary === summary,
+		(message) => message.role === "compactionSummary" && message.summary === checkpointSummary,
 	);
 	if (summaryIndex < 0) return undefined;
 	const timestamp = messages[summaryIndex].timestamp;

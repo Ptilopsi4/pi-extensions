@@ -8,7 +8,7 @@ import {
 import type { SessionBeforeCompactEvent, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
-import { parseCheckpointDetails } from "../src/checkpoint.js";
+import { createCheckpointDetails, parseCheckpointDetails } from "../src/checkpoint.js";
 import { createCodexCompactExtension } from "../src/codex-compact.js";
 import {
 	type CodexCompactSettingsRuntime,
@@ -61,6 +61,7 @@ function settingsRuntime(overrides = {}): CodexCompactSettingsRuntime {
 function fakeProvider(
 	onOptions?: (options: OpenAICodexResponsesOptions) => void,
 	providerModel: Model<"openai-codex-responses"> = model,
+	onPreparedPayload?: (payload: unknown) => void,
 ): Provider {
 	return {
 		id: providerModel.provider,
@@ -81,6 +82,7 @@ function fakeProvider(
 						return { role: "user", content: [{ type: "input_text", text }] };
 					});
 					const payload = await options?.onPayload?.({ model: activeModel.id, input }, activeModel);
+					onPreparedPayload?.(payload);
 					assert.deepEqual((payload as { input: unknown[] }).input.at(-1), {
 						type: "compaction_trigger",
 					});
@@ -151,7 +153,10 @@ function branch(): SessionEntry[] {
 	];
 }
 
-function event(signal = new AbortController().signal): SessionBeforeCompactEvent {
+function event(
+	signal = new AbortController().signal,
+	branchEntries = branch(),
+): SessionBeforeCompactEvent {
 	return {
 		type: "session_before_compact",
 		preparation: {
@@ -163,7 +168,7 @@ function event(signal = new AbortController().signal): SessionBeforeCompactEvent
 			fileOps: { read: new Set(), written: new Set(), edited: new Set() },
 			settings: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
 		},
-		branchEntries: branch(),
+		branchEntries,
 		reason: "manual",
 		willRetry: false,
 		signal,
@@ -175,6 +180,14 @@ function sseResponse() {
 	return new Response(
 		`data: ${JSON.stringify({ type: "response.output_item.done", item })}\n\ndata: ${JSON.stringify({ type: "response.completed", response: { output: [item] } })}\n\n`,
 	);
+}
+
+function legacyFallbackSummary(checkpointId: string): string {
+	return [
+		`OpenAI Codex Remote Compaction V2 checkpoint ${checkpointId} stores the older history opaquely.`,
+		"Full replay requires @narumitw/pi-codex-compact and an openai-codex model.",
+		"Without them, only Pi's retained recent messages remain available.",
+	].join(" ");
 }
 
 test("custom Codex Responses providers compact and replay by API and exact model ID", async () => {
@@ -226,12 +239,13 @@ test("custom Codex Responses providers compact and replay by API and exact model
 	assert.equal(statuses.get("codex-compact"), undefined);
 
 	const kept = entries[1].type === "message" ? entries[1].message : assert.fail("kept message");
+	const persistedReplaySummary = legacyFallbackSummary(details.checkpointId);
 	const compactionEntry = {
 		type: "compaction" as const,
 		id: "compact",
 		parentId: "assistant",
 		timestamp: "2026-01-01T00:00:02.000Z",
-		summary: result.compaction.summary,
+		summary: persistedReplaySummary,
 		firstKeptEntryId: "assistant",
 		tokensBefore: 123,
 		details,
@@ -246,7 +260,7 @@ test("custom Codex Responses providers compact and replay by API and exact model
 	}).ctx;
 	const summaryMessage = {
 		role: "compactionSummary" as const,
-		summary: result.compaction.summary,
+		summary: persistedReplaySummary,
 		tokensBefore: 123,
 		timestamp: 3,
 	};
@@ -288,6 +302,72 @@ test("custom Codex Responses providers compact and replay by API and exact model
 		sessionManager: replaySessionManager,
 	}).ctx;
 	assert.equal(await contextHandler?.(contextEvent, differentApi), undefined);
+});
+
+test("repeated compaction projects a checkpoint using its persisted legacy summary", async () => {
+	const mock = createMockPi();
+	const entries = branch();
+	const kept = entries[1].type === "message" ? entries[1].message : assert.fail("kept message");
+	const details = createCheckpointDetails({
+		provider: model.provider,
+		modelId: model.id,
+		replacementHistory: [
+			{ role: "user", content: [{ type: "input_text", text: "older context" }] },
+			{ type: "compaction", encrypted_content: "prior-opaque" },
+		],
+		keptMessages: [kept],
+		checkpointId: "legacy-checkpoint",
+		createdAt: "2026-01-01T00:00:02.000Z",
+	});
+	const persistedSummary = legacyFallbackSummary(details.checkpointId);
+	const checkpointEntry = {
+		type: "compaction" as const,
+		id: "legacy-compact",
+		parentId: "assistant",
+		timestamp: "2026-01-01T00:00:02.000Z",
+		summary: persistedSummary,
+		firstKeptEntryId: "assistant",
+		tokensBefore: 123,
+		details,
+	};
+	const repeatedBranch = [...entries, checkpointEntry];
+	let preparedPayload: unknown;
+	createCodexCompactExtension({
+		settingsRuntime: settingsRuntime(),
+		fetch: async () => sseResponse(),
+	})(mock.pi);
+	const handler = mock.events.get("session_before_compact")?.[0];
+	const { ctx, notifications, statuses } = createMockContext({
+		model,
+		getSystemPrompt: () => "system",
+		sessionManager: {
+			getSessionId: () => "session",
+			getBranch: () => repeatedBranch,
+		},
+		modelRegistry: {
+			getApiKeyAndHeaders: async () => ({ ok: true }),
+			getProvider: () =>
+				fakeProvider(undefined, model, (payload) => {
+					preparedPayload = payload;
+				}),
+		},
+		hasUI: true,
+	});
+
+	const result = (await handler?.(event(new AbortController().signal, repeatedBranch), ctx)) as {
+		compaction: { details: unknown };
+	};
+	assert.ok(parseCheckpointDetails(result.compaction.details));
+	assert.deepEqual((preparedPayload as { input: unknown[] }).input.at(-2), {
+		type: "compaction",
+		encrypted_content: "prior-opaque",
+	});
+	assert.doesNotMatch(
+		JSON.stringify(preparedPayload),
+		/legacy-checkpoint.*stores the older history/,
+	);
+	assert.deepEqual(notifications, []);
+	assert.equal(statuses.get("codex-compact"), undefined);
 });
 
 test("valid session startup reloads settings without a package warning", async () => {

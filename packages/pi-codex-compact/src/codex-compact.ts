@@ -71,16 +71,16 @@ function projectedCurrentMessages(
 ): { messages: AgentMessage[]; prior?: CodexCheckpointDetails } {
 	const leafId = event.branchEntries.at(-1)?.id ?? null;
 	const session = buildSessionContext(event.branchEntries, leafId);
-	const prior = latestCheckpoint(event.branchEntries)?.details;
+	const prior = latestCheckpoint(event.branchEntries);
 	if (!prior) return { messages: session.messages };
-	if (prior.modelId !== model.id) {
+	if (prior.details.modelId !== model.id) {
 		throw new Error("The active opaque checkpoint belongs to a different Codex model");
 	}
-	const projected = projectCheckpointContext(session.messages, prior);
+	const projected = projectCheckpointContext(session.messages, prior.details, prior.entry.summary);
 	if (!projected) {
 		throw new Error("The previous opaque checkpoint could not be projected safely");
 	}
-	return { messages: projected, prior };
+	return { messages: projected, prior: prior.details };
 }
 
 function notifyFailure(
@@ -234,7 +234,11 @@ export function createCodexCompactExtension(
 			if (!settingsRuntime.get().settings.enabled) return undefined;
 			const checkpoint = activeCheckpoint(ctx);
 			if (!checkpoint || !isCheckpointCompatible(checkpoint.details, ctx.model)) return undefined;
-			const messages = projectCheckpointContext(event.messages, checkpoint.details);
+			const messages = projectCheckpointContext(
+				event.messages,
+				checkpoint.details,
+				checkpoint.entry.summary,
+			);
 			return messages ? { messages } : undefined;
 		});
 

@@ -792,7 +792,8 @@ It implements the Remote V2 wire path inside Pi's public extension boundary:
 
 - add `compaction_trigger` to an extension-owned Codex Responses request;
 - validate and persist the opaque `compaction` item in versioned `CompactionEntry.details`;
-- collapse Pi's fallback summary and verified kept suffix to a marker;
+- identify the fallback summary from the active entry's persisted `CompactionEntry.summary` rather than regenerated prose;
+- collapse that summary and its fingerprint-verified kept suffix to a marker;
 - replace that marker with bounded remote replacement history in `before_provider_request`;
 - fall back to native Pi compaction for other model APIs or Remote V2 failure.
 
