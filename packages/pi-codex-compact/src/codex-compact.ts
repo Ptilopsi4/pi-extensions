@@ -18,7 +18,7 @@ import {
 	latestCheckpoint,
 	projectCheckpointContext,
 } from "./checkpoint.js";
-import { isCodexRemoteCompactionModel } from "./model-compatibility.js";
+import { usesCodexResponsesApi } from "./model-api.js";
 import { hasCheckpointMarker, rewriteCheckpointMarker } from "./protocol.js";
 import { requestRemoteCompaction } from "./remote.js";
 import {
@@ -38,7 +38,7 @@ function isCheckpointCompatible(
 	details: CodexCheckpointDetails,
 	model: Model<Api> | undefined,
 ): model is Model<"openai-codex-responses"> {
-	return isCodexRemoteCompactionModel(model) && model.id === details.modelId;
+	return usesCodexResponsesApi(model) && model.id === details.modelId;
 }
 
 function keptMessages(event: SessionBeforeCompactEvent): AgentMessage[] {
@@ -105,7 +105,7 @@ async function compactRemotely(
 	fetch?: typeof globalThis.fetch,
 ) {
 	const model = ctx.model;
-	if (!settings.enabled || !isCodexRemoteCompactionModel(model)) return undefined;
+	if (!settings.enabled || !usesCodexResponsesApi(model)) return undefined;
 	const sessionId = ctx.sessionManager.getSessionId();
 	ctx.ui.setStatus(STATUS_KEY, "Codex remote compaction…");
 	try {
