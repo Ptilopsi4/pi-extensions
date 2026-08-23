@@ -19,8 +19,6 @@ export const CONTROL_ENTRY_TYPE = "pi-debug:control";
 const TOOL_NAME = "runtime_diagnostics";
 const MAX_SHOW_RECORDS = 20;
 const MAX_OUTPUT_BYTES = 50 * 1024;
-const EXPERIMENTAL_WARNING =
-	"pi-debug is experimental and records privacy-filtered diagnostics in the current Pi session.";
 const PROVIDER_HOOK_LIMITATIONS = [
 	"before_provider_request exposes the serialized payload at this extension's position in handler load order; later extensions can still replace it.",
 	"The hook does not prove that the provider accepted or executed the exposed tools.",
@@ -96,7 +94,6 @@ export function createDebugExtension(
 		pi.on("session_start", (_event, ctx) => {
 			capture = restoreCaptureState(ctx.sessionManager.getBranch());
 			lastRuntimeSignature = undefined;
-			if (ctx.hasUI) ctx.ui.notify(EXPERIMENTAL_WARNING, "warning");
 			recordRuntime(ctx, "session_start", true);
 		});
 
