@@ -6,6 +6,7 @@ export const PLAN_IMPLEMENTATION_CONTEXT_MESSAGE_TYPE = "plan-mode-implementatio
 const PROPOSED_PLAN_MESSAGE_TYPE = "proposed-plan";
 const PLAN_IMPLEMENTATION_HANDOFF_PREFIX =
 	"Plan mode is now disabled. Full tool access is restored. Implement this proposed plan now:";
+export const PLAN_HISTORY_IMPLEMENTATION_PROMPT = "Implement the plan.";
 const PROPOSED_PLAN_PATTERN =
 	/^<proposed_plan>[\t ]*\r?\n([\s\S]*?)\r?\n<\/proposed_plan>[\t ]*$/gm;
 const PROPOSED_PLAN_BLOCK_PATTERN =
@@ -120,6 +121,92 @@ export function messageContainsInactivePlanModeArtifact(message: unknown) {
 	);
 }
 
+interface HistoryImplementationArtifact {
+	messageIndex: number;
+	kind: "completion" | "legacy" | "presentation";
+	toolCallId?: string;
+	toolCallMessageIndex?: number;
+}
+
+// The kickoff text is intentionally generic, so only trust a plan artifact in the same
+// uninterrupted user/summary segment and require a complete tool-call/result pair.
+export function findHistoryImplementationArtifact(
+	messages: unknown[],
+): HistoryImplementationArtifact | undefined {
+	for (let index = messages.length - 1; index >= 0; index -= 1) {
+		const candidate = unwrapSessionMessage(messages[index]);
+		if (
+			candidate.role !== "user" ||
+			contentText(candidate.content).trim() !== PLAN_HISTORY_IMPLEMENTATION_PROMPT
+		) {
+			continue;
+		}
+		const artifact = findHistoryImplementationArtifactBeforeKickoff(messages, index);
+		if (artifact) return artifact;
+	}
+	return undefined;
+}
+
+function findHistoryImplementationArtifactBeforeKickoff(
+	messages: unknown[],
+	kickoffIndex: number,
+): HistoryImplementationArtifact | undefined {
+	for (let index = kickoffIndex - 1; index >= 0; index -= 1) {
+		const candidate = unwrapSessionMessage(messages[index]);
+		if (candidate.role === "user" || isSummaryMessage(messages[index])) return undefined;
+		if (candidate.role === "toolResult" && candidate.toolName === PLAN_MODE_COMPLETE_TOOL_NAME) {
+			const toolCallId = candidate.toolCallId;
+			const toolCallMessageIndex = toolCallId
+				? findPlanModeCompletionCallMessageIndex(messages, index, toolCallId)
+				: undefined;
+			if (toolCallId && toolCallMessageIndex !== undefined) {
+				return {
+					messageIndex: index,
+					kind: "completion",
+					toolCallId,
+					toolCallMessageIndex,
+				};
+			}
+			continue;
+		}
+		if (candidate.customType === PROPOSED_PLAN_MESSAGE_TYPE) {
+			return { messageIndex: index, kind: "presentation" };
+		}
+		if (
+			candidate.role === "assistant" &&
+			contentText(candidate.content).match(PROPOSED_PLAN_BLOCK_PATTERN)
+		) {
+			return { messageIndex: index, kind: "legacy" };
+		}
+	}
+	return undefined;
+}
+
+function findPlanModeCompletionCallMessageIndex(
+	messages: unknown[],
+	endIndex: number,
+	toolCallId: string,
+) {
+	for (let index = endIndex - 1; index >= 0; index -= 1) {
+		const candidate = unwrapSessionMessage(messages[index]);
+		if (candidate.role === "user" || isSummaryMessage(messages[index])) return undefined;
+		if (!Array.isArray(candidate.content)) continue;
+		if (
+			candidate.content.some((block) => {
+				const toolCall = block as { type?: string; id?: string; name?: string };
+				return (
+					toolCall.type === "toolCall" &&
+					toolCall.id === toolCallId &&
+					toolCall.name === PLAN_MODE_COMPLETE_TOOL_NAME
+				);
+			})
+		) {
+			return index;
+		}
+	}
+	return undefined;
+}
+
 export function messageContainsPlanModeImplementationHandoff(message: unknown) {
 	const candidate = unwrapSessionMessage(message);
 	return (
@@ -146,12 +233,19 @@ export function stripProposedPlanBlocksFromMessage<T>(message: T): T {
 	return replaceAssistantContent(message, stripProposedPlanBlocksFromContent);
 }
 
-export function stripPlanModeCompletionCallsFromMessage<T>(message: T): T {
+export function stripPlanModeCompletionCallsFromMessage<T>(
+	message: T,
+	preservedToolCallId?: string,
+): T {
 	return replaceAssistantContent(message, (content) => {
 		if (!Array.isArray(content)) return content;
 		const nextContent = content.filter((block) => {
-			const candidate = block as { type?: string; name?: string };
-			return !(candidate.type === "toolCall" && candidate.name === PLAN_MODE_COMPLETE_TOOL_NAME);
+			const candidate = block as { type?: string; id?: string; name?: string };
+			return !(
+				candidate.type === "toolCall" &&
+				candidate.name === PLAN_MODE_COMPLETE_TOOL_NAME &&
+				(!preservedToolCallId || candidate.id !== preservedToolCallId)
+			);
 		});
 		return nextContent.length === content.length ? content : nextContent;
 	});
@@ -185,6 +279,7 @@ function unwrapSessionMessage(message: unknown) {
 		role?: string;
 		customType?: string;
 		toolName?: string;
+		toolCallId?: string;
 		content?: unknown;
 	};
 }

@@ -113,8 +113,9 @@ export async function showPlanModeSettings(
 								},
 								{
 									id: "implementationPlanRetention",
-									label: "After Implement",
-									description: "Choose how long the accepted plan keeps guiding implementation.",
+									label: "Plan reinjection",
+									description:
+										"Choose how long Plan mode restores the exact plan when ordinary context no longer contains it.",
 									currentValue: retentionLabel(
 										configuredImplementationPlanRetention(state.settings),
 									),
@@ -209,7 +210,7 @@ export async function showPlanModeSettings(
 					actionCtx,
 					{ implementationPlanRetention },
 					signal,
-					`After Implement: ${retentionLabel(implementationPlanRetention)}. Applies to the next Implement action.`,
+					`Plan reinjection: ${retentionLabel(implementationPlanRetention)}. Applies to the next Implement action.`,
 				);
 			},
 			"open-export": async () => ({ kind: "to", screen: "export" }),
@@ -310,7 +311,7 @@ export async function showPlanModeSettings(
 function settingsLines(settingsPath: string, notice: string | undefined) {
 	return [
 		`User settings · ${safeTerminalText(settingsPath)}`,
-		"Plan defaults apply to the next workflow; handoff and export choices apply to their next action.",
+		"Plan defaults apply to the next workflow; reinjection and export choices apply to their next action.",
 		...(notice ? [safeTerminalText(notice)] : []),
 	];
 }
