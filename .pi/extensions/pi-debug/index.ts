@@ -16,7 +16,7 @@ import {
 
 export const PROVIDER_REQUEST_ENTRY_TYPE = "pi-debug:provider-request";
 export const CONTROL_ENTRY_TYPE = "pi-debug:control";
-const TOOL_NAME = "pi_debug";
+const TOOL_NAME = "runtime_diagnostics";
 const MAX_SHOW_RECORDS = 20;
 const MAX_OUTPUT_BYTES = 50 * 1024;
 const EXPERIMENTAL_WARNING =
@@ -56,13 +56,13 @@ export function createDebugExtension(
 
 		pi.registerTool({
 			name: TOOL_NAME,
-			label: "Pi Debug",
+			label: "Runtime Diagnostics",
 			description:
-				"Inspect and control privacy-filtered Pi runtime diagnostics for provider/model selection, prompt-cache hit rates, active/inactive tools, visible extension surfaces, and provider-request tool exposure.",
+				"Inspect and manage privacy-filtered runtime diagnostics for model routing, prompt-cache performance, tool availability, visible extension surfaces, and tools exposed in provider requests.",
 			promptSnippet:
-				"Inspect Pi provider, model, cache, tool, extension-surface, and provider-request diagnostics",
+				"Inspect model, cache, tool, extension-surface, and provider-request diagnostics",
 			promptGuidelines: [
-				"Use pi_debug when provider, model, prompt caching, tool activation, deferred tool loading, or extension registration may be misconfigured.",
+				"Use runtime_diagnostics when model routing, prompt caching, tool availability, deferred tool loading, or extension registration may be misconfigured.",
 			],
 			parameters: Type.Object({
 				action: Type.Optional(
