@@ -10,10 +10,17 @@
 
 ## Repository structure
 
-- This Node.js and TypeScript monorepo contains Pi extensions and reusable libraries.
-- Keep active package source under `packages/<package>/src/`.
+- This Node.js and TypeScript monorepo contains Pi extension packages, project-local Pi extensions, and reusable libraries.
+- Keep publishable extension packages and reusable libraries under `packages/<package>/`.
+- Keep package implementation source under `packages/<package>/src/`.
+- Keep small repository-only Pi extensions and their supporting implementation files under `.pi/extensions/<extension>/`, with `index.ts` as the entrypoint.
 - Each package owns its manifest, README, license, and TypeScript configuration.
-- Set each extension's `piExtension.lifecycle` to `stable` or `experimental`.
+- Set each extension package's `piExtension.lifecycle` to `stable` or `experimental`.
+- Treat `.pi/extensions/` as a self-contained project-resource boundary unrelated to extension packages under `packages/`.
+- Keep a project-local extension's implementation, helpers, documentation, and any requested tests inside its own `.pi/extensions/<extension>/` directory.
+- Do not add or modify package manifests, workspaces, Changesets, package tests, root test support, or shared TypeScript configuration for a project-local extension unless the user explicitly asks.
+- Project-local extensions do not require package manifests, lifecycle metadata, Changesets, publication files, or packaged-extension verification gates.
+- Promote a project-local extension into `packages/` only when the user explicitly requests independent installation, reuse, versioning, or publication.
 - Omit `piExtension` from reusable libraries.
 - Keep deprecated reference packages under `deprecated/`, which active checks exclude.
 - Root files such as `package.json`, `package-lock.json`, `biome.json`, `tsconfig.json`, `justfile`, and `.github/workflows/*` own shared tooling.
@@ -51,7 +58,8 @@ Run commands from the repository root unless a command says otherwise.
 - Add dependencies only for current package needs.
 - Use a Pi core function when Pi already provides the required behavior.
 - Upgrade an outdated dependency instead of hiding its type errors by removing or downgrading code.
-- Keep every extension independently installable and functional by itself.
+- Keep every extension package independently installable and functional by itself.
+- Keep every project-local extension functional through Pi's project auto-discovery without another extension package.
 - Do not import or depend on another extension package.
 - Do not assume private or extension-specific details of another extension, including its names, schemas, settings, events, installation state, version, or behavior.
 - Extensions may participate in documented, versioned, extension-neutral protocols over Pi's public APIs only when the protocol does not identify or require a specific extension and the absence of other participants preserves standalone behavior.
@@ -59,14 +67,16 @@ Run commands from the repository root unless a command says otherwise.
 - Share code only through Pi's public extension-neutral APIs or reusable non-extension libraries.
 - Do not make reusable libraries coordinate specific extensions.
 - Consume shared Pi APIs without extension-specific branches.
-- Give every active extension a thin `src/index.ts` default-export forwarder and keep authoritative implementation under `src/`.
-- Declare exactly one extension entrypoint in each active extension manifest: `./src/index.ts`, or a build-backed `./dist/index.ts` TypeScript bundle loaded by Pi's Jiti runtime.
+- Give every packaged extension a thin `src/index.ts` default-export forwarder and keep authoritative implementation under `src/`.
+- A project-local extension may use `.pi/extensions/<extension>/index.ts` as its authoritative implementation.
+- Declare exactly one extension entrypoint in each packaged extension manifest: `./src/index.ts`, or a build-backed `./dist/index.ts` TypeScript bundle loaded by Pi's Jiti runtime.
 - Require a `dist/index.ts` entrypoint to stay within `dist`, externalize Pi-bundled peer dependencies, publish `dist`, and be built before packing or loading the package directory.
 - Keep extension implementation in descriptively named source modules.
 - Build and publish reusable libraries as JavaScript with declarations through their own build configuration and without `pi.extensions`.
 - Run `npm run check:boundaries` to verify package boundaries.
-- List every stable extension's `src/index.ts` repository entrypoint in the root `package.json` under `pi.extensions`.
-- Do not list experimental extension entrypoints in the root `package.json` under `pi.extensions`.
+- List every stable extension package's `src/index.ts` repository entrypoint in the root `package.json` under `pi.extensions`.
+- Do not list experimental extension package entrypoints in the root `package.json` under `pi.extensions`.
+- Do not list `.pi/extensions/` entrypoints in the root `package.json`; Pi discovers them after the project is trusted.
 - Add a root workspace script or recipe only for a workflow users must run from the repository root.
 - Choose the first TUI layer that fully supports the flow: Pi core `ctx.ui` APIs and `@earendil-works/pi-tui` components, then `@narumitw/pi-tui-kit`, and finally an extension-owned custom component.
 - Create a new custom component only when the earlier layers cannot preserve the required state, interaction, or lifecycle behavior.
@@ -125,7 +135,8 @@ Run commands from the repository root unless a command says otherwise.
 - Run `npm test` or `just test` separately for active tests.
 - CI and release verification must run both gates.
 - Run `just pack <unscoped-name>` and inspect the tarball after package metadata or publishing changes.
-- After extension runtime-loading changes, run `npm --workspace @narumitw/pi-<unscoped-name> run build --if-present`, then smoke with `pi -e ./packages/pi-<unscoped-name>`; record why and what remains unverified if the smoke is impractical.
+- After packaged extension runtime-loading changes, run `npm --workspace @narumitw/pi-<unscoped-name> run build --if-present`, then smoke with `pi -e ./packages/pi-<unscoped-name>`; record why and what remains unverified if the smoke is impractical.
+- After project-local extension changes, smoke it in isolation with `pi --no-extensions -e ./.pi/extensions/<extension>/index.ts`, then verify trusted-project auto-discovery and `/reload` when practical.
 - Start subprocess timing deadlines only after a child readiness handshake.
 - Synchronize concurrent HTTP tests on a server-observable response or callback instead of a fixed sleep after `fetch()`.
 - Set `PI_CODING_AGENT_DIR` before importing an extension in lifecycle tests and use fresh imports for module-cached paths.
