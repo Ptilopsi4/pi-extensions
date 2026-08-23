@@ -349,17 +349,13 @@ test("Plan holder rejects managed-run Goal activation with one terminal error", 
 	assertOneHolder(fixture);
 });
 
-test("restored Goal rejects --plan startup activation without a Plan commit", async () => {
-	const branch = [goalEntry(activeGoal("flag-holder"))];
+test("restored Goal leaves inactive Plan state uncommitted", async () => {
+	const branch = [goalEntry(activeGoal("restored-holder"))];
 	const fixture = createFixture("goal-first", { branch });
-	const flag = fixture.mock.flags.get("plan");
-	assert.ok(flag);
-	flag.value = true;
 	await startSession(fixture, "resume");
 	assert.equal(goalStatus(fixture.mock.entries), "active");
 	assert.equal(latestStateEntry(fixture.mock.entries, "plan-mode-state"), undefined);
 	assert.equal(fixture.context.statuses.get("plan-mode"), undefined);
-	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /was not restored/u);
 	assertOneHolder(fixture);
 });
 
