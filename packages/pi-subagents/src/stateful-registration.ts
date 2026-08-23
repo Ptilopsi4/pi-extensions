@@ -263,7 +263,7 @@ export function registerStatefulSubagents(
 	const settings = Object.hasOwn(dependencies, "settings")
 		? (dependencies.settings ?? {})
 		: (readSubagentSettings()?.stateful ?? {});
-	const blockingEnabled = dependencies.blockingEnabled !== false;
+	const blockingEnabled = dependencies.blockingEnabled === true;
 	const enabled = settings.enabled !== false;
 	const transportKind = resolveStatefulTransportKind(settings.transport);
 	let completionDelivery = resolveCompletionDelivery(settings.completionDelivery);

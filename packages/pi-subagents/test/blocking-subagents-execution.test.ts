@@ -21,6 +21,10 @@ import {
 } from "./subagents-test-helpers.js";
 
 const restoreTestEnvironment = installSubagentsTestEnvironment();
+writeFileSync(
+	path.join(process.env.PI_CODING_AGENT_DIR ?? "", "pi-subagents.json"),
+	JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } }),
+);
 afterAll(restoreTestEnvironment);
 
 test("blocking delegation preflights every target and passes explicit saved trust", async () => {
@@ -31,6 +35,10 @@ test("blocking delegation preflights every target and passes explicit saved trus
 	const marker = path.join(root, "launched");
 	const fakePi = path.join(root, "fake-pi.mjs");
 	mkdirSync(agentDir);
+	writeFileSync(
+		path.join(agentDir, "pi-subagents.json"),
+		JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } }),
+	);
 	mkdirSync(workspace);
 	mkdirSync(external);
 	writeFileSync(
@@ -92,7 +100,11 @@ test("blocking delegation preflights every target and passes explicit saved trus
 		rmSync(marker, { force: true });
 		writeFileSync(
 			path.join(agentDir, "pi-subagents.json"),
-			JSON.stringify({ cwdPolicy: { delegation: "anywhere" } }),
+			JSON.stringify({
+				blocking: { enabled: true },
+				stateful: { enabled: true },
+				cwdPolicy: { delegation: "anywhere" },
+			}),
 		);
 		const anywhereMock = createMockPi();
 		subagents(anywhereMock.pi);

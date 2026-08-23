@@ -2,7 +2,7 @@ import type { CompletionDelivery } from "./agents/types.js";
 
 export function createSpawnPromptGuidelines(
 	completionDelivery: CompletionDelivery,
-	blockingEnabled = true,
+	blockingEnabled = false,
 ): string[] {
 	const deliveryGuidance =
 		completionDelivery === "auto-resume"

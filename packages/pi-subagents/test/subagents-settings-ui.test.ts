@@ -36,8 +36,20 @@ test("delegation workflow settings control the registered tool surface", () => {
 		const settingsPath = path.join(directory, "pi-subagents.json");
 		const cases = [
 			{
-				name: "all delegation methods",
+				name: "default async only",
 				settings: {},
+				tools: [
+					"subagent_spawn",
+					"subagent_send",
+					"subagent_manage",
+					"subagent_mailbox",
+					"subagent_inspect",
+				],
+				forbiddenPromptText: /blocking subagent|subagent_consult/i,
+			},
+			{
+				name: "all delegation methods",
+				settings: { blocking: { enabled: true }, stateful: { enabled: true } },
 				tools: [
 					"subagent",
 					"subagent_spawn",
@@ -50,26 +62,14 @@ test("delegation workflow settings control the registered tool surface", () => {
 				forbiddenPromptText: undefined,
 			},
 			{
-				name: "async only",
-				settings: { blocking: { enabled: false }, stateful: { enabled: true } },
-				tools: [
-					"subagent_spawn",
-					"subagent_send",
-					"subagent_manage",
-					"subagent_mailbox",
-					"subagent_inspect",
-				],
-				forbiddenPromptText: /blocking subagent|subagent_consult/i,
-			},
-			{
 				name: "blocking only",
 				settings: { blocking: { enabled: true }, stateful: { enabled: false } },
 				tools: ["subagent", "subagent_inspect", "subagent_consult"],
 				forbiddenPromptText: /subagent_(?:spawn|send|manage|mailbox)/i,
 			},
 			{
-				name: "disabled",
-				settings: { blocking: { enabled: false }, stateful: { enabled: false } },
+				name: "stateful disabled with default blocking",
+				settings: { stateful: { enabled: false } },
 				tools: ["subagent_inspect"],
 				forbiddenPromptText: /blocking subagent|subagent_(?:spawn|send|manage|mailbox|consult)/i,
 			},
@@ -94,7 +94,7 @@ test("delegation workflow settings control the registered tool surface", () => {
 			if (scenario.forbiddenPromptText) {
 				assert.doesNotMatch(promptMetadata, scenario.forbiddenPromptText, scenario.name);
 			}
-			if (scenario.name === "async only") {
+			if (scenario.name === "default async only") {
 				const spawnGuidance = mock.tools.find(
 					(tool) => tool.name === "subagent_spawn",
 				)?.promptGuidelines;
@@ -124,7 +124,7 @@ test("disabled stateful settings do not advertise unavailable lifecycle tools", 
 	try {
 		writeFileSync(
 			path.join(directory, "pi-subagents.json"),
-			JSON.stringify({ stateful: { enabled: false } }),
+			JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: false } }),
 		);
 		const mock = createMockPi();
 		subagents(mock.pi);
@@ -171,7 +171,11 @@ test("advanced settings validates, saves, and immediately applies the blocking p
 		const settingsPath = path.join(directory, "pi-subagents.json");
 		writeFileSync(
 			settingsPath,
-			JSON.stringify({ future: true, blocking: { futureBlocking: "keep" } }),
+			JSON.stringify({
+				future: true,
+				blocking: { enabled: true, futureBlocking: "keep" },
+				stateful: { enabled: true },
+			}),
 		);
 		const mock = createMockPi();
 		subagents(mock.pi);
@@ -216,7 +220,8 @@ test("advanced settings validates, saves, and immediately applies the blocking p
 		);
 		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
 			future: true,
-			blocking: { futureBlocking: "keep", maxParallelTasks: 3 },
+			blocking: { enabled: true, futureBlocking: "keep", maxParallelTasks: 3 },
+			stateful: { enabled: true },
 		});
 		assert.match(context.notifications.at(-1)?.message ?? "", /saved and applied.*3/i);
 		const refreshedBlocking = mock.tools.filter((tool) => tool.name === "subagent").at(-1);
@@ -235,7 +240,11 @@ test("advanced settings validates, saves, and immediately applies the blocking p
 
 		writeFileSync(
 			settingsPath,
-			JSON.stringify({ future: true, blocking: { futureBlocking: "keep", maxParallelTasks: 2 } }),
+			JSON.stringify({
+				future: true,
+				blocking: { enabled: true, futureBlocking: "keep", maxParallelTasks: 2 },
+				stateful: { enabled: true },
+			}),
 		);
 		let staleCall = 0;
 		const staleContext = createMockContext({
@@ -266,7 +275,8 @@ test("advanced settings validates, saves, and immediately applies the blocking p
 		assert.equal(staleCall, 4);
 		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
 			future: true,
-			blocking: { futureBlocking: "keep", maxParallelTasks: 3 },
+			blocking: { enabled: true, futureBlocking: "keep", maxParallelTasks: 3 },
+			stateful: { enabled: true },
 		});
 
 		const savedDocument = readFileSync(settingsPath, "utf8");
@@ -644,7 +654,8 @@ test("parallel-limit UI keeps the runtime unchanged after a settings save failur
 	process.env.PI_CODING_AGENT_DIR = directory;
 	try {
 		const settingsPath = path.join(directory, "pi-subagents.json");
-		writeFileSync(settingsPath, "{}\n");
+		const originalSettings = `${JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } })}\n`;
+		writeFileSync(settingsPath, originalSettings);
 		const mock = createMockPi();
 		subagents(mock.pi);
 		const registerTool = mock.rawPi.registerTool.bind(mock.rawPi);
@@ -705,7 +716,8 @@ test("parallel-limit UI leaves settings and runtime unchanged after registration
 	process.env.PI_CODING_AGENT_DIR = directory;
 	try {
 		const settingsPath = path.join(directory, "pi-subagents.json");
-		writeFileSync(settingsPath, "{}\n");
+		const originalSettings = `${JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } })}\n`;
+		writeFileSync(settingsPath, originalSettings);
 		const mock = createMockPi();
 		subagents(mock.pi);
 		const blocking = mock.tools.find((tool) => tool.name === "subagent") as SubagentTool;
@@ -746,7 +758,7 @@ test("parallel-limit UI leaves settings and runtime unchanged after registration
 		});
 		await command.handler("", context.ctx);
 		assert.equal(call, 3);
-		assert.equal(readFileSync(settingsPath, "utf8"), "{}\n");
+		assert.equal(readFileSync(settingsPath, "utf8"), originalSettings);
 		assert.match(context.notifications.at(-1)?.message ?? "", /not applied.*unchanged/i);
 		await assert.rejects(
 			() =>
@@ -779,7 +791,11 @@ test("subagent settings UI preserves unknown JSON and applies completion deliver
 		const settingsPath = path.join(directory, "pi-subagents.json");
 		writeFileSync(
 			settingsPath,
-			JSON.stringify({ futureOption: true, stateful: { futureStatefulOption: "keep" } }),
+			JSON.stringify({
+				futureOption: true,
+				blocking: { enabled: true },
+				stateful: { enabled: true, futureStatefulOption: "keep" },
+			}),
 		);
 		const mock = createMockPi();
 		subagents(mock.pi);
@@ -815,7 +831,9 @@ test("subagent settings UI preserves unknown JSON and applies completion deliver
 		assert.doesNotMatch(updatedSpawnGuidance.join("\n"), /next-turn.*default/i);
 		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
 			futureOption: true,
+			blocking: { enabled: true },
 			stateful: {
+				enabled: true,
 				futureStatefulOption: "keep",
 				completionDelivery: "auto-resume",
 			},
@@ -823,7 +841,9 @@ test("subagent settings UI preserves unknown JSON and applies completion deliver
 		updateAgentToolsSetting("explorer", ["read"]);
 		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
 			futureOption: true,
+			blocking: { enabled: true },
 			stateful: {
+				enabled: true,
 				futureStatefulOption: "keep",
 				completionDelivery: "auto-resume",
 			},
@@ -840,7 +860,9 @@ test("subagent settings UI preserves unknown JSON and applies completion deliver
 		assert.equal(customCalls, 2);
 		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
 			futureOption: true,
+			blocking: { enabled: true },
 			stateful: {
+				enabled: true,
 				futureStatefulOption: "keep",
 				completionDelivery: "auto-resume",
 			},
@@ -875,6 +897,10 @@ test("subagent settings UI exposes and immediately applies both cwd policies", a
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = directory;
 	try {
+		writeFileSync(
+			path.join(directory, "pi-subagents.json"),
+			JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } }),
+		);
 		const mock = createMockPi();
 		subagents(mock.pi);
 		const command = mock.commands.get("subagents");
@@ -901,6 +927,8 @@ test("subagent settings UI exposes and immediately applies both cwd policies", a
 		assert.match(rendered, /not filesystem access or sandboxing/i);
 		assert.match(rendered, /Pi \/trust/);
 		assert.deepEqual(JSON.parse(readFileSync(path.join(directory, "pi-subagents.json"), "utf8")), {
+			blocking: { enabled: true },
+			stateful: { enabled: true },
 			cwdPolicy: {
 				consultation: "current-workspace",
 				delegation: "current-workspace",

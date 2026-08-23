@@ -14,6 +14,10 @@ import subagents from "../src/subagents.js";
 import { installSubagentsTestEnvironment, type SubagentTool } from "./subagents-test-helpers.js";
 
 const restoreTestEnvironment = installSubagentsTestEnvironment();
+writeFileSync(
+	path.join(process.env.PI_CODING_AGENT_DIR ?? "", "pi-subagents.json"),
+	JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } }),
+);
 afterAll(restoreTestEnvironment);
 
 test("subagent recursion guard rejects nested delegation before spawning", async () => {
@@ -338,6 +342,10 @@ test("session start refreshes every agent catalog and gates project metadata on 
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 	try {
+		writeFileSync(
+			path.join(agentDir, "pi-subagents.json"),
+			JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } }),
+		);
 		mkdirSync(path.join(agentDir, "agents"), { recursive: true });
 		writeFileSync(
 			path.join(agentDir, "agents", "api-reviewer.md"),

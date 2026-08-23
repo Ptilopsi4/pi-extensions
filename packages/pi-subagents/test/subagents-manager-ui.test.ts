@@ -1,13 +1,5 @@
 import assert from "node:assert/strict";
-import {
-	existsSync,
-	lstatSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
@@ -62,7 +54,7 @@ test("bare subagents opens a current-session manager and keeps direct routes pre
 		assert.ok(managerRenders.flat().every((line) => visibleWidth(line) <= 52));
 		const managerText = managerRenders.flat().join("\n");
 		assert.match(managerText, /Subagents/);
-		assert.match(managerText, /Delegation: All delegation methods/);
+		assert.match(managerText, /Delegation: Async only/);
 		assert.match(managerText, /Completion: Wait until my next turn/);
 		assert.match(managerText, /Agents: 0 active.*0 retained/);
 		assert.match(managerText, /Change delegation/);
@@ -371,7 +363,14 @@ test("delegation workflow preview applies async-only on confirmation and cancell
 	process.env.PI_CODING_AGENT_DIR = directory;
 	try {
 		const settingsPath = path.join(directory, "pi-subagents.json");
-		writeFileSync(settingsPath, JSON.stringify({ future: true }));
+		writeFileSync(
+			settingsPath,
+			JSON.stringify({
+				future: true,
+				blocking: { enabled: true },
+				stateful: { enabled: true },
+			}),
+		);
 		const mock = createMockPi();
 		subagents(mock.pi);
 		const command = mock.commands.get("subagents");
@@ -412,7 +411,14 @@ test("delegation workflow preview applies async-only on confirmation and cancell
 			stateful: { enabled: true },
 		});
 
-		writeFileSync(settingsPath, JSON.stringify({ future: "unchanged" }));
+		writeFileSync(
+			settingsPath,
+			JSON.stringify({
+				future: "unchanged",
+				blocking: { enabled: true },
+				stateful: { enabled: true },
+			}),
+		);
 		const beforeCancel = readFileSync(settingsPath, "utf8");
 		const cancelMock = createMockPi();
 		subagents(cancelMock.pi);
@@ -452,7 +458,10 @@ test("configured workflow differences reload from the active tool surface", asyn
 	process.env.PI_CODING_AGENT_DIR = directory;
 	try {
 		const settingsPath = path.join(directory, "pi-subagents.json");
-		writeFileSync(settingsPath, "{}\n");
+		writeFileSync(
+			settingsPath,
+			JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } }),
+		);
 		const reloadMock = createMockPi();
 		subagents(reloadMock.pi);
 		const command = reloadMock.commands.get("subagents");
@@ -530,6 +539,12 @@ test("config lifecycle aborts pending confirmations before stateful session hand
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = directory;
 	try {
+		const settingsPath = path.join(directory, "pi-subagents.json");
+		const originalSettings = JSON.stringify({
+			blocking: { enabled: true },
+			stateful: { enabled: true },
+		});
+		writeFileSync(settingsPath, originalSettings);
 		const mock = createMockPi();
 		subagents(mock.pi);
 		const command = mock.commands.get("subagents");
@@ -572,7 +587,7 @@ test("config lifecycle aborts pending confirmations before stateful session hand
 			await handlers[0]?.({}, context.ctx);
 			assert.equal(observedSignal?.aborted, true);
 			await commandRun;
-			assert.equal(existsSync(path.join(directory, "pi-subagents.json")), false);
+			assert.equal(readFileSync(settingsPath, "utf8"), originalSettings);
 		};
 
 		await exercise("session_start");
@@ -654,7 +669,10 @@ test("delegation workflow save failure does not reload or claim application", as
 	process.env.PI_CODING_AGENT_DIR = directory;
 	try {
 		const settingsPath = path.join(directory, "pi-subagents.json");
-		writeFileSync(settingsPath, "{}\n");
+		writeFileSync(
+			settingsPath,
+			JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } }),
+		);
 		const mock = createMockPi();
 		subagents(mock.pi);
 		const command = mock.commands.get("subagents");

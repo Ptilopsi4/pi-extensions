@@ -361,18 +361,20 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 			spawnGuidance,
 			/before.*one.*subagent_spawn.*identify.*non-overlapping.*main-agent work.*start immediately.*integration path/i,
 		);
-		assert.match(spawnGuidance, /prefer one subagent_spawn.*broad.*research/i);
+		assert.match(
+			spawnGuidance,
+			/next-turn.*default.*use subagent_spawn only.*current response.*does not depend/i,
+		);
 		assert.match(spawnGuidance, /ordinary review.*main agent.*review skill.*deterministic checks/i);
 		assert.match(
 			spawnGuidance,
 			/detached review.*consequential independent verification.*concrete parallel value/i,
 		);
 		assert.doesNotMatch(spawnGuidance, /broad asynchronous research or review/i);
-		assert.match(spawnGuidance, /next-turn.*default/i);
-		assert.match(spawnGuidance, /current response.*does not depend/i);
-		assert.match(spawnGuidance, /blocking subagent.*final answer.*depends/i);
+		assert.match(spawnGuidance, /complete final-answer-dependent work directly/i);
+		assert.doesNotMatch(spawnGuidance, /blocking subagent/i);
 		assert.doesNotMatch(spawnGuidance, /even when.*final answer.*depends/i);
-		assert.match(spawnGuidance, /do not.*blocking parallel.*same turn/i);
+		assert.doesNotMatch(spawnGuidance, /blocking parallel/i);
 		assert.match(
 			spawnGuidance,
 			/single subagent_spawn.*bounded.*clear ownership.*beside.*main-agent work/i,

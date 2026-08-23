@@ -172,7 +172,7 @@ export function buildDelegationWorkflowSettingsSnapshot(
 	if (!inspected.raw || !inspected.settings) {
 		return {
 			path: inspected.path,
-			value: "all",
+			value: "async-only",
 			source: "default",
 			...(inspected.error ? { error: inspected.error } : {}),
 		};
@@ -183,7 +183,7 @@ export function buildDelegationWorkflowSettingsSnapshot(
 	return {
 		path: inspected.path,
 		value: resolveDelegationWorkflow(
-			inspected.settings.blocking?.enabled !== false,
+			inspected.settings.blocking?.enabled === true,
 			inspected.settings.stateful?.enabled !== false,
 		),
 		source: explicit ? "user settings" : "default",

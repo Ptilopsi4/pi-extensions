@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, test } from "vitest";
+import { afterAll, afterEach, test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import subagents from "../src/subagents.js";
 import {
@@ -12,9 +12,25 @@ import {
 } from "./subagents-test-helpers.js";
 
 const restoreTestEnvironment = installSubagentsTestEnvironment();
+const defaultSettingsPath = path.join(process.env.PI_CODING_AGENT_DIR ?? "", "pi-subagents.json");
 afterAll(restoreTestEnvironment);
+afterEach(() => rmSync(defaultSettingsPath, { force: true }));
 
-test("subagents registers consistent blocking guidance and one management command", () => {
+test("subagents registers only async delegation and inspection by default", () => {
+	const mock = createMockPi();
+	subagents(mock.pi);
+
+	assert.deepEqual(
+		mock.tools.map((candidate) => candidate.name),
+		["subagent_spawn", "subagent_send", "subagent_manage", "subagent_mailbox", "subagent_inspect"],
+	);
+});
+
+test("subagents preserves explicit all-mode blocking guidance and one management command", () => {
+	writeFileSync(
+		defaultSettingsPath,
+		JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } }),
+	);
 	const mock = createMockPi();
 	subagents(mock.pi);
 
@@ -143,7 +159,10 @@ test("blocking parallel calls honor the configured worker limit", async () => {
 	try {
 		writeFileSync(
 			path.join(directory, "pi-subagents.json"),
-			JSON.stringify({ blocking: { maxParallelTasks: 1 }, stateful: { enabled: false } }),
+			JSON.stringify({
+				blocking: { enabled: true, maxParallelTasks: 1 },
+				stateful: { enabled: false },
+			}),
 		);
 		const mock = createMockPi();
 		subagents(mock.pi);
@@ -177,7 +196,10 @@ test("blocking parallel calls honor the configured worker limit", async () => {
 
 		writeFileSync(
 			path.join(directory, "pi-subagents.json"),
-			JSON.stringify({ blocking: { maxParallelTasks: 9 }, stateful: { enabled: false } }),
+			JSON.stringify({
+				blocking: { enabled: true, maxParallelTasks: 9 },
+				stateful: { enabled: false },
+			}),
 		);
 		const raisedMock = createMockPi();
 		subagents(raisedMock.pi);

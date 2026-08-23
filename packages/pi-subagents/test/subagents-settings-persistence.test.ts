@@ -133,6 +133,8 @@ test("session start re-reads settings before reporting warnings", async () => {
 		writeFileSync(
 			settingsPath,
 			JSON.stringify({
+				blocking: { enabled: true },
+				stateful: { enabled: true },
 				cwdPolicy: {
 					consultation: "current-workspace",
 					delegation: "current-workspace",
@@ -255,7 +257,7 @@ test("subagent settings read legacy files and save to the canonical package file
 		assert.deepEqual(readSubagentSettings(), { agents: { explorer: { tools: ["read"] } } });
 		assert.deepEqual(inspectDelegationWorkflowSettings(), {
 			path: canonicalPath,
-			value: "all",
+			value: "async-only",
 			source: "default",
 		});
 		assert.equal(inspectCompletionDeliverySettings().path, canonicalPath);
@@ -479,7 +481,7 @@ test("delegation workflow inspection and updates preserve unknown settings", () 
 	try {
 		assert.deepEqual(inspectDelegationWorkflowSettings(), {
 			path: path.join(directory, "pi-subagents.json"),
-			value: "all",
+			value: "async-only",
 			source: "default",
 		});
 		const settingsPath = path.join(directory, "pi-subagents.json");
@@ -508,7 +510,7 @@ test("delegation workflow inspection and updates preserve unknown settings", () 
 		assert.equal(inspectDelegationWorkflowSettings().value, "all");
 		writeFileSync(settingsPath, "invalid");
 		const malformed = inspectDelegationWorkflowSettings();
-		assert.equal(malformed.value, "all");
+		assert.equal(malformed.value, "async-only");
 		assert.match(malformed.error ?? "", /Unexpected token|JSON/i);
 		assert.throws(() => updateDelegationWorkflowSetting("async-only"), /Cannot update malformed/);
 		assert.equal(readFileSync(settingsPath, "utf8"), "invalid");

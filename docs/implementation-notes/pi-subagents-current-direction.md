@@ -51,7 +51,7 @@ Use custom verifier agents only when independent child verification is explicitl
 
 ## Tool-surface direction
 
-The current recommendation is the user-selected `async-only` workflow, while `all` remains the compatibility default.
+The default and current recommendation are the `async-only` workflow, while `all` remains an explicit compatibility option.
 
 `async-only` exposes `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect`.
 
@@ -67,7 +67,7 @@ Blocking `subagent` remains available for intentional synchronous output, but on
 
 The four async lifecycle tools remain split because start, follow-up, lifecycle, and queue operations have distinct contracts.
 
-Changing the default, removing compatibility tools, or consolidating lifecycle tools needs a separate approved migration decision.
+Removing compatibility tools or consolidating lifecycle tools needs a separate approved migration decision.
 
 ## Active follow-ups
 

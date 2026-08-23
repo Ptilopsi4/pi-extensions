@@ -34,6 +34,10 @@ vi.mock("../src/workflow-tree-identity.js", async (importOriginal) => {
 
 const restoreTestEnvironment = installSubagentsTestEnvironment();
 writeReviewerAgent(process.env.PI_CODING_AGENT_DIR ?? "");
+writeFileSync(
+	path.join(process.env.PI_CODING_AGENT_DIR ?? "", "pi-subagents.json"),
+	JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } }),
+);
 afterAll(restoreTestEnvironment);
 
 function writeReviewerAgent(directory: string): void {

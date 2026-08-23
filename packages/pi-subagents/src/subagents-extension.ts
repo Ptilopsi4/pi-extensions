@@ -71,7 +71,7 @@ export default function (pi: ExtensionAPI, dependencies: SubagentsDependencies =
 	const settings = readSubagentSettings();
 	let currentSettings: SubagentSettings | undefined = settings;
 	let currentCatalog = "";
-	const blockingEnabled = settings?.blocking?.enabled !== false;
+	const blockingEnabled = settings?.blocking?.enabled === true;
 	const refreshBlockingCatalog = blockingEnabled
 		? registerBlockingSubagent(pi, () => currentSettings, loadBlockingExecution)
 		: () => undefined;

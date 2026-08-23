@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
@@ -59,6 +59,10 @@ function registeredTools(): Map<string, RegisteredTool> {
 	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagent-tool-rendering-"));
 	process.env.PI_CODING_AGENT_DIR = directory;
 	try {
+		writeFileSync(
+			path.join(directory, "pi-subagents.json"),
+			JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } }),
+		);
 		const mock = createMockPi();
 		subagents(mock.pi);
 		return new Map(

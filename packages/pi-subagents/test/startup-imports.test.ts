@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { afterAll, test } from "vitest";
+import { rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { afterAll, afterEach, test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import { createStatefulTransport } from "../src/create-stateful-transport.js";
 import subagents from "../src/index.js";
@@ -8,7 +10,16 @@ import type { SubagentTransport } from "../src/transport.js";
 import { installSubagentsTestEnvironment } from "./subagents-test-helpers.js";
 
 const restoreTestEnvironment = installSubagentsTestEnvironment();
+const defaultSettingsPath = path.join(process.env.PI_CODING_AGENT_DIR ?? "", "pi-subagents.json");
 afterAll(restoreTestEnvironment);
+afterEach(() => rmSync(defaultSettingsPath, { force: true }));
+
+function enableBlockingCompatibility(): void {
+	writeFileSync(
+		defaultSettingsPath,
+		JSON.stringify({ blocking: { enabled: true }, stateful: { enabled: true } }),
+	);
+}
 
 async function emitAll(
 	mock: ReturnType<typeof createMockPi>,
@@ -50,7 +61,7 @@ class FakeTransport implements SubagentTransport {
 	}
 }
 
-test("Subagents idle startup registers every surface without loading deferred implementations", async () => {
+test("Subagents idle startup registers the async surface without loading deferred implementations", async () => {
 	const mock = createMockPi();
 	const loads = {
 		blocking: 0,
@@ -99,15 +110,7 @@ test("Subagents idle startup registers every surface without loading deferred im
 	});
 	assert.deepEqual(
 		[...new Set(mock.tools.map((tool) => tool.name))],
-		[
-			"subagent",
-			"subagent_spawn",
-			"subagent_send",
-			"subagent_manage",
-			"subagent_mailbox",
-			"subagent_inspect",
-			"subagent_consult",
-		],
+		["subagent_spawn", "subagent_send", "subagent_manage", "subagent_mailbox", "subagent_inspect"],
 	);
 	assert.ok(mock.commands.has("subagents"));
 	await emitAll(mock, "session_shutdown", { reason: "quit" }, context.ctx);
@@ -183,6 +186,7 @@ test("Subagents direct status ignores stale lazy status loads", async () => {
 });
 
 test("blocking execution caches a successful module and retries a rejected load", async () => {
+	enableBlockingCompatibility();
 	const mock = createMockPi();
 	let loads = 0;
 	let executions = 0;
@@ -242,6 +246,7 @@ test("blocking execution caches a successful module and retries a rejected load"
 });
 
 test("blocking execution cancellation waits for a pending import and starts no stale work", async () => {
+	enableBlockingCompatibility();
 	const mock = createMockPi();
 	let startLoading!: () => void;
 	const loadingStarted = new Promise<void>((resolve) => {
