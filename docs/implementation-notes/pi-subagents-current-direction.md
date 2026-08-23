@@ -79,9 +79,8 @@ New implementation work should respond to demonstrated user needs rather than ex
 
 - The [completed main-agent-led guidance plan](../plans/archived/2026-08-17_pi-subagents-main-agent-led-delegation-guidance-plan.md) records the accepted delegation rubric and verification evidence.
 - The [completed async-first tool-surface plan](../plans/archived/2026-08-17_pi-subagents-async-first-tool-surface-plan.md) records the compatibility and recommendation decisions.
-- [`pi-subagents-capability-matrix.md`](pi-subagents-capability-matrix.md) records maintained capability boundaries.
-- [`pi-subagents-stateful-runtime.md`](pi-subagents-stateful-runtime.md) records detached lifecycle and transport behavior.
-- [`pi-subagents-rpc-v1.md`](pi-subagents-rpc-v1.md) records the RPC transport contract.
+- [`pi-subagents-capability-matrix.md`](pi-subagents-capability-matrix.md) records maintained capability, detached lifecycle, transport, trust, and runtime-ownership boundaries.
+- [`pi-subagents-rpc-v1.md`](pi-subagents-rpc-v1.md) records the persistent RPC transport contract.
 
 ## Historical evidence
 

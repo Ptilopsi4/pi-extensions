@@ -13,7 +13,11 @@ The maintained implementation and tests are authoritative:
 - `packages/pi-goal/src/accounting.ts`
 - `packages/pi-goal/src/safety.ts`
 - `packages/pi-goal/src/prompts.ts`
+- `packages/pi-goal/src/goal-contract.ts`
+- `packages/pi-goal/src/workflow-mutex.ts`
 - `packages/pi-goal/test/goal.test.ts`
+- `packages/pi-goal/test/goal-cache-contract.test.ts`
+- `test/plan-goal-coexistence.test.ts`
 - `packages/pi-goal/test/goal-runtime-smoke.mjs`
 
 The package README owns the public command, settings, status, and interruption contract. This note
@@ -55,6 +59,11 @@ Pi extensions cannot atomically reserve an idle turn. Another extension can stil
 intent recovery bound this race, but do not provide the runtime-owned idle reservation available to
 Pi core.
 
+Goal also participates independently in the anonymous `workflow:mutex:v1` protocol.
+An active or waiting Goal retains cooperative ownership across normal work, continuation delivery, compaction, and provider recovery.
+Admission rejects another cooperating workflow before Goal state, tools, persistence, prompts, status, or timers change.
+The mutex does not reserve a Pi turn and cannot coordinate trusted extensions that do not participate in the protocol.
+
 ## Retry, compaction, and stopped states
 
 Retryable provider failures and context-overflow compaction remain Pi-owned recovery:
@@ -81,9 +90,10 @@ not enqueue another Goal turn. Non-retrying manual compaction creates at most on
 uses the common idle dispatcher. Old queue metadata in `goal-state` or legacy `goals-state` entries
 is treated as inert legacy data and never dispatches automatic work.
 
-Goal prompts and compacted context use the same objective trust boundary, stale goal id, full-scope
-rule, and requirement-by-requirement completion audit. Prompt wording is a guardrail; current files,
-commands, tests, runtime behavior, and external state remain the completion evidence.
+Goal prompts and compacted context use the same objective trust boundary, stale goal id, full-scope rule, and requirement-by-requirement completion audit.
+The runtime constructs one versioned hidden `goal-contract` message at a fixed `context` hook boundary after leading summaries.
+It restores Goal instructions when persisted active state has no retained handoff and keeps mutable accounting out of the leading provider prompt prefix.
+Prompt wording is a guardrail; current files, commands, tests, runtime behavior, and external state remain the completion evidence.
 
 ## Usage, elapsed time, and circuit breakers
 
@@ -99,8 +109,7 @@ while status is `active`, excluding stopped, shutdown, and offline periods.
 
 Automatic-work safety is separate from the token budget:
 
-- `continuationLimits.automaticTurns` is `null` by default. When configured, `turn_end` counts normal
-  responses from automatic continuations, including tool loops and matching recovery work.
+- `continuationLimits.automaticTurns` defaults to `25`; explicit `null` selects Unlimited, and `turn_end` counts normal responses from automatic continuations, including tool loops and matching recovery work.
 - `continuationLimits.noProgressTurns` defaults to `3`. Repeated empty or normalized-identical
   tool-free automatic runs pause the goal; attempted tool calls reset that heuristic.
 - The no-progress fingerprint is fixed-size and stores no raw assistant text.
@@ -127,6 +136,8 @@ settled, retry, compaction, accounting, and stale-delivery guarantees.
 
 - Settled exactly-once dispatch, pending-message priority, replacement, pause, clear, and lost-start
   races: `packages/pi-goal/test/goal.test.ts` settled-continuation cases.
+- Workflow Mutex acquisition, rejection before mutation, restore fallbacks, load-order independence, release, and reacquisition: `test/plan-goal-coexistence.test.ts` and `test/workflow-mutex-runtime.test.ts`.
+- Stable leading prompt prefix, canonical context reinjection, and compaction-sensitive Goal contract: `packages/pi-goal/test/goal-cache-contract.test.ts`.
 - Retry, overflow, compaction, stopped-state, and exhausted-recovery classification: the retry and
   compaction lifecycle cases in `goal.test.ts`.
 - Usage totals, active time, tool-boundary budgets, wrap-up ownership, and safety epochs: accounting,
