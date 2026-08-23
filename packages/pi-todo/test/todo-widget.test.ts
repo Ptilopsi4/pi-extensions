@@ -22,6 +22,10 @@ type Handler = (event: never, ctx: ExtensionContext) => unknown;
 type WidgetFactory = (_tui: never, theme: Theme) => Component;
 
 interface RegisteredTool {
+	label: string;
+	description: string;
+	promptSnippet: string;
+	promptGuidelines: string[];
 	execute(
 		toolCallId: string,
 		params: { items: TodoItem[] },
@@ -127,6 +131,19 @@ async function setTodos(
 	return harness.tool.execute("todo-call", { items }, undefined, undefined, ctx);
 }
 
+test("registers concise guidance for using and maintaining the todo list", () => {
+	const { tool } = createHarness();
+
+	assert.equal(tool.label, "Todo List");
+	assert.match(tool.description, /complete list on every call/u);
+	assert.match(tool.promptSnippet, /multi-step work/u);
+	assert.deepEqual(tool.promptGuidelines, [
+		"Use todo_widget when work has multiple meaningful steps; skip it for simple, single-step tasks.",
+		"Keep tasks concise and action-oriented. Mark one task in_progress before starting it, complete tasks promptly, and revise the list when the plan changes.",
+		"Send the complete current list on every call, keep at most one task in_progress, and send an empty list when no tracked work remains.",
+	]);
+});
+
 test("renders completed, current, and pending tasks with themed semantic symbols", () => {
 	const { calls, theme } = identityTheme();
 	const lines = renderTodoWidget(
@@ -139,7 +156,7 @@ test("renders completed, current, and pending tasks with themed semantic symbols
 		80,
 	);
 
-	assert.deepEqual(lines, ["Tasks 1/3", "✓ done", "▶ working", "○ later"]);
+	assert.deepEqual(lines, ["Todo · 1/3 complete", "✓ done", "▶ working", "○ later"]);
 	assert.ok(calls.some(([kind, role]) => kind === "fg" && role === "success"));
 	assert.ok(calls.some(([kind, role]) => kind === "fg" && role === "accent"));
 	assert.ok(calls.some(([kind, role]) => kind === "fg" && role === "dim"));
@@ -182,7 +199,7 @@ test("tool replaces the complete list, updates the widget, clears it, and reject
 		{ text: "task 2", status: "in_progress" },
 		{ text: "task 3", status: "pending" },
 	]);
-	assert.equal(result.content[0]?.text, "Todo widget updated: 1/3 completed, 1 in progress.");
+	assert.equal(result.content[0]?.text, "Todo list updated: 1 of 3 complete; 1 in progress.");
 	assert.deepEqual(result.details, {
 		version: TODO_DETAILS_VERSION,
 		items: [
@@ -194,11 +211,11 @@ test("tool replaces the complete list, updates the widget, clears it, and reject
 
 	const widget = current.widgets.at(-1);
 	assert.equal(widget?.key, WIDGET_KEY);
-	assert.equal(widget?.options?.placement, "aboveEditor");
+	assert.deepEqual(widget?.options, { placement: "aboveEditor" });
 	assert.equal(typeof widget?.content, "function");
 	const { theme } = identityTheme();
 	assert.deepEqual(widget?.content?.(undefined as never, theme).render(80), [
-		"Tasks 1/3",
+		"Todo · 1/3 complete",
 		"✓ task 1",
 		"▶ task 2",
 		"○ task 3",
@@ -217,7 +234,7 @@ test("tool replaces the complete list, updates the widget, clears it, and reject
 	);
 
 	const cleared = await setTodos(harness, current.ctx, []);
-	assert.equal(cleared.content[0]?.text, "Todo widget cleared.");
+	assert.equal(cleared.content[0]?.text, "Todo list cleared.");
 	assert.deepEqual(current.widgets.at(-1), {
 		key: WIDGET_KEY,
 		content: undefined,
@@ -240,7 +257,7 @@ test("restores branch-local state on startup and tree navigation", async () => {
 			.at(-1)
 			?.content?.(undefined as never, theme)
 			.render(80),
-		["Tasks 0/1", "▶ restored"],
+		["Todo · 0/1 complete", "▶ restored"],
 	);
 
 	current.branch.push(
@@ -255,7 +272,7 @@ test("restores branch-local state on startup and tree navigation", async () => {
 			.at(-1)
 			?.content?.(undefined as never, theme)
 			.render(80),
-		["Tasks 1/1", "✓ finished branch"],
+		["Todo · 1/1 complete", "✓ finished branch"],
 	);
 });
 
