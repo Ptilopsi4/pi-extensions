@@ -1,19 +1,19 @@
-# ✅ pi-todo — Keep Coding Tasks Visible
+# ✅ pi-todo — Keep Multi-Step Work Visible
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-todo)](https://www.npmjs.com/package/@narumitw/pi-todo)
 [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-Give coding agents a structured todo tool and show the current task list above Pi's editor.
+Give coding agents a focused todo list for tracking multi-step work above Pi's editor.
 
-The list follows the active session branch and disappears cleanly when it is empty or the session ends.
+The list follows the active session branch and disappears cleanly when no tracked work remains or the session ends.
 
 ## ✨ Features
 
-- Registers one `todo_widget` tool with pending, in-progress, and completed task states.
-- Shows a compact themed task list above the editor in TUI mode.
+- Registers one `todo_widget` tool with clear guidance for meaningful multi-step work.
+- Keeps task text concise and action-oriented, with at most one task in progress.
+- Shows a compact themed task list and completion count above the editor in TUI mode.
 - Restores the latest valid list when Pi starts a session or navigates between branches.
-- Keeps at most one task in progress and validates non-empty task text.
 - Sanitizes terminal and bidirectional controls before rendering model-provided text.
 - Works without settings, files, network access, or external services.
 
@@ -41,17 +41,17 @@ Pi extensions run with the user's permissions, so install only trusted code.
 
 ## 🚀 Quick start
 
-Ask Pi to perform a multi-step coding task.
+Ask Pi to perform work with multiple meaningful steps.
 
-The agent can create a list through `todo_widget`, keep the current step marked `in_progress`, and update the complete list as work advances.
+The agent can create a concise list through `todo_widget`, mark one task `in_progress`, complete tasks promptly, and revise the list when the plan changes.
 
-Send an empty list through the tool to clear the widget.
+The agent sends the complete current list with every update and sends an empty list when no tracked work remains.
 
 ## 🛠️ Tools
 
 ### `todo_widget`
 
-Replace the complete authoritative todo list for the active session.
+Replace the complete current todo list for the active session.
 
 Each item has this shape:
 
@@ -68,7 +68,9 @@ A list may contain up to 50 items, each item may contain up to 300 characters, a
 
 The tool result stores a versioned snapshot in the session branch so branch navigation can reconstruct the latest valid list.
 
-In TUI mode, updates appear above the editor immediately.
+In TUI mode, updates appear immediately in a widget above the editor.
+
+The widget header shows completed and total task counts, followed by themed completed, in-progress, and pending rows.
 
 In RPC, print, and JSON modes, the tool still returns structured details but does not create a visual widget.
 
@@ -82,7 +84,7 @@ Terminal escape sequences, control characters, and bidirectional display control
 
 ## 🚧 Limitations
 
-- The visual widget is available only in TUI mode.
+- The visual widget uses a fixed position above the editor and is available only in TUI mode.
 - The extension provides a model tool rather than a slash command or manual task editor.
 - Branch reconstruction uses only valid versioned `todo_widget` tool results on the active branch.
 - Long task text is shown on one bounded terminal line and may be truncated to the available width.

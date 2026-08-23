@@ -14,6 +14,7 @@ export const TODO_DETAILS_VERSION = 1;
 export const MAX_TODO_ITEMS = 50;
 export const MAX_TODO_TEXT_LENGTH = 300;
 
+const WIDGET_OPTIONS = { placement: "aboveEditor" } as const;
 const TODO_STATUSES = ["pending", "in_progress", "completed"] as const;
 const BIDI_CONTROLS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu;
 
@@ -35,15 +36,15 @@ const TodoParameters = Type.Object({
 			text: Type.String({
 				minLength: 1,
 				maxLength: MAX_TODO_TEXT_LENGTH,
-				description: "Task text",
+				description: "A concise, action-oriented task",
 			}),
 			status: StringEnum(TODO_STATUSES, {
-				description: "Task status",
+				description: "The task's current status",
 			}),
 		}),
 		{
 			maxItems: MAX_TODO_ITEMS,
-			description: "The complete authoritative todo list; an empty list clears the widget",
+			description: "The complete current todo list; send an empty list to clear it",
 		},
 	),
 });
@@ -68,24 +69,26 @@ export default function todoWidgetExtension(pi: ExtensionAPI): void {
 				render: (width) => renderTodoWidget(snapshot, theme, width),
 				invalidate: () => {},
 			}),
-			{ placement: "aboveEditor" },
+			WIDGET_OPTIONS,
 		);
 	};
 
 	pi.registerTool({
 		name: TOOL_NAME,
-		label: "Todo Widget",
+		label: "Todo List",
 		description:
-			"Replace the session todo list shown above the editor. Always send the complete list, use one in_progress item at most, and send an empty list to clear it.",
-		promptSnippet: "Create and update the session todo list shown above the editor",
+			"Replace the current session todo list. Send the complete list on every call, keep at most one item in_progress, and send an empty list to clear it.",
+		promptSnippet: "Track progress on multi-step work with a session todo list",
 		promptGuidelines: [
-			"Use todo_widget for multi-step coding work: send the complete list, keep at most one item in_progress, and update statuses when work advances.",
+			"Use todo_widget when work has multiple meaningful steps; skip it for simple, single-step tasks.",
+			"Keep tasks concise and action-oriented. Mark one task in_progress before starting it, complete tasks promptly, and revise the list when the plan changes.",
+			"Send the complete current list on every call, keep at most one task in_progress, and send an empty list when no tracked work remains.",
 		],
 		parameters: TodoParameters,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			signal?.throwIfAborted();
 			if (!ownsSession(ctx)) {
-				throw new Error("Cannot update the todo widget because the session changed.");
+				throw new Error("Cannot update the todo list because the session changed.");
 			}
 			validateItems(params.items);
 
@@ -98,7 +101,7 @@ export default function todoWidgetExtension(pi: ExtensionAPI): void {
 			};
 			if (items.length === 0) {
 				return {
-					content: [{ type: "text", text: "Todo widget cleared." }],
+					content: [{ type: "text", text: "Todo list cleared." }],
 					details,
 				};
 			}
@@ -109,7 +112,7 @@ export default function todoWidgetExtension(pi: ExtensionAPI): void {
 				content: [
 					{
 						type: "text",
-						text: `Todo widget updated: ${completed}/${items.length} completed${inProgress ? ", 1 in progress" : ""}.`,
+						text: `Todo list updated: ${completed} of ${items.length} complete${inProgress ? "; 1 in progress" : ""}.`,
 					},
 				],
 				details,
@@ -143,7 +146,7 @@ export function renderTodoWidget(
 	width: number,
 ): string[] {
 	const completed = items.filter((item) => item.status === "completed").length;
-	const lines = [theme.fg("muted", `Tasks ${completed}/${items.length}`)];
+	const lines = [theme.fg("muted", `Todo · ${completed}/${items.length} complete`)];
 
 	for (const item of items) {
 		const text = sanitizeTodoText(item.text);
