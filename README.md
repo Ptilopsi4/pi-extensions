@@ -61,7 +61,7 @@ pi -e npm:@narumitw/pi-goal \
 | [`pi-worktree`](./packages/pi-worktree) | Create, switch, remove, and prune Git worktrees while carrying the Pi session into another workspace. | `pi install npm:@narumitw/pi-worktree` |
 
 Current Plan and Goal releases can coexist on the characterized Pi runtime through their anonymous cooperative workflow mutex.
-The deprecated combined `pi-workflow` package has no atomic Plan-to-Goal replacement; follow its [migration guide](./docs/pi-workflow-migration.md).
+The deprecated combined `pi-workflow` package has no atomic Plan-to-Goal replacement; follow its [archived migration instructions](./deprecated/pi-workflow/README.md#-migration-from-pi-workflow).
 
 ### Accounts and data
 
@@ -239,7 +239,7 @@ The following packages remain available as source references but are excluded fr
 - `pi-retry` — replaced by Pi's built-in provider retry and timeout behavior
 - `pi-google-genai` — replaced by the `grounding-with-google-genai` agent skill
 - `pi-image-drop` — deprecated without a replacement
-- [`pi-workflow`](./deprecated/pi-workflow) — replaced by focused Plan and Goal products; atomic Plan-to-Goal handoff has [no replacement](./docs/pi-workflow-migration.md)
+- [`pi-workflow`](./deprecated/pi-workflow) — replaced by focused Plan and Goal products; atomic Plan-to-Goal handoff has [no replacement](./deprecated/pi-workflow/README.md#-migration-from-pi-workflow)
 - `pi-jupyter` — deprecated without a replacement
 - `pi-webui` — deprecated without a replacement
 - `pi-auto-thinking`
