@@ -97,28 +97,7 @@ benchmark-codex-compact *args:
 dev:
     npm install
     npm run build
-    PI_TIMING=1 PI_CODING_AGENT_DIR=./.pi/agent pi \
-        -e ./packages/pi-accounts \
-        -e ./packages/pi-analytics \
-        -e ./packages/pi-btw \
-        -e ./packages/pi-caffeinate \
-        -e ./packages/pi-chat \
-        -e ./packages/pi-chrome-devtools \
-        -e ./packages/pi-codex-compact \
-        -e ./packages/pi-file-context \
-        -e ./packages/pi-firecrawl \
-        -e ./packages/pi-fleet \
-        -e ./packages/pi-github-pr \
-        -e ./packages/pi-langfuse \
-        -e ./packages/pi-lsp \
-        -e ./packages/pi-recall \
-        -e ./packages/pi-stamp \
-        -e ./packages/pi-starship \
-        -e ./packages/pi-subagents \
-        -e ./packages/pi-sync \
-        -e ./packages/pi-tool \
-        -e ./packages/pi-usage \
-        -e ./packages/pi-worktree
+    PI_TIMING=1 PI_CODING_AGENT_DIR=.pi/agent pi
 
 # Install a package through pi, falling back to the local workspace if unpublished
 # Usage: just install subagents
