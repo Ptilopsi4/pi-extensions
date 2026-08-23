@@ -6,9 +6,8 @@ in separate, package-focused changes.
 
 ## Summary
 
-The package/import boundary is healthy: `node scripts/check-extension-boundaries.mjs` passes for one
-library and 22 active extensions. No active extension directly imports or declares a dependency on
-another extension package.
+The package/import boundary is healthy: `npm run check:boundaries` passes for every active package.
+No active extension directly imports or declares a dependency on another extension package.
 
 Three extensions still contain extension-specific runtime knowledge:
 
