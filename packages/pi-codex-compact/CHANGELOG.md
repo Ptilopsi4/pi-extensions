@@ -1,5 +1,11 @@
 # @narumitw/pi-codex-compact
 
+## 0.51.0
+
+### Minor Changes
+
+- 9645603: Detect remote compaction support from the active model's `openai-codex-responses` API capability instead of its provider name, while preserving exact model-ID checkpoint replay across persisted summary wording versions.
+
 ## 0.50.2
 
 ### Patch Changes
