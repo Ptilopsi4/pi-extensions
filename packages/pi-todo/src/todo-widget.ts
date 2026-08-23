@@ -9,7 +9,7 @@ import { stripTerminalSequences, truncateToWidth } from "@earendil-works/pi-tui"
 import { Type } from "typebox";
 
 export const TOOL_NAME = "todo_widget";
-export const WIDGET_KEY = "todo-widget";
+export const WIDGET_KEY = "todo";
 export const TODO_DETAILS_VERSION = 1;
 export const MAX_TODO_ITEMS = 50;
 export const MAX_TODO_TEXT_LENGTH = 300;

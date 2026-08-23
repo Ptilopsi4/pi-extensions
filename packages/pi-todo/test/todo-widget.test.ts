@@ -16,7 +16,7 @@ import todoWidgetExtension, {
 	type TodoDetails,
 	type TodoItem,
 	WIDGET_KEY,
-} from "./index.js";
+} from "../src/todo-widget.js";
 
 type Handler = (event: never, ctx: ExtensionContext) => unknown;
 type WidgetFactory = (_tui: never, theme: Theme) => Component;
