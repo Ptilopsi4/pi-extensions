@@ -373,8 +373,12 @@ for (const loadOrder of ["plan-first", "goal-first"] as const) {
 			assert.equal(fixture.context.statuses.get("plan-mode"), "plan active");
 			assert.equal(goalStatus(fixture.mock.entries), "paused");
 			assert.deepEqual(fixture.mock.rawPi.getActiveTools(), [
-				"bash",
 				"read",
+				"bash",
+				"write",
+				"goal_complete",
+				"goal_blocked",
+				"goal_wait",
 				"plan_mode_question",
 				"plan_mode_complete",
 			]);
@@ -389,6 +393,8 @@ for (const loadOrder of ["plan-first", "goal-first"] as const) {
 				"goal_complete",
 				"goal_blocked",
 				"goal_wait",
+				"plan_mode_question",
+				"plan_mode_complete",
 			]);
 		}
 	});
