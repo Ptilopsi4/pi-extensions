@@ -1,5 +1,11 @@
 # @narumitw/pi-codex-compact
 
+## 0.51.1
+
+### Patch Changes
+
+- dadebf1: Clarify that Remote V2 eligibility comes from the active model's `openai-codex-responses` API declaration.
+
 ## 0.51.0
 
 ### Minor Changes

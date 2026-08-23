@@ -1,5 +1,11 @@
 # @narumitw/pi-file-context
 
+## 0.54.0
+
+### Minor Changes
+
+- 64480f8: Promote the extension to stable, include it in root Git installations, and remove its experimental startup warning.
+
 ## 0.53.3
 
 ### Patch Changes
