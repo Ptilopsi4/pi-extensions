@@ -52,6 +52,7 @@ This registers `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_m
 
 Default `next-turn` delivery is for work the current response does not require.
 When the final answer depends on background work, use `/subagents settings` → **Completion and privacy** to select **Continue automatically when work finishes**.
+That mode steers completions into active parent work before its next model call, or wakes an idle parent once when no user or extension input is pending.
 
 Choose **Background plus compatibility methods (async + sync)** only when an existing blocking `subagent` caller, supported `subagent_await` join, or synchronous read-only `subagent_consult` is still required.
 The blocking `subagent` tool is deprecated for new work.
@@ -165,7 +166,7 @@ Choose the API by lifecycle:
 | One bounded implementation slice can run beside named main-agent work | Use async `subagent_spawn` with `worker`, clear ownership, and a supported delivery and integration path |
 | Two or more independent implementation slices | Use workers with disjoint write ownership while the main agent coordinates and integrates |
 | Broad read-only evidence that can run beside main-agent work | Use async `subagent_spawn` with `explorer` |
-| Final-answer-dependent detached work | Enable `completionDelivery: "auto-resume"` so completion requests a synthesis turn |
+| Final-answer-dependent detached work | Enable `completionDelivery: "auto-resume"` so active work receives completion by steering and an idle parent can start a synthesis turn |
 | Bounded synchronous read-only evidence whose independent perspective justifies waiting | Use `subagent_consult` when blocking delegation is enabled |
 | Existing synchronous workflow, panel, chain, or fan-in caller without a detached replacement | Keep deprecated `subagent` as a compatibility route |
 | Reusable history, follow-ups, or mailboxes | Use `subagent_spawn` and lifecycle tools when enabled |
@@ -249,8 +250,10 @@ Delegation guidance:
 - If no useful main-agent work exists, perform the single-lane task directly instead of spawning one ordinary worker.
 - A single worker without concurrent main-agent work remains available when the user explicitly requests a specialist model, tool profile, or isolation boundary.
 - With default `completionDelivery: "next-turn"`, use detached work only when the current response does not depend on its result because an idle root is not awakened.
-- With `completionDelivery: "auto-resume"`, detached work may affect the final answer because completion requests a later synthesis turn.
+- With `completionDelivery: "auto-resume"`, detached work may affect the final answer because completion steers into active work or requests a later synthesis turn from idle.
+- Track every final-answer-dependent spawn by its returned ID or path, treat interim output as progress, and synthesize only after every corresponding completion message is visible.
 - After `subagent_spawn` returns, immediately continue the identified local task instead of merely announcing the spawn, waiting, polling, duplicating the child task, or ending while useful local work remains.
+- Do not duplicate a running child's assigned work; use a bounded parent fallback only after completion reports failure or insufficient evidence.
 - Use multiple workers only for truly independent slices with disjoint write ownership and safe workspace concurrency, and keep integration in the main agent.
 - Keep ordinary planning in the main agent or express a genuine dependency graph through an explicit caller-authored `workflow` payload.
 - Keep ordinary review in the main agent with a review skill and deterministic checks; reserve custom verifier agents or panels for consequential independent verification.
@@ -640,8 +643,10 @@ In TUI mode, completion messages show a compact task and payload summary while c
 Detached work follows a non-polling policy.
 Before one ordinary `subagent_spawn`, identify useful non-overlapping main-agent work that starts immediately and a supported completion integration path.
 With default `next-turn` delivery, the current response must not depend on the result because an idle root is not awakened.
-With opt-in `auto-resume`, detached work may affect the final answer because completion requests a synthesis turn after the main agent settles.
+With opt-in `auto-resume`, detached work may affect the final answer because completion steers into an active parent before its next model call or requests a synthesis turn from idle.
+Track every final-answer-dependent spawn by its returned ID or path, treat interim output as progress, and synthesize only after every corresponding completion message is visible.
 After spawning, immediately continue the identified local task instead of merely announcing the spawn, waiting, polling `subagent_inspect` or `subagent_mailbox`, duplicating the child task, or ending while useful local work remains.
+Do not duplicate a running child's assigned work; use a bounded parent fallback only after completion reports failure or insufficient evidence.
 Add another detached agent only for truly independent work with safe workspace concurrency and disjoint write ownership.
 When both blocking and stateful delegation are enabled, `subagent_await` may intentionally join one retained turn after useful overlapping parent work is complete.
 Its `timeoutMs` defaults to 30 seconds and limits only the wait; timeout or caller cancellation does not interrupt or close the child.
@@ -655,9 +660,10 @@ Simple and immediate critical-path work should stay in the main agent.
 
 - `"next-turn"` (default) sends `deliverAs: "steer"` without a turn trigger.
   Pi queues it into an active root's context, while an idle root records it without waking.
-- `"auto-resume"` holds completion while the root is active, then requests one synthesis turn after the parent settles when no user or extension messages are already pending.
-  Simultaneous completions share that turn, active work is not interrupted, and pending input suppresses the automatic wake.
+- `"auto-resume"` sends completion to an active root with `deliverAs: "steer"` and no turn trigger, so Pi places it after the current assistant turn and before the next model call.
+  An idle root with no pending user or extension input receives at most one in-flight synthesis wake; pending input suppresses that wake, and simultaneous idle completions share one turn.
 
+Completion delivery makes results visible in model context but does not enforce model obedience, rewrite premature assistant output, or provide a hard final-answer barrier.
 The bounded persisted completion outbox provides ordered at-least-once delivery across process restart without replaying the child turn.
 A top-level completion targets `/root`; a nested completion enters the direct retained parent's mailbox and is not duplicated into the root transcript.
 If the direct parent cannot own delivery, routing walks toward the nearest live retained ancestor and uses `/root` only as the final fallback.

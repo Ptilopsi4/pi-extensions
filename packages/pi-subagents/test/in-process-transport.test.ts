@@ -861,6 +861,11 @@ test("registered detached spawn auto-resumes while exposing the explicit await t
 		});
 		assert.match(spawned.content[0]?.text ?? "", /continue the identified.*local work/i);
 		assert.match(spawned.content[0]?.text ?? "", /auto-resume.*synthesis/i);
+		assert.match(
+			spawned.content[0]?.text ?? "",
+			/progress.*final synthesis.*every final-answer-required completion message.*visible/i,
+		);
+		assert.match(spawned.content[0]?.text ?? "", /do not redo a running child/i);
 		assert.doesNotMatch(spawned.content[0]?.text ?? "", /end the response/i);
 		assert.match(spawned.content[0]?.text ?? "", /do not merely announce.*end/i);
 		assert.match(
@@ -885,12 +890,12 @@ test("registered detached spawn auto-resumes while exposing the explicit await t
 			activeAgents: 0,
 			retainedAgents: 1,
 		});
-		await new Promise((resolve) => setTimeout(resolve, 15));
-		assert.equal(mock.sentMessages.length, 0, "active root completion waits for settlement");
-		rootIdle = true;
-		mock.events.get("agent_settled")?.[0]?.({}, context.ctx);
 		await waitForCompletionCount(1);
-		mock.events.get("agent_start")?.[0]?.({}, context.ctx);
+		assert.deepEqual(
+			(mock.sentMessages[0] as { options: Record<string, unknown> }).options,
+			{ deliverAs: "steer" },
+			"an active root receives completion without a wake",
+		);
 		const firstCompletion = mock.sentMessages[0] as {
 			message: {
 				customType: string;
@@ -924,6 +929,10 @@ test("registered detached spawn auto-resumes while exposing the explicit await t
 			controller.listAgents().find((agent) => agent.id === agentId)?.pendingCompletions?.length,
 			0,
 		);
+		rootIdle = true;
+		mock.events.get("agent_settled")?.[0]?.({}, context.ctx);
+		assert.equal(mock.sentMessages.length, 1, "acknowledgement prevents a duplicate idle wake");
+		mock.events.get("agent_start")?.[0]?.({}, context.ctx);
 
 		const queued = await execute("subagent_mailbox", {
 			action: "send",
@@ -983,14 +992,17 @@ test("registered detached spawn auto-resumes while exposing the explicit await t
 		assert.equal(created[0].parentRuntime.model, selectedModel);
 		assert.equal(created[0].parentRuntime.thinkingLevel, "max");
 		assert.equal(child.disposals, 1);
-		for (const entry of mock.sentMessages) {
+		for (const [index, entry] of mock.sentMessages.entries()) {
 			const delivered = entry as {
 				message: { customType: string; content: string };
-				options: { deliverAs: string; triggerTurn: boolean };
+				options: { deliverAs: string; triggerTurn?: boolean };
 			};
 			assert.equal(delivered.message.customType, "pi-subagent-completion");
 			assert.match(delivered.message.content, /Message Type: SUBAGENT_COMPLETION/);
-			assert.deepEqual(delivered.options, { deliverAs: "steer", triggerTurn: true });
+			assert.deepEqual(
+				delivered.options,
+				index === 0 ? { deliverAs: "steer" } : { deliverAs: "steer", triggerTurn: true },
+			);
 		}
 		assert.match(
 			String((mock.sentMessages[0] as { message: { content: string } }).message.content),
@@ -1086,7 +1098,7 @@ test("session shutdown closes completion delivery before delayed isolated-agent 
 			createInProcessSession: async () => (childIndex++ === 0 ? completedChild : activeChild),
 			workspaceManager: new FakeWorkspaceManager(),
 		});
-		// Keep the root active so auto-resume must retain completion until shutdown closes the broker.
+		// Keep the root active, then verify shutdown suppresses the delayed child's completion.
 		const context = createMockContext({ isIdle: () => false });
 		await mock.events.get("session_start")?.[0]?.({}, context.ctx);
 		const execute = async (name: string, params: Record<string, unknown>) => {
@@ -1126,11 +1138,18 @@ test("session shutdown closes completion delivery before delayed isolated-agent 
 		const agents = controller.listAgents();
 		assert.equal(agents.find((agent) => agent.id === first.details.agent?.id)?.state, "completed");
 		assert.equal(agents.find((agent) => agent.id === second.details.agent?.id)?.state, "running");
-		assert.equal(mock.sentMessages.length, 0, "completion timer has not fired yet");
+		const deliveryDeadline = Date.now() + 1_000;
+		while (mock.sentMessages.length < 1 && Date.now() < deliveryDeadline) {
+			await new Promise((resolve) => setTimeout(resolve, 2));
+		}
+		assert.equal(mock.sentMessages.length, 1, "completed child steers into the active root");
+		assert.deepEqual((mock.sentMessages[0] as { options: unknown }).options, {
+			deliverAs: "steer",
+		});
 
 		await mock.events.get("session_shutdown")?.[0]?.({}, context.ctx);
 		await new Promise((resolve) => setTimeout(resolve, 20));
-		assert.equal(mock.sentMessages.length, 0, "shutdown must suppress the queued root wake");
+		assert.equal(mock.sentMessages.length, 1, "shutdown suppresses delayed cleanup completion");
 	} finally {
 		if (originalDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = originalDir;
