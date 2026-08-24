@@ -1,5 +1,17 @@
 # @narumitw/pi-tool
 
+## 0.3.0
+
+### Minor Changes
+
+- cf4a5c9: Add a default-off active-tool widget with `/tool` and `pi-tool.json` controls.
+
+### Patch Changes
+
+- 3346683: Publish generated lazy chunks at the JavaScript paths referenced by each extension runtime so deferred menus and implementations load correctly through Pi's Jiti loader.
+- Updated dependencies [b9eba3a]
+  - @narumitw/pi-tui-kit@0.58.0
+
 ## 0.2.3
 
 ### Patch Changes

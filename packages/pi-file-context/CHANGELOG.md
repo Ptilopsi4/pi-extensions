@@ -1,5 +1,12 @@
 # @narumitw/pi-file-context
 
+## 0.54.1
+
+### Patch Changes
+
+- Updated dependencies [b9eba3a]
+  - @narumitw/pi-tui-kit@0.58.0
+
 ## 0.54.0
 
 ### Minor Changes
