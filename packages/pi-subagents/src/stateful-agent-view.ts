@@ -45,6 +45,9 @@ export function summarizeStatefulAgent(agent: ManagedAgent) {
 			truncated: agent.contextTruncated === true,
 		},
 		resultFormat: agent.resultFormat ?? "text",
+		completionRequirements: (agent.completionRequirements ?? []).map((record) => ({
+			...record,
+		})),
 		structuredResult: agent.structuredResult,
 		termination: agent.termination,
 		outcome: agent.outcome,

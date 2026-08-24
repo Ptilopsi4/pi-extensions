@@ -1,11 +1,39 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test, vi } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import { registerStatefulSubagents } from "../src/stateful.js";
 import type { WorkspaceManager } from "../src/workspace.js";
+
+test("requirement reconciliation persistence failure remains observable without leaking startup", async () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-requirement-save-failure-"));
+	const originalDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = root;
+	writeFileSync(path.join(root, "pi-subagents-state"), "blocks state directory creation");
+	try {
+		const mock = createMockPi();
+		const controller = registerStatefulSubagents(mock.pi);
+		const context = createMockContext({ hasUI: true });
+		await mock.events.get("session_start")?.[0]?.({ reason: "fork" }, context.ctx);
+		assert.equal(controller.getRuntimeStatus().initialized, true);
+		assert.equal(
+			context.notifications.some(
+				(notification) =>
+					notification.level === "warning" &&
+					/requirement reconciliation could not be persisted yet/i.test(notification.message),
+			),
+			true,
+		);
+		await mock.events.get("session_shutdown")?.[0]?.({}, context.ctx);
+		assert.equal(controller.getRuntimeStatus().initialized, false);
+	} finally {
+		if (originalDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalDir;
+		rmSync(root, { recursive: true, force: true });
+	}
+});
 
 test("stateful worktree spawn revalidates session ownership and cleans stale work", async () => {
 	const root = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-stale-worktree-"));

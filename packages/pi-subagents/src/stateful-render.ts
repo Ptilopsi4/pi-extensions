@@ -300,6 +300,7 @@ function lifecycleStatus(state: string): RenderStatus {
 			return "running";
 		case "idle":
 			return "idle";
+		case "partial":
 		case "blocked":
 		case "needs-input":
 		case "abstained":

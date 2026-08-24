@@ -73,6 +73,18 @@ test("AgentPersistence atomically saves, restores, redacts, deletes, and quarant
 				},
 			],
 			turnGeneration: 2,
+			completionRequirements: [
+				{
+					version: "pi-subagents:completion-requirement:v1",
+					runId: "run:two",
+					generation: 2,
+					state: "available",
+					createdAt: 2,
+					updatedAt: 3,
+					completionId: "completion:two",
+					terminalState: "completed",
+				},
+			],
 			pendingCompletions: [
 				{
 					completionId: "completion:one",
@@ -126,6 +138,18 @@ test("AgentPersistence atomically saves, restores, redacts, deletes, and quarant
 	assert.equal(restoredState?.telemetry, undefined);
 	assert.equal(restoredState?.structuredResult?.summary, "ephemeral");
 	assert.equal(restoredState?.turnGeneration, 2);
+	assert.deepEqual(restoredState?.completionRequirements, [
+		{
+			version: "pi-subagents:completion-requirement:v1",
+			runId: "run:two",
+			generation: 2,
+			state: "available",
+			createdAt: 2,
+			updatedAt: 3,
+			completionId: "completion:two",
+			terminalState: "completed",
+		},
+	]);
 	assert.deepEqual(
 		restoredState?.pendingCompletions?.map((completion) => ({
 			completionId: completion.completionId,

@@ -5,6 +5,7 @@ import { getAgentDir, withFileMutationQueue } from "@earendil-works/pi-coding-ag
 import { projectAgentRecords } from "./agent-projection.js";
 import { isThinkingLevel } from "./agents/types.js";
 import { isCapabilityGrant, revokeCapabilityGrant } from "./capability-grant.js";
+import { isCompletionRequirementRecord } from "./completion-requirement.js";
 import { redactPrivateText } from "./context.js";
 import { normalizeDelegationContract } from "./delegation-contract.js";
 import { copyExecutionPlan, isExecutionPlan } from "./execution-plan.js";
@@ -171,6 +172,10 @@ function sanitizeAgent(agent: ManagedAgent): ManagedAgent {
 				output: redactPrivateText(completion.output),
 				error: completion.error ? redactPrivateText(completion.error) : undefined,
 			})),
+		completionRequirements: (agent.completionRequirements ?? [])
+			.filter(isCompletionRequirementRecord)
+			.slice(-MAX_STORED_COMPLETIONS_PER_AGENT)
+			.map((record) => ({ ...record })),
 		currentTimeoutMs: undefined,
 		currentIdleTimeoutMs: undefined,
 		currentMaxTurns: undefined,
@@ -261,6 +266,10 @@ function isStoredState(value: unknown): value is StoredState {
 			(record.turnGeneration === undefined || isNonNegativeInteger(record.turnGeneration)) &&
 			(record.pendingCompletions === undefined ||
 				isCompletionOutbox(record.pendingCompletions, record.turnGeneration ?? 0)) &&
+			(record.completionRequirements === undefined ||
+				(Array.isArray(record.completionRequirements) &&
+					record.completionRequirements.length <= MAX_STORED_COMPLETIONS_PER_AGENT &&
+					record.completionRequirements.every(isCompletionRequirementRecord))) &&
 			(record.spawnIdempotencyKey === undefined ||
 				(typeof record.spawnIdempotencyKey === "string" &&
 					record.spawnIdempotencyKey.length > 0 &&

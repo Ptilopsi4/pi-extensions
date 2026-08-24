@@ -347,6 +347,9 @@ function projectRunSummary(run: AgentRunInspectionSummary): Record<string, unkno
 		unreadMessages: run.unreadMessages,
 		turnGeneration: run.turnGeneration,
 		pendingCompletionCount: run.pendingCompletionCount,
+		...(run.pendingRequiredCompletionCount === undefined
+			? {}
+			: { pendingRequiredCompletionCount: run.pendingRequiredCompletionCount }),
 	};
 }
 
@@ -382,6 +385,9 @@ function projectRun(run: AgentRunInspectionDetail, ctx: ExtensionContext): Recor
 				}
 			: undefined,
 		resultFormat: run.resultFormat ?? "text",
+		completionRequirements: (run.completionRequirements ?? []).map((requirement) => ({
+			...requirement,
+		})),
 		structuredResult: run.structuredResult,
 		termination: run.termination,
 		outcome: run.outcome,
