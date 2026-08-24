@@ -2,7 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import type { SubagentParams } from "./params.js";
 import { safeBlock, safeLine } from "./render-common.js";
-import type { SubagentDetails } from "./runner.js";
+import type { SubagentDetails } from "./subagent-details.js";
 
 export function renderPanelCall(args: SubagentParams, theme: Theme): Text | undefined {
 	const panel = args.panel;

@@ -1,7 +1,7 @@
 import { redactPrivateText } from "./context.js";
 import { DEFAULT_MAX_CONTEXT_BYTES, truncateUtf8 } from "./limits.js";
 import { appendResultInstruction, type SubagentResultFormat } from "./result-contract.js";
-import type { RecentActivityItem } from "./runner.js";
+import type { RecentActivityItem } from "./runner-types.js";
 import {
 	formatTimeoutCheckpoint,
 	type TimeoutCheckpoint,

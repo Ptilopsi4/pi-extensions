@@ -31,15 +31,14 @@ import { buildPanelReviewerPrompt, buildPanelSynthesisPrompt } from "./panel-pro
 import { reconcilePanel } from "./panel-reconciliation.js";
 import type { SubagentParams } from "./params.js";
 import {
-	type ChildLaunchPolicy,
 	getResultFinalOutput,
 	isResultError,
 	mapWithConcurrencyLimit,
 	runSingleAgent,
-	type SingleResult,
-	type SubagentDetails,
 } from "./runner.js";
+import type { ChildLaunchPolicy, SingleResult } from "./runner-types.js";
 import { boundedPrivateText, boundText } from "./safe-text.js";
+import type { SubagentDetails } from "./subagent-details.js";
 import { createSessionWorkItemPersistence } from "./work-item-persistence.js";
 import { assertWorkspaceIsolationReady } from "./workspace.js";
 

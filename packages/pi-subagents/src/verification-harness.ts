@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { promisify } from "node:util";
 import { redactPrivateText } from "./context.js";
 import { appendBounded, truncateUtf8 } from "./limits.js";
-import { terminateProcess } from "./runner.js";
+import { terminateProcess } from "./process-control.js";
 import type { VerificationCheckReceipt } from "./verification-receipt.js";
 import {
 	captureWorkflowTreeIdentity,

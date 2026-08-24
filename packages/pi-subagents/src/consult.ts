@@ -34,20 +34,15 @@ import {
 	DEFAULT_MAX_STDERR_BYTES,
 	MAX_SUBAGENT_TIMEOUT_MS,
 } from "./limits.js";
-import {
-	type ChildLaunchPolicy,
-	getResultFinalOutput,
-	isResultError,
-	runSingleAgent,
-	type SingleResult,
-	type SubagentDetails,
-} from "./runner.js";
+import { getResultFinalOutput, isResultError, runSingleAgent } from "./runner.js";
+import type { ChildLaunchPolicy, SingleResult } from "./runner-types.js";
 import { boundedPrivateText, boundText, safeDisplayPath, safeTerminalLine } from "./safe-text.js";
 import {
 	DEFAULT_CONSULT_RESOURCE_POLICY,
 	DEFAULT_CONSULTATION_CWD_POLICY,
 } from "./settings/inspection.js";
 import { resolveSubagentThinkingLevel } from "./settings.js";
+import type { SubagentDetails } from "./subagent-details.js";
 
 export { registerSubagentConsult } from "./consult-registration.js";
 export type {

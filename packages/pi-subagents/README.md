@@ -1314,6 +1314,10 @@ packages/pi-subagents/
 │   ├── timeout-finalization.ts   # Abort-time bounded summary prompts and deadlines
 │   ├── timeout-checkpoint.ts     # Redacted deterministic termination evidence
 │   ├── turn-budget.ts            # Idle, assistant-turn, and tool-call enforcement
+│   ├── runner.ts                 # Blocking subprocess execution and progress capture
+│   ├── runner-types.ts           # Shared subprocess result and launch contracts
+│   ├── subagent-details.ts       # Composed tool-result and panel detail contracts
+│   ├── process-control.ts        # Reusable child-process termination and escalation
 │   ├── runner-usage.ts           # Bounded subprocess usage accumulation
 │   ├── runner-result.ts          # Shared subprocess result interpretation
 │   ├── stateful-limit-ui.ts      # Detached capacity settings and recovery previews

@@ -24,6 +24,7 @@ import {
 	peerBridgeEnvironment,
 } from "./peer-transport.js";
 import { type PiInvocation, resolvePiInvocation } from "./pi-invocation.js";
+import { terminateProcess } from "./process-control.js";
 import { resolvePiPromptResources } from "./prompt-resources.js";
 import { JsonLineDecoder } from "./protocol.js";
 import type { AgentMailboxMessage, ManagedAgent, TurnOutcome } from "./registry.js";
@@ -42,7 +43,6 @@ import {
 	observeRpcBudgetEvent,
 	snapshotRpcUsage,
 } from "./rpc-turn-capture.js";
-import { terminateProcess } from "./runner.js";
 import { safeTerminalText } from "./safe-text.js";
 import { readSubagentSettings } from "./settings.js";
 import { buildStatefulTurnPrompt, resolveStatefulTurnTimeout } from "./stateful-prompt.js";
