@@ -11,6 +11,7 @@ import {
 	inspectStatefulLimitSettings,
 	inspectStatefulTransportSettings,
 	inspectSubagentSettings,
+	inspectUsageRecordingSettings,
 	normalizeSubagentSettings,
 	readSubagentSettings,
 	updateBlockingMaxParallelTasksSetting,
@@ -18,6 +19,7 @@ import {
 	updateCwdPolicySetting,
 	updateStatefulLimitSetting,
 	updateStatefulTransportSetting,
+	updateUsageRecordingSetting,
 } from "../src/settings.js";
 import { resolveStatefulLimits } from "../src/stateful-limits.js";
 
@@ -58,6 +60,39 @@ test("stateful RPC and automatic transports are opt-in and preserve unknown sett
 			value: "rpc",
 			source: "user settings",
 		});
+	});
+});
+
+test("usage recording is strict, opt-in, and preserves unknown settings", () => {
+	withAgentDir(() => {
+		assert.deepEqual(normalizeSubagentSettings({ usageRecording: { enabled: true } }), {
+			usageRecording: { enabled: true },
+		});
+		assert.equal(normalizeSubagentSettings({ usageRecording: { enabled: "yes" } }), undefined);
+
+		const missing = inspectUsageRecordingSettings();
+		assert.equal(missing.enabled, false);
+		assert.equal(missing.source, "default");
+		assert.throws(() => readFileSync(missing.path, "utf8"), /ENOENT/);
+
+		writeFileSync(
+			missing.path,
+			JSON.stringify({ future: true, usageRecording: { futureUsage: "keep" } }),
+		);
+		updateUsageRecordingSetting(true);
+		assert.deepEqual(JSON.parse(readFileSync(missing.path, "utf8")), {
+			future: true,
+			usageRecording: { futureUsage: "keep", enabled: true },
+		});
+		assert.deepEqual(inspectUsageRecordingSettings(), {
+			path: missing.path,
+			enabled: true,
+			source: "user settings",
+		});
+
+		writeFileSync(missing.path, "{ malformed");
+		assert.throws(() => updateUsageRecordingSetting(false), /malformed/i);
+		assert.equal(readFileSync(missing.path, "utf8"), "{ malformed");
 	});
 });
 

@@ -19,6 +19,7 @@ The compatibility default exposes every delegation method, while **Async only** 
 - Routes nested completion and peer communication through authenticated session-scoped channels.
 - Provides `/subagents` settings, status, help, tool-surface selection, and recovery diagnostics.
 - Returns concise model-visible results with complete bounded details and sanitized terminal rendering.
+- Optionally records content-free local lifecycle and timing events for evaluating delegation behavior.
 - Loads a generated split runtime while preserving lazy execution, UI, inspection, and transport chunks.
 
 ## 📦 Install
@@ -59,15 +60,40 @@ Async-first delegation still requires useful parallel main-agent work, clear wor
 ## 💬 Commands
 
 - `/subagents` opens the current-session manager in TUI mode and reports bounded status in RPC mode.
-- `/subagents settings` configures target locations, trusted resources, and async completion delivery.
+- `/subagents settings` configures target locations, trusted resources, async completion delivery, and local usage recording.
 - `/subagents status` shows current-session and configured values with their sources.
 - `/subagents help` summarizes the command surface and isolation limits.
 
 ## ⚙️ Settings
 
-Use `/subagents settings` for target location, trust, consultation resource, and detached-completion preferences.
+Use `/subagents settings` for target location, trust, consultation resource, detached-completion preferences, and local usage recording.
 Use `/subagents` → **Advanced settings** for delegation workflow, agent tool permissions, and runtime limits.
 Settings are stored in `~/.pi/agent/pi-subagents.json`; the detailed sections below document precedence, reload requirements, and safety behavior.
+
+## 📊 Local usage recording
+
+Local usage recording is disabled by default and creates no usage storage until the user selects **On · local only** in `/subagents settings`.
+The setting applies immediately and persists as `usageRecording.enabled` in the user settings file.
+No network connection, upload, remote identifier, or project attribution is used.
+
+Records are stored below `<pi-agent-directory>/pi-subagents-usage/` as private per-runtime JSONL writer files.
+Directories use mode `0700` and files use mode `0600` on POSIX systems.
+Each event is versioned, bounded to 8 KiB, and ends with a newline so a crash-truncated final frame can be distinguished from completed records.
+Concurrent Pi processes use separate opaque writer files and never append to one shared file.
+Validated writer files older than 30 days are removed after recording starts.
+Disabling recording stops new events immediately; existing files remain until the retention window expires or the user removes the directory while Pi is stopped.
+
+Stored fields are limited to extension-generated runtime, session, turn, tool, child, run, and completion ordinals; the effective delegation surface; lifecycle states; completion-delivery transitions; bounded usage numbers; errors as booleans; and monotonic timing or durations.
+The recorder does not store prompts, delegated tasks, responses, thinking, tool arguments or results, code, paths, commands, mailbox or steering content, raw errors, provider/model identity, credentials, Pi session identifiers, or a persistent device identifier.
+Raw child, run, completion, and provider tool-call identifiers are replaced with runtime-local ordinals before publication.
+
+The events can describe blocking versus async tool selection, operational errors, parent/child overlap, child terminal states, completion attempts and visibility, turns, tokens, and wall-clock durations within one runtime.
+They cannot establish semantic task success, whether delegation was appropriate, whether parent work was useful, or whether a completion was understood by the model.
+Opt-in field data describes only users who enabled recording and does not prove causal effects between tool surfaces.
+Use a controlled benchmark before interpreting future `subagent_await` immediate-join or blocking-choice hypotheses causally.
+
+`/subagents status` reports whether recording is active, the current-session event count, retention, and the local path.
+A failed write drops that event, reports one bounded warning, and retries on later events without exposing filesystem details.
 
 ## 🛠️ Tools
 
@@ -283,7 +309,7 @@ It never starts a child, sends or acknowledges mailbox messages, interrupts or c
 | `get_workflow` | Required `workflowId` | Bounded task states, generations, dependencies, plan identities, artifact metadata, verification state, and outcome reasons without artifact contents |
 | `list_models` | Optional `limit` (default 50, maximum 100) | Session-scoped models, or the already-loaded available snapshot |
 | `preview_context` | Optional `context` and `contextEntryIds` | Selected mode, user turns, source count, UTF-8 bytes, and truncation without returning context text |
-| `status` | No additional fields | Effective workflow, runtime counts/transport, detached limit values, completion delivery, consultation resources, and configured/runtime settings with per-field sources |
+| `status` | No additional fields | Effective workflow, runtime counts/transport, detached limit values, completion delivery, local usage-recording state, consultation resources, and configured/runtime settings with per-field sources |
 | `diagnose` | No additional fields | Structured `pass`, `warning`, and `fail` checks; failed checks are report data rather than a tool error |
 
 The schema rejects fields that do not belong to the selected action.
@@ -685,6 +711,9 @@ Manual edits use `~/.pi/agent/pi-subagents.json` and take effect after reloading
   },
   "consult": {
     "resources": "project-context"
+  },
+  "usageRecording": {
+    "enabled": false
   }
 }
 ```
@@ -1185,6 +1214,8 @@ packages/pi-subagents/
 │   ├── rpc-turn-capture.ts       # RPC evidence capture, usage, and budget events
 │   ├── auto-transport.ts         # Deterministic preflight transport routing
 │   ├── transport-types.ts        # Bounded pi-subagents:v1 progress and telemetry contract
+│   ├── usage-recording.ts        # Opt-in content-free event collection and local identities
+│   ├── usage-recording-store.ts  # Private per-runtime JSONL writers and retention pruning
 │   ├── completion-delivery.ts    # Top-level completion batching and optional idle-root wake
 │   ├── completion-routing.ts     # Direct-parent and live-ancestor recipient selection
 │   ├── task-path.ts              # Canonical retained-agent task identity and resolution
@@ -1240,7 +1271,7 @@ The package build bundles that source graph into split `.ts` files under `dist` 
 `subagents.ts` and `stateful.ts` preserve existing source-level utility imports without making those utility graphs part of Pi startup.
 Workflow settings remain backward compatible: older files without `blocking.enabled` receive the eight-tool default, and an absent `blocking.maxParallelTasks` keeps the previous eight-worker limit.
 Existing `stateful.enabled: false` files expose blocking delegation plus inspection/consultation.
-Older package releases ignore and preserve the optional `blocking.maxParallelTasks`, `consult`, and `cwdPolicy` fields.
+Older package releases ignore and preserve the optional `blocking.maxParallelTasks`, `consult`, `cwdPolicy`, and `usageRecording` fields.
 The package exposes its Pi extension through `package.json`:
 
 ```json

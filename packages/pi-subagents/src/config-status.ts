@@ -16,6 +16,7 @@ import {
 	inspectDelegationWorkflowSettings,
 	inspectStatefulLimitSettings,
 	inspectStatefulTransportSettings,
+	inspectUsageRecordingSettings,
 } from "./settings.js";
 import type { StatefulSubagentRuntimeStatus } from "./stateful.js";
 import {
@@ -24,6 +25,7 @@ import {
 	formatDetachedLimitSummary,
 } from "./stateful-limit-ui.js";
 import { STATEFUL_LIMIT_DEFINITIONS } from "./stateful-limits.js";
+import { USAGE_RECORDING_RETENTION_DAYS } from "./usage-recording-config.js";
 import { workflowLabel } from "./workflow-ui.js";
 
 export function showSubagentStatus(
@@ -72,6 +74,7 @@ export function helpLines(runtime: SubagentSettingsRuntime): string[] {
 		`Configured parallel limit: ${parallelLimit.value} (${parallelLimit.source})`,
 		`Detached limits: ${formatDetachedLimitSummary(runtime.getRuntimeStatus())}`,
 		`Configured transport: ${transport.value} (${transport.source})`,
+		`Local usage recording: ${runtime.getUsageRecordingEnabled?.() ? "enabled" : "disabled"} · ${USAGE_RECORDING_RETENTION_DAYS}-day retention`,
 		...(detachedLimits.values
 			? [`Configured detached limits: ${formatConfiguredDetachedLimits(detachedLimits.values)}`]
 			: ["Configured detached limits: unavailable; repair user settings"]),
@@ -102,6 +105,7 @@ export function formatManagerSummary(
 		`Parallel workers: max ${runtime.getMaxParallelTasks()} per blocking call`,
 		`Detached limits: ${formatDetachedLimitSummary(status)}`,
 		`Transport: ${status.transport}`,
+		`Usage recording: ${runtime.getUsageRecordingEnabled?.() ? "On · local only" : "Off"}`,
 		`Configured transport: ${transport.value} · ${transport.source}`,
 		`Configured consult target: ${consultationCwdLabel(cwdPolicy.consultation.value)} · ${cwdPolicy.consultation.source}`,
 		`Configured delegation target: ${delegationCwdLabel(cwdPolicy.delegation.value)} · ${cwdPolicy.delegation.source}`,
@@ -129,7 +133,9 @@ function formatStatus(
 	const parallelLimit = inspectBlockingParallelLimitSettings();
 	const detachedLimits = inspectStatefulLimitSettings();
 	const transport = inspectStatefulTransportSettings();
+	const usageRecording = inspectUsageRecordingSettings();
 	const current = runtime ? currentWorkflow(runtime, status) : configuredWorkflow.value;
+	const usageStatus = runtime?.getUsageRecordingStatus?.();
 	return [
 		"Current session",
 		`  Delegation: ${workflowLabel(current)}`,
@@ -143,6 +149,10 @@ function formatStatus(
 		`  Maximum parallel workers: ${runtime?.getMaxParallelTasks() ?? parallelLimit.value} per blocking call`,
 		`  Detached limits: ${formatDetachedLimitSummary(status)}`,
 		`  Agents: ${status.activeAgents} active, ${status.retainedAgents} retained`,
+		`  Local usage recording: ${usageStatus?.enabled ? "enabled" : "disabled"}`,
+		`  Recorded events this session: ${usageStatus?.recordedEvents ?? 0}`,
+		`  Usage retention: ${usageStatus?.retentionDays ?? USAGE_RECORDING_RETENTION_DAYS} days`,
+		`  Usage path: ${safeTerminalText(usageStatus?.path ?? "unavailable")}`,
 		"User settings",
 		`  Delegation source: ${configuredWorkflow.source}`,
 		`  Configured delegation: ${workflowLabel(configuredWorkflow.value)}`,
@@ -162,14 +172,17 @@ function formatStatus(
 		`  Delegation target source: ${cwdPolicy.delegation.source}`,
 		`  Configured consultation resources: ${consultResourceLabel(consult.value)}`,
 		`  Consultation resource source: ${consult.source}`,
+		`  Configured usage recording: ${usageRecording.enabled ? "enabled" : "disabled"}`,
+		`  Usage recording source: ${usageRecording.source}`,
 		`  Path: ${safeTerminalText(snapshot.path)}`,
 		configuredWorkflow.error ||
 		snapshot.error ||
 		cwdPolicy.error ||
 		parallelLimit.error ||
 		detachedLimits.error ||
-		transport.error
-			? `  Warning: ${safeTerminalText(configuredWorkflow.error ?? snapshot.error ?? cwdPolicy.error ?? parallelLimit.error ?? detachedLimits.error ?? transport.error ?? "invalid settings")}`
+		transport.error ||
+		usageRecording.error
+			? `  Warning: ${safeTerminalText(configuredWorkflow.error ?? snapshot.error ?? cwdPolicy.error ?? parallelLimit.error ?? detachedLimits.error ?? transport.error ?? usageRecording.error ?? "invalid settings")}`
 			: "  Warning: none",
 		configuredWorkflow.value !== current
 			? "Configured delegation differs from this session. Run /reload to apply it."

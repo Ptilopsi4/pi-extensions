@@ -56,6 +56,7 @@ import {
 } from "./stateful-tool-params.js";
 import { MAX_TASK_NAME_LENGTH } from "./task-path.js";
 import { MAX_SUBAGENT_TOOL_CALLS, MAX_SUBAGENT_TURNS } from "./turn-budget.js";
+import type { UsageRecordingController } from "./usage-recording.js";
 import type { WorkspaceManager } from "./workspace.js";
 
 type CwdPolicyModule = typeof import("./cwd-policy.js");
@@ -227,6 +228,7 @@ export interface StatefulSubagentDependencies {
 	settings?: SubagentRuntimeSettings;
 	getSettings?: () => SubagentSettings | undefined;
 	loadTransport?: CreateStatefulTransportOptions["loadTransport"];
+	usageRecording?: UsageRecordingController;
 }
 
 export interface StatefulSubagentRuntimeStatus {
@@ -415,9 +417,16 @@ export function registerStatefulSubagents(
 						const reason = error instanceof Error ? error.message : String(error);
 						ctx.ui.notify(`Subagent completion delivery failed: ${reason}`, "warning");
 					},
+					onDeliveryAttempt: (completions, input) => {
+						if (generation !== runtimeGeneration) return;
+						for (const completion of completions) {
+							dependencies.usageRecording?.recordCompletionDeliveryAttempt(completion, input);
+						}
+					},
 					onAcknowledged: (completions, deliveredAt) => {
 						if (generation !== runtimeGeneration) return;
 						for (const completion of completions) {
+							dependencies.usageRecording?.recordCompletionVisible(completion);
 							void nextRegistry
 								.markCompletionDelivered(completion.completionId, deliveredAt)
 								.catch((error: unknown) => {
@@ -479,6 +488,7 @@ export function registerStatefulSubagents(
 					if (generation !== runtimeGeneration) return;
 					await sessionPersistence.save(agents);
 					if (generation !== runtimeGeneration) return;
+					dependencies.usageRecording?.observeAgents(agents);
 					for (const agent of agents) {
 						for (const message of agent.mailbox) {
 							if (seenMessageIds.has(message.id)) continue;
@@ -506,9 +516,9 @@ export function registerStatefulSubagents(
 					}
 				},
 				onTurnComplete: (completion) => {
-					if (generation === runtimeGeneration && completion.recipientId === "root") {
-						sessionBroker.enqueue(completion);
-					}
+					if (generation !== runtimeGeneration) return;
+					dependencies.usageRecording?.recordChildCompletion(completion);
+					if (completion.recipientId === "root") sessionBroker.enqueue(completion);
 				},
 			});
 			const persisted = sessionPersistence.load();

@@ -51,6 +51,12 @@ import {
 } from "./settings-reader.js";
 import { registerStatefulSubagents } from "./stateful-registration.js";
 import type { SubagentTransport } from "./transport.js";
+import {
+	registerUsageRecording,
+	type UsageRecordingDependencies,
+	type UsageSurfaceArm,
+} from "./usage-recording.js";
+import { resolveUsageRecordingEnabled } from "./usage-recording-config.js";
 
 type BlockingExecutionModule = Pick<typeof import("./execution.js"), "executeSubagent">;
 
@@ -60,6 +66,7 @@ export interface SubagentsDependencies {
 	config?: ConfigRegistrationDependencies;
 	consult?: ConsultRegistrationDependencies;
 	inspect?: InspectRegistrationDependencies;
+	usageRecording?: Partial<UsageRecordingDependencies>;
 }
 
 export default function (pi: ExtensionAPI, dependencies: SubagentsDependencies = {}) {
@@ -68,6 +75,7 @@ export default function (pi: ExtensionAPI, dependencies: SubagentsDependencies =
 		dependencies.loadBlockingExecution ?? (() => import("./execution.js")),
 	);
 	const configOwner = registerSubagentConfigLifecycle(pi);
+	const usageRecording = registerUsageRecording(pi, dependencies.usageRecording);
 	const settings = readSubagentSettings();
 	let currentSettings: SubagentSettings | undefined = settings;
 	let currentCatalog = "";
@@ -78,7 +86,7 @@ export default function (pi: ExtensionAPI, dependencies: SubagentsDependencies =
 	let refreshStatefulCatalog: (catalog: string) => void = () => undefined;
 	let refreshConsultCatalog: (catalog: string) => void = () => undefined;
 
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		// Preserve a one-shot migration notice from extension load while refreshing
 		// validation against settings that may have changed before this session.
 		const loadNotice = consumeSubagentSettingsNotice();
@@ -96,6 +104,14 @@ export default function (pi: ExtensionAPI, dependencies: SubagentsDependencies =
 		refreshBlockingCatalog(currentCatalog);
 		refreshStatefulCatalog(currentCatalog);
 		refreshConsultCatalog(currentCatalog);
+		await usageRecording.startSession({
+			enabled: resolveUsageRecordingEnabled(currentSettings?.usageRecording),
+			surfaceArm: usageSurfaceArm(blockingEnabled, statefulRuntime.getRuntimeStatus().enabled),
+			reason: event.reason,
+			onWarning: (message) => {
+				if (ctx.hasUI) ctx.ui.notify(message, "warning");
+			},
+		});
 	});
 
 	const statefulRuntime = registerStatefulSubagents(pi, {
@@ -103,6 +119,7 @@ export default function (pi: ExtensionAPI, dependencies: SubagentsDependencies =
 		settings: settings?.stateful,
 		getSettings: () => currentSettings,
 		loadTransport: dependencies.loadStatefulTransport,
+		usageRecording,
 	});
 	refreshStatefulCatalog = statefulRuntime.setAgentCatalog;
 	const getBlockingEnabled = () => blockingEnabled;
@@ -122,6 +139,7 @@ export default function (pi: ExtensionAPI, dependencies: SubagentsDependencies =
 			getConsultResourcePolicy,
 			getConsultationCwdPolicy,
 			getDelegationCwdPolicy,
+			getUsageRecordingStatus: () => usageRecording.getStatus(),
 		},
 		dependencies.inspect,
 	);
@@ -141,6 +159,15 @@ export default function (pi: ExtensionAPI, dependencies: SubagentsDependencies =
 			getConsultResourcePolicy,
 			getConsultationCwdPolicy,
 			getDelegationCwdPolicy,
+			getUsageRecordingEnabled: () => usageRecording.getStatus().enabled,
+			getUsageRecordingStatus: () => usageRecording.getStatus(),
+			setUsageRecordingEnabled: async (value: boolean) => {
+				await usageRecording.setEnabled(value);
+				currentSettings = {
+					...(currentSettings ?? {}),
+					usageRecording: { ...(currentSettings?.usageRecording ?? {}), enabled: value },
+				};
+			},
 			setMaxParallelTasks(value: number) {
 				const previousSettings = currentSettings;
 				currentSettings = {
@@ -188,6 +215,14 @@ export default function (pi: ExtensionAPI, dependencies: SubagentsDependencies =
 		configOwner,
 		dependencies.config,
 	);
+	pi.on("session_shutdown", (event) => usageRecording.shutdown(event.reason));
+}
+
+function usageSurfaceArm(blockingEnabled: boolean, statefulEnabled: boolean): UsageSurfaceArm {
+	if (blockingEnabled && statefulEnabled) return "all";
+	if (statefulEnabled) return "async-only";
+	if (blockingEnabled) return "blocking-only";
+	return "disabled";
 }
 
 function registerBlockingSubagent(

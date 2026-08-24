@@ -182,5 +182,14 @@ export function normalizeSubagentSettings(value: unknown): SubagentSettings | un
 		}
 		settings.cwdPolicy = cwdPolicy;
 	}
+	if (hasOwn(value, "usageRecording")) {
+		if (!isPlainObject(value.usageRecording)) return undefined;
+		const usageRecording: NonNullable<SubagentSettings["usageRecording"]> = {};
+		if (hasOwn(value.usageRecording, "enabled")) {
+			if (typeof value.usageRecording.enabled !== "boolean") return undefined;
+			usageRecording.enabled = value.usageRecording.enabled;
+		}
+		settings.usageRecording = usageRecording;
+	}
 	return settings;
 }

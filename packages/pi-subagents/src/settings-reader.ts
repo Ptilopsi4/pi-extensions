@@ -12,6 +12,7 @@ import {
 	buildStatefulLimitSettingsSnapshot,
 	buildStatefulTransportSettingsSnapshot,
 	buildSubagentSettingsSnapshot,
+	buildUsageRecordingSettingsSnapshot,
 	type CompletionDeliverySettingsSnapshot,
 	type ConsultResourceSettingsSnapshot,
 	type CwdPolicySettingsSnapshot,
@@ -20,6 +21,7 @@ import {
 	type StatefulLimitSettingsSnapshot,
 	type StatefulTransportSettingsSnapshot,
 	type SubagentSettingsSnapshot,
+	type UsageRecordingSettingsSnapshot,
 } from "./settings/inspection.js";
 import { isPlainObject, normalizeSubagentSettings } from "./settings/schema.js";
 
@@ -40,6 +42,7 @@ export {
 	type StatefulLimitSettingsSnapshot,
 	type StatefulTransportSettingsSnapshot,
 	type SubagentSettingsSnapshot,
+	type UsageRecordingSettingsSnapshot,
 } from "./settings/inspection.js";
 export { hasOwn, normalizeAgentSettings, normalizeSubagentSettings } from "./settings/schema.js";
 
@@ -160,6 +163,10 @@ export function inspectDelegationWorkflowSettings(): DelegationWorkflowSettingsS
 
 export function inspectCompletionDeliverySettings(): CompletionDeliverySettingsSnapshot {
 	return buildCompletionDeliverySettingsSnapshot(inspectSubagentSettingsDocument());
+}
+
+export function inspectUsageRecordingSettings(): UsageRecordingSettingsSnapshot {
+	return buildUsageRecordingSettingsSnapshot(inspectSubagentSettingsDocument());
 }
 
 export function inspectStatefulTransportSettings(): StatefulTransportSettingsSnapshot {

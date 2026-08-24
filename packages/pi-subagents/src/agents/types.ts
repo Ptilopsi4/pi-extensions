@@ -3,6 +3,7 @@
  */
 
 import type { AgentCapabilityManifest } from "../capabilities.js";
+import type { SubagentUsageRecordingSettings } from "../usage-recording-config.js";
 
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
@@ -95,4 +96,5 @@ export interface SubagentSettings {
 	stateful?: SubagentRuntimeSettings;
 	consult?: SubagentConsultSettings;
 	cwdPolicy?: SubagentCwdPolicySettings;
+	usageRecording?: SubagentUsageRecordingSettings;
 }

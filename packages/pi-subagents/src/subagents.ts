@@ -11,6 +11,7 @@ export {
 	inspectDelegationWorkflowSettings,
 	inspectStatefulLimitSettings,
 	inspectSubagentSettings,
+	inspectUsageRecordingSettings,
 	normalizeAgentSettings,
 	normalizeSubagentSettings,
 	readSubagentSettings,
@@ -27,6 +28,7 @@ export {
 	updateCwdPolicySetting,
 	updateDelegationWorkflowSetting,
 	updateStatefulLimitSetting,
+	updateUsageRecordingSetting,
 } from "./settings.js";
 export { default, type SubagentsDependencies } from "./subagents-extension.js";
 export { formatTokens, formatUsageStats } from "./usage-format.js";
