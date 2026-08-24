@@ -123,8 +123,8 @@ test("subagents registers consistent blocking guidance and one management comman
 		["subagents"],
 	);
 	assert.deepEqual(mock.commands.get("subagents")?.getArgumentCompletions?.("s"), [
-		{ value: "settings", label: "settings", description: "Configure subagent user settings" },
-		{ value: "status", label: "status", description: "Show effective subagent settings" },
+		{ value: "settings", label: "settings", description: "Open grouped subagent settings" },
+		{ value: "status", label: "status", description: "Show detailed subagent diagnostics" },
 	]);
 	const toolResultHandler = mock.events.get("tool_result")?.[0];
 	assert.deepEqual(

@@ -8,8 +8,8 @@ export function executionAgentPickerScreen(agents: readonly AgentConfig[]) {
 	const configured = readSubagentSettings()?.agents ?? {};
 	return {
 		kind: "actions" as const,
-		title: "Agent Execution Defaults",
-		lines: ["Choose an agent to edit its inherited model, thinking, or timeout."],
+		title: "Model, Thinking, and Time Limit",
+		lines: ["Choose a subagent. A specific request can override these starting values."],
 		items: [
 			...agents.map((agent) => {
 				const value = configured[agent.name];
@@ -17,7 +17,7 @@ export function executionAgentPickerScreen(agents: readonly AgentConfig[]) {
 					id: agent.name,
 					label: safeTerminalText(agent.name),
 					description: safeTerminalText(
-						`${agent.source} · model ${value?.model ?? agent.model ?? "inherited"} · thinking ${value?.thinkingLevel ?? agent.thinkingLevel ?? "inherited"} · timeout ${value?.timeoutMs ?? agent.timeoutMs ?? "inherited"}`,
+						`${agent.source} · model ${value?.model ?? agent.model ?? "default"} · thinking ${value?.thinkingLevel ?? agent.thinkingLevel ?? "default"} · time limit ${value?.timeoutMs ?? agent.timeoutMs ?? "default"}`,
 					),
 					action: "pick-execution-agent" as const,
 				};
@@ -32,8 +32,8 @@ export function executionAgentScreen(agent: AgentConfig | undefined) {
 	if (!agent) {
 		return {
 			kind: "actions" as const,
-			title: "Agent Execution Defaults",
-			lines: ["No agent selected."],
+			title: "Model, Thinking, and Time Limit",
+			lines: ["No subagent selected."],
 			items: [{ id: "back", label: "Back", action: "back" as const }],
 			hint: "back" as const,
 		};
@@ -41,21 +41,21 @@ export function executionAgentScreen(agent: AgentConfig | undefined) {
 	const configured = readSubagentSettings()?.agents?.[agent.name];
 	return {
 		kind: "actions" as const,
-		title: `${safeTerminalText(agent.name)} execution`,
+		title: `${safeTerminalText(agent.name)} defaults`,
 		lines: [
-			`Model: ${safeTerminalText(configured?.model ?? agent.model ?? "inherited")}`,
-			`Thinking: ${configured?.thinkingLevel ?? agent.thinkingLevel ?? "inherited"}`,
-			`Timeout: ${configured?.timeoutMs ?? agent.timeoutMs ?? "inherited"}`,
-			"Explicit tool-call values remain authoritative.",
+			`Model: ${safeTerminalText(configured?.model ?? agent.model ?? "agent or Pi default")}`,
+			`Thinking: ${configured?.thinkingLevel ?? agent.thinkingLevel ?? "agent or Pi default"}`,
+			`Time limit: ${configured?.timeoutMs ?? agent.timeoutMs ?? "agent or Pi default"}`,
+			"A specific subagent request can override these defaults.",
 		],
 		items: [
 			{ id: "thinking", label: "Thinking level", to: "execution-thinking" as const },
 			{ id: "model", label: "Model", to: "execution-model" as const },
-			{ id: "timeout", label: "Timeout", to: "execution-timeout" as const },
+			{ id: "timeout", label: "Time limit", to: "execution-timeout" as const },
 			{
 				id: "reset",
-				label: "Reset execution defaults",
-				description: "Restore frontmatter or Pi inheritance without changing tools",
+				label: "Use agent or Pi defaults",
+				description: "Remove custom model, thinking, and time limit without changing tools",
 				action: "reset-agent-execution" as const,
 			},
 			{ id: "back", label: "Back", action: "back" as const },
@@ -74,9 +74,19 @@ export function executionThinkingScreen(agent: AgentConfig | undefined) {
 					{
 						id: "thinking",
 						label: "Default thinking level",
-						description: "Explicit spawn or blocking call values still win.",
-						currentValue: configured?.thinkingLevel ?? agent.thinkingLevel ?? "Inherited",
-						values: ["Inherited", "off", "minimal", "low", "medium", "high", "xhigh", "max"],
+						description: "A specific subagent request can override this value.",
+						currentValue:
+							configured?.thinkingLevel ?? agent.thinkingLevel ?? "Use agent or Pi default",
+						values: [
+							"Use agent or Pi default",
+							"off",
+							"minimal",
+							"low",
+							"medium",
+							"high",
+							"xhigh",
+							"max",
+						],
 						action: "set-agent-thinking" as const,
 					},
 				]
@@ -96,15 +106,15 @@ export function executionModelScreen(agent: AgentConfig | undefined, ctx: Extens
 		kind: "actions" as const,
 		title: agent ? `${safeTerminalText(agent.name)} model` : "Agent model",
 		lines: [
-			`Current: ${safeTerminalText(configured?.model ?? agent?.model ?? "inherited")}`,
-			"Choose a session-available model or enter a custom Pi model pattern.",
+			`Current: ${safeTerminalText(configured?.model ?? agent?.model ?? "agent or Pi default")}`,
+			"Choose an available model or enter a custom Pi model pattern.",
 		],
 		items: agent
 			? [
 					{
 						id: "model:__inherited__",
-						label: "Inherited",
-						description: "Use frontmatter or active Pi model resolution",
+						label: "Use agent or Pi default",
+						description: "Remove the custom model setting",
 						action: "set-agent-model" as const,
 					},
 					...models.map((model) => ({
@@ -131,9 +141,9 @@ export function executionModelInputScreen(agent: AgentConfig | undefined) {
 		kind: "input" as const,
 		title: agent ? `${safeTerminalText(agent.name)} model` : "Agent model",
 		lines: [
-			`Current: ${safeTerminalText(configured?.model ?? agent?.model ?? "inherited")}`,
+			`Current: ${safeTerminalText(configured?.model ?? agent?.model ?? "agent or Pi default")}`,
 			"Enter a Pi CLI model pattern, including an optional :thinking suffix.",
-			"Use Reset execution defaults to restore inheritance.",
+			"Use agent or Pi defaults to remove this custom value.",
 		],
 		placeholder: "provider/model or model pattern",
 		action: "set-agent-model" as const,
@@ -145,13 +155,13 @@ export function executionTimeoutInputScreen(agent: AgentConfig | undefined) {
 	const configured = agent ? readSubagentSettings()?.agents?.[agent.name] : undefined;
 	return {
 		kind: "input" as const,
-		title: agent ? `${safeTerminalText(agent.name)} timeout` : "Agent timeout",
+		title: agent ? `${safeTerminalText(agent.name)} time limit` : "Agent time limit",
 		lines: [
-			`Current: ${configured?.timeoutMs ?? agent?.timeoutMs ?? "inherited"}`,
+			`Current: ${configured?.timeoutMs ?? agent?.timeoutMs ?? "agent or Pi default"}`,
 			`Allowed: 1-${MAX_SUBAGENT_TIMEOUT_MS} milliseconds.`,
-			"Use Reset execution defaults to restore inheritance.",
+			"Use agent or Pi defaults to remove this custom value.",
 		],
-		placeholder: "Timeout in milliseconds",
+		placeholder: "Time limit in milliseconds",
 		action: "set-agent-timeout" as const,
 		hint: "back" as const,
 	};
@@ -163,7 +173,8 @@ export function applyAgentThinking(
 	ctx: ExtensionCommandContext,
 ) {
 	if (!agent) return { kind: "rejected" as const };
-	const thinkingLevel = value === "Inherited" ? undefined : (value as SubagentThinkingLevel);
+	const thinkingLevel =
+		value === "Use agent or Pi default" ? undefined : (value as SubagentThinkingLevel);
 	if (
 		thinkingLevel !== undefined &&
 		!["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(thinkingLevel)
@@ -196,12 +207,12 @@ export function applyAgentTimeout(
 	if (!agent) return { kind: "rejected" as const };
 	const normalized = value?.trim() ?? "";
 	if (!/^\d+$/u.test(normalized)) {
-		ctx.ui.notify("Timeout must be a whole number of milliseconds.", "warning");
+		ctx.ui.notify("Time limit must be a whole number of milliseconds.", "warning");
 		return { kind: "rejected" as const };
 	}
 	const timeoutMs = Number(normalized);
 	if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_SUBAGENT_TIMEOUT_MS) {
-		ctx.ui.notify(`Timeout must be between 1 and ${MAX_SUBAGENT_TIMEOUT_MS}.`, "warning");
+		ctx.ui.notify(`Time limit must be between 1 and ${MAX_SUBAGENT_TIMEOUT_MS}.`, "warning");
 		return { kind: "rejected" as const };
 	}
 	return saveAgentPatch(agent.name, { timeoutMs }, ctx, "timeout");

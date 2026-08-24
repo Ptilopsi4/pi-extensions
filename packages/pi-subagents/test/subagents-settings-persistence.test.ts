@@ -156,7 +156,7 @@ test("session start re-reads settings before reporting warnings", async () => {
 		const command = mock.commands.get("subagents");
 		assert.ok(command);
 		await command.handler("status", context.ctx);
-		assert.match(context.notifications.at(-1)?.message ?? "", /No inherited resources/);
+		assert.match(context.notifications.at(-1)?.message ?? "", /No project resources/);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -192,15 +192,18 @@ test("subagent status separates runtime cwd policy from manual configured edits"
 		assert.ok(command);
 		await command.handler("status", context.ctx);
 		const message = context.notifications.at(-1)?.message ?? "";
-		assert.match(message, /Current session[\s\S]*Consultation target: Current workspace only/);
-		assert.match(message, /Current session[\s\S]*Delegation target: Current workspace only/);
 		assert.match(
 			message,
-			/User settings[\s\S]*Configured consultation target: Anywhere .* inherit nothing/,
+			/Current Session[\s\S]*Read-only consultation folders: This workspace only/,
+		);
+		assert.match(message, /Current Session[\s\S]*Subagent folders: This workspace only/);
+		assert.match(
+			message,
+			/User Settings[\s\S]*Configured consultation target: Any folder .* no project resources when untrusted/,
 		);
 		assert.match(
 			message,
-			/User settings[\s\S]*Configured delegation target: Current or saved-trusted folders/,
+			/User Settings[\s\S]*Configured delegation target: This workspace or saved-trusted folders/,
 		);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

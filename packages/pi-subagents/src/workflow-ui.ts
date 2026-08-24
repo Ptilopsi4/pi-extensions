@@ -10,7 +10,7 @@ export async function showWorkflowPreview(
 ): Promise<boolean> {
 	const changes = workflowEffects(current, next);
 	return ctx.ui.confirm(
-		requiresReload ? "Save delegation change and reload?" : "Save delegation change?",
+		requiresReload ? "Save how subagents run and reload?" : "Save how subagents run?",
 		[
 			`Current: ${workflowLabel(current)}`,
 			`New: ${workflowLabel(next)}`,
@@ -28,13 +28,13 @@ export async function showWorkflowPreview(
 export function workflowLabel(value: DelegationWorkflow): string {
 	switch (value) {
 		case "all":
-			return "All delegation methods";
+			return "Background and blocking methods";
 		case "async-only":
-			return "Async only";
+			return "Keep Pi available";
 		case "blocking-only":
-			return "Blocking only";
+			return "Wait for every subagent";
 		case "disabled":
-			return "Delegation disabled";
+			return "Subagents disabled";
 	}
 }
 
@@ -46,15 +46,15 @@ function workflowEffects(current: DelegationWorkflow, next: DelegationWorkflow):
 	if (blockingEnabled(current) !== blockingEnabled(next)) {
 		effects.push(
 			blockingEnabled(next)
-				? "Add blocking `subagent` and read-only `subagent_consult`"
-				: "Remove blocking `subagent` and read-only `subagent_consult`",
+				? "Allow methods that make Pi wait: `subagent` and read-only `subagent_consult`"
+				: "Remove methods that make Pi wait: `subagent` and read-only `subagent_consult`",
 		);
 	}
 	if (asyncEnabled(current) !== asyncEnabled(next)) {
 		effects.push(
 			asyncEnabled(next)
-				? "Add async `subagent_spawn`, `subagent_send`, `subagent_manage`, and `subagent_mailbox`"
-				: "Remove async `subagent_spawn`, `subagent_send`, `subagent_manage`, and `subagent_mailbox`",
+				? "Allow background tools: `subagent_spawn`, `subagent_send`, `subagent_manage`, and `subagent_mailbox`"
+				: "Remove background tools: `subagent_spawn`, `subagent_send`, `subagent_manage`, and `subagent_mailbox`",
 		);
 	}
 	return effects;
