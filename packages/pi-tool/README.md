@@ -50,7 +50,7 @@ Run:
 ```
 
 Choose **Browse tools** to search the catalog and inspect a tool.
-Choose **Settings** to turn the active-tool widget on or off.
+Choose **Active tool status** directly from the main menu to turn the widget on or off.
 The widget is off until you enable it.
 
 The command works in TUI and RPC modes.
@@ -63,7 +63,7 @@ It rejects arguments and rejects print or JSON modes because Pi does not provide
 | `/tool` | Browse configured tools and configure the active-tool widget. |
 
 `/tool` intentionally accepts no arguments and does not enable, disable, or execute tools.
-Its menu provides Browse tools, Settings, Status, and Help screens.
+Its menu provides Browse tools, a direct active-tool status toggle, Status, and Help.
 
 ## ⚙️ Settings
 
@@ -79,7 +79,7 @@ Use this document to enable the widget manually:
 
 `activeToolStatus` accepts `true` or `false` and defaults to `false` when absent.
 Manual edits apply after `/reload` or the next session start.
-The `/tool` Settings screen applies changes immediately and persists them with an atomic file replacement.
+The `/tool` menu toggle applies changes immediately and persists them with an atomic file replacement.
 Settings writes preserve unknown fields so newer configuration is not erased.
 Malformed JSON or an invalid value is ignored with a warning and is never overwritten by the menu.
 Writes are ordered within one Pi process, but separate Pi processes do not share a settings lock.

@@ -76,7 +76,7 @@ export function createToolCatalog(
 	return { title: `Tools · ${activeCount}/${tools.length} active`, items };
 }
 
-type ToolMenuScreen = "main" | "tools" | "settings" | "status" | "help";
+type ToolMenuScreen = "main" | "tools" | "status" | "help";
 type ToolMenuAction = "toggleActiveToolStatus";
 
 export interface ToolMenuOptions {
@@ -101,7 +101,12 @@ export function createToolMenu(
 				],
 				items: [
 					{ id: "tools", label: "Browse tools", to: "tools" },
-					{ id: "settings", label: "Settings", to: "settings" },
+					{
+						id: "active-tool-status",
+						label: `Active tool status: ${options.isActiveToolStatusEnabled() ? "On" : "Off"}`,
+						description: "Show or hide active tools above the editor",
+						action: "toggleActiveToolStatus",
+					},
 					{ id: "status", label: "Status", to: "status" },
 					{ id: "help", label: "Help", to: "help" },
 					{ id: "close", label: "Close", close: true },
@@ -125,21 +130,6 @@ export function createToolMenu(
 				viewportSize: "adaptive",
 				hint: "back",
 			}),
-			settings: () => ({
-				kind: "settings",
-				title: "Tool Settings",
-				lines: [`Saved in ${options.settingsPath}`],
-				items: [
-					{
-						id: "active-tool-status",
-						label: "Active tool status",
-						description: "Show active tools above the editor",
-						currentValue: options.isActiveToolStatusEnabled() ? "On" : "Off",
-						values: ["Off", "On"],
-						action: "toggleActiveToolStatus",
-					},
-				],
-			}),
 			status: () => ({
 				kind: "detail",
 				title: "Tool Status",
@@ -155,15 +145,15 @@ export function createToolMenu(
 				title: "Tool Help",
 				lines: [
 					"Browse tools to inspect their metadata and schemas.",
-					"Use Settings to show or hide the active-tool widget.",
+					"Toggle Active tool status from the main /tool menu.",
 					"Manual pi-tool.json changes apply after /reload or the next session start.",
 				],
 				hint: "back",
 			}),
 		},
 		actions: {
-			toggleActiveToolStatus: async ({ ctx, value }) => {
-				const enabled = value === "On";
+			toggleActiveToolStatus: async ({ ctx }) => {
+				const enabled = !options.isActiveToolStatusEnabled();
 				return (await options.toggleActiveToolStatus(ctx, enabled))
 					? { kind: "stay" }
 					: { kind: "rejected" };

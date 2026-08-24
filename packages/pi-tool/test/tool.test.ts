@@ -302,10 +302,8 @@ test("/tool toggles and persists the active-tool widget in TUI mode", async () =
 	};
 	const running = command.handler("", { ...base, ui: { ...base.ui, custom: tui.custom } });
 	await tui.waitForOpen();
-	tui.press("tui.select.down");
-	tui.press("tui.select.confirm");
-	await tui.waitForOpen();
 	assert.match(stripVTControlCharacters(tui.render().join("\n")), /Active tool status.*Off/u);
+	tui.press("tui.select.down");
 	tui.press("tui.select.confirm");
 	await tui.waitForOpen();
 	assert.match(stripVTControlCharacters(tui.render().join("\n")), /Active tool status.*On/u);
@@ -334,9 +332,7 @@ test("/tool toggles and persists the active-tool widget in RPC mode", async () =
 	const command = mock.commands.get("tool");
 	assert.ok(command);
 	const rpc = createRpcHarness([
-		{ kind: "select", response: "Settings" },
-		{ kind: "select", response: "Active tool status (Off)" },
-		{ kind: "select", response: "Back" },
+		{ kind: "select", response: "Active tool status: Off" },
 		{ kind: "select", response: "Close" },
 	]);
 	const base = createMockContext({
@@ -367,9 +363,7 @@ test("a failed settings save restores the previous widget state", async () => {
 	const command = mock.commands.get("tool");
 	assert.ok(command);
 	const rpc = createRpcHarness([
-		{ kind: "select", response: "Settings" },
-		{ kind: "select", response: "Active tool status (Off)" },
-		{ kind: "select", response: "Back" },
+		{ kind: "select", response: "Active tool status: Off" },
 		{ kind: "select", response: "Close" },
 	]);
 	const base = createMockContext({
