@@ -15,6 +15,7 @@ The showcase uses only in-memory state and stores no settings.
 - Demonstrates action, detail, browse, choice, settings, input, review, and multi-select screens.
 - Demonstrates standalone questionnaire, task, confirmation, and live-choice interactions from the same menu.
 - Covers disabled rows, busy labels, search, exact documents, adaptive review, bulk actions, and row descriptions.
+- Shows the shared top and bottom horizontal rules across every standard screen at normal terminal heights.
 - Keeps all effects in memory inside the demo process.
 - Loads the Kit runtime only after `/tui-kit-showcase` runs.
 

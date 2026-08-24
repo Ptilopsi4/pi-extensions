@@ -43,10 +43,11 @@ test("review preserves whitespace, sanitizes controls, and bounds exact text at 
 	assert.match(rendered, /你🙂very-long-token/);
 });
 
-test("fixed and default review frames remain byte-for-byte compatible", () => {
+test("fixed and default review frames use consistent rules and preserve content", () => {
 	const content = Array.from({ length: 20 }, (_, index) => `row ${index + 1}`).join("\n");
 	const fixed = reviewComponentHarness({ ...reviewScreen, content });
 	assert.deepEqual(plainLines(fixed.component, 80), [
+		"─".repeat(80),
 		"Review changes",
 		"",
 		"row 1",
@@ -54,6 +55,7 @@ test("fixed and default review frames remain byte-for-byte compatible", () => {
 		"row 3",
 		"1-3/20",
 		"k/j navigate • l Apply • q back • ctrl+c close",
+		"─".repeat(80),
 	]);
 
 	const defaultViewport = reviewComponentHarness({
@@ -62,11 +64,13 @@ test("fixed and default review frames remain byte-for-byte compatible", () => {
 		viewportSize: undefined,
 	});
 	assert.deepEqual(plainLines(defaultViewport.component, 80), [
+		"─".repeat(80),
 		"Review changes",
 		"",
 		...Array.from({ length: 14 }, (_, index) => `row ${index + 1}`),
 		"1-14/20",
 		"k/j navigate • l Apply • q back • ctrl+c close",
+		"─".repeat(80),
 	]);
 });
 
@@ -99,11 +103,11 @@ test("adaptive review degrades explicitly at constrained terminal heights", () =
 
 	harness.setTerminalRows(8);
 	assert.deepEqual(plainLines(harness.component, 80), [
+		"─".repeat(80),
 		"Review changes",
-		"",
 		"row 1",
-		"1-1/10",
-		"k/j navigate • l Apply • q back • ctrl+c close",
+		"l Apply • q back • ctrl+c close • k/j navigate",
+		"─".repeat(80),
 	]);
 });
 
@@ -133,7 +137,7 @@ test("adaptive review restores wrapped context and exceeds the numeric viewport 
 	);
 	const largeLines = plainLines(large.component, 80);
 	assert.equal(largeLines.length, 77);
-	assert.ok(largeLines.includes("row 73"));
+	assert.ok(largeLines.includes("row 71"));
 	assert.ok(largeLines.every((line) => visibleWidth(line) <= 80));
 });
 
@@ -145,33 +149,33 @@ test("adaptive review resizes, reflows, clamps, and pages by the latest rendered
 		12,
 	);
 	let rendered = plainRender(harness.component, 80);
-	assert.match(rendered, /row 1[\s\S]*row 5/);
-	assert.match(rendered, /1-5\/20/);
+	assert.match(rendered, /row 1[\s\S]*row 3/);
+	assert.match(rendered, /1-3\/20/);
 
 	harness.component.handleInput("\u001b[F");
 	rendered = plainRender(harness.component, 80);
-	assert.match(rendered, /row 16[\s\S]*row 20/);
-	assert.match(rendered, /16-20\/20/);
+	assert.match(rendered, /row 18[\s\S]*row 20/);
+	assert.match(rendered, /18-20\/20/);
 
 	harness.setTerminalRows(7);
 	rendered = plainRender(harness.component, 30);
-	assert.match(rendered, /row 16/);
-	assert.match(rendered, /16-16\/20/);
+	assert.match(rendered, /row 18/);
+	assert.match(rendered, /18-18\/20/);
 
 	harness.setTerminalRows(14);
 	rendered = plainRender(harness.component, 80);
-	assert.match(rendered, /row 14[\s\S]*row 20/);
-	assert.match(rendered, /14-20\/20/);
+	assert.match(rendered, /row 16[\s\S]*row 20/);
+	assert.match(rendered, /16-20\/20/);
 	harness.component.handleInput("u");
 	rendered = plainRender(harness.component, 80);
-	assert.match(rendered, /row 7[\s\S]*row 13/);
+	assert.match(rendered, /row 11[\s\S]*row 15/);
 
 	harness.setTerminalRows(9);
 	rendered = plainRender(harness.component, 80);
-	assert.match(rendered, /row 7[\s\S]*row 8/);
+	assert.match(rendered, /row 11/);
 	harness.component.handleInput("d");
 	rendered = plainRender(harness.component, 80);
-	assert.match(rendered, /row 9[\s\S]*row 10/);
+	assert.match(rendered, /row 12/);
 	assert.ok(harness.component.render(20).every((line) => visibleWidth(line) <= 20));
 });
 

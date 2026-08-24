@@ -422,8 +422,10 @@ test("reviews exact snippets before repeatedly removing them by stable ID", asyn
 	const firstReview = tui.render().join("\n");
 	assert.match(firstReview, /Review context snippet/u);
 	assert.match(firstReview, /first snapshot/u);
-	assert.match(firstReview, /with details/u);
-	assert.match(firstReview, /Remove from next\s+prompt/u);
+	tui.press("tui.select.down");
+	const scrolledReview = tui.render().join("\n");
+	assert.match(scrolledReview, /with details/u);
+	assert.match(scrolledReview, /Remove from next\s+prompt/u);
 	assert.equal(removedIds.length, 0);
 
 	tui.press("tui.select.cancel");

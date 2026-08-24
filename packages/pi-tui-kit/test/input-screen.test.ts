@@ -31,7 +31,10 @@ test("input screen is width-safe, forwards focus, and sanitizes pasted controls"
 	harness.component.handleInput(
 		"\u001b[200~  raw\u001b]8;;https://unsafe.example\u0007 value  \u001b[201~",
 	);
-	const raw = harness.component.render(40).join("\n");
+	const frame = harness.component.render(40);
+	const raw = frame.join("\n");
+	assert.equal(stripVTControlCharacters(frame[0] ?? ""), "─".repeat(40));
+	assert.equal(stripVTControlCharacters(frame.at(-1) ?? ""), "─".repeat(40));
 	assert.equal(raw.includes("\u001b]8;;https://unsafe.example"), false);
 	assert.match(stripVTControlCharacters(raw), /value/);
 	for (const width of [1, 2, 8, 20, 40, 80, 120]) {

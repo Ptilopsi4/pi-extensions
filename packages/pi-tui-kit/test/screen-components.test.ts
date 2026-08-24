@@ -156,6 +156,9 @@ test("standard screens remain bounded and sanitize terminal controls", () => {
 			const harness = componentHarness(screen);
 			const lines = harness.component.render(width);
 			assert.ok(lines.length > 0);
+			const plainLines = lines.map((line) => stripVTControlCharacters(line));
+			assert.equal(plainLines[0], "─".repeat(width), `${screen.kind} top rule at ${width}`);
+			assert.equal(plainLines.at(-1), "─".repeat(width), `${screen.kind} bottom rule at ${width}`);
 			assert.ok(
 				lines.every((line) => visibleWidth(line) <= width),
 				`${screen.kind} at ${width}`,
