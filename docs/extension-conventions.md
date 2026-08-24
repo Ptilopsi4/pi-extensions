@@ -164,10 +164,14 @@ Use JavaScript syntax with a `.ts` output extension when Pi must load the genera
   **Verification:** `Review` of bundler metadata and generated imports plus a builder `Test` that rejects bundled `node_modules` inputs.
 - **MUST:** Preserve every intentional dynamic-import boundary so commands, menus, optional integrations, and first-use implementations do not become eager merely because the source graph is bundled.
   **Verification:** `Test` of the generated eager graph plus `Review` of source and output imports.
+- **MUST:** Keep every generated static or dynamic relative import aligned with the exact emitted file path and extension.
+  Do not rewrite an import extension unless the build renames its referenced file in the same staged output.
+  **Verification:** A builder `Test` must inventory generated relative imports and reject every missing target before publication.
 - **MUST:** Generate deterministic source-mapped output in a staging directory, validate it before publication, and replace the previous `dist` atomically so a failed build does not publish partial or stale chunks.
   **Verification:** `Test` of repeated builds, stale-chunk removal, failed validation, and failed publication recovery.
 - **MUST:** Exercise the generated entry with Pi's Jiti resource loader rather than relying only on a direct test-runner import, and preserve the extension's registration plus startup and shutdown behavior.
-  **Verification:** `Test` through `DefaultResourceLoader`, lifecycle tests against the generated entry, and a package-directory Pi load `Smoke`.
+  When the output has lazy chunks, the generated-entry test must trigger a representative lazy boundary because initial entry loading does not resolve every deferred import.
+  **Verification:** `Test` through `DefaultResourceLoader`, generated lifecycle and lazy-boundary tests, and a package-directory Pi load `Smoke`.
 
 Record before-and-after package-load samples in the change handoff, but do not enforce a timing threshold in deterministic tests because host and filesystem conditions vary.
 The existing build-backed entrypoint, package-content, clean-build, pack, and local-load rules remain applicable.

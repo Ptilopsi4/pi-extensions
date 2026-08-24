@@ -71,6 +71,7 @@ Run commands from the repository root unless a command says otherwise.
 - A project-local extension may use `.pi/extensions/<extension>/index.ts` as its authoritative implementation.
 - Declare exactly one extension entrypoint in each packaged extension manifest: `./src/index.ts`, or a build-backed `./dist/index.ts` TypeScript bundle loaded by Pi's Jiti runtime.
 - Require a `dist/index.ts` entrypoint to stay within `dist`, externalize Pi-bundled peer dependencies, publish `dist`, and be built before packing or loading the package directory.
+- Require generated runtimes to validate that every static or dynamic relative import resolves to the exact emitted file path and extension; when a runtime has lazy chunks, exercise a lazy boundary through Pi's Jiti loader instead of stopping at entry load.
 - Keep extension implementation in descriptively named source modules.
 - Build and publish reusable libraries as JavaScript with declarations through their own build configuration and without `pi.extensions`.
 - Run `npm run check:boundaries` to verify package boundaries.
