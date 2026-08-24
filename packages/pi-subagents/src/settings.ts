@@ -57,6 +57,7 @@ export {
 	inspectStatefulLimitSettings,
 	inspectStatefulTransportSettings,
 	inspectSubagentSettings,
+	inspectUsageRecordingSettings,
 	normalizeAgentSettings,
 	normalizeSubagentSettings,
 	readSubagentSettings,
@@ -67,6 +68,7 @@ export {
 	type StatefulTransportSettingsSnapshot,
 	type SubagentSettingsSnapshot,
 	subagentSettingsFilePath,
+	type UsageRecordingSettingsSnapshot,
 } from "./settings-reader.js";
 
 const SETTINGS_FILE = SUBAGENT_SETTINGS_FILE;
@@ -156,6 +158,24 @@ export function updateCompletionDeliverySetting(value: CompletionDelivery): void
 					...(stateful ?? {}),
 					completionDelivery: value,
 				},
+			},
+			update.replaceCanonical,
+		);
+	});
+}
+
+export function updateUsageRecordingSetting(enabled: boolean): void {
+	withSettingsMutationLock(() => {
+		const update = readSettingsObjectForUpdate();
+		const raw = update.document;
+		const usageRecording = raw.usageRecording;
+		if (usageRecording !== undefined && !isPlainObject(usageRecording)) {
+			throw new Error(`Cannot update invalid ${SETTINGS_FILE} usageRecording settings`);
+		}
+		writeSettingsObjectUnlocked(
+			{
+				...raw,
+				usageRecording: { ...(usageRecording ?? {}), enabled },
 			},
 			update.replaceCanonical,
 		);

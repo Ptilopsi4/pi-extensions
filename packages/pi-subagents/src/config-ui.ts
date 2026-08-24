@@ -44,6 +44,7 @@ import {
 	inspectConsultResourceSettings,
 	inspectCwdPolicySettings,
 	inspectDelegationWorkflowSettings,
+	inspectUsageRecordingSettings,
 	readSubagentSettings,
 	sameToolSet,
 	uniqueToolNames,
@@ -52,6 +53,7 @@ import {
 	updateConsultResourceSetting,
 	updateCwdPolicySetting,
 	updateDelegationWorkflowSetting,
+	updateUsageRecordingSetting,
 } from "./settings.js";
 import { formatStatefulAgentLine, type StatefulSubagentRuntimeStatus } from "./stateful.js";
 import {
@@ -67,6 +69,8 @@ import {
 	responsivenessSetupScreen,
 	transportSettingsScreen,
 } from "./transport-ui.js";
+import type { UsageRecordingStatus } from "./usage-recording.js";
+import { USAGE_RECORDING_RETENTION_DAYS } from "./usage-recording-config.js";
 import { showWorkflowPreview, workflowLabel } from "./workflow-ui.js";
 
 const SUBCOMMANDS = [
@@ -83,6 +87,9 @@ export interface SubagentSettingsRuntime {
 	getConsultResourcePolicy(): ConsultResourcePolicy;
 	getConsultationCwdPolicy(): ConsultationCwdPolicy;
 	getDelegationCwdPolicy(): DelegationCwdPolicy;
+	getUsageRecordingEnabled?(): boolean;
+	getUsageRecordingStatus?(): UsageRecordingStatus;
+	setUsageRecordingEnabled?(value: boolean): Promise<void>;
 	setMaxParallelTasks(value: number): void;
 	setCompletionDelivery(value: CompletionDelivery): void;
 	setConsultResourcePolicy(value: ConsultResourcePolicy): void;
@@ -222,6 +229,7 @@ export async function showSubagentManager(
 		| "set-consult-resources"
 		| "set-consultation-cwd"
 		| "set-delegation-cwd"
+		| "set-usage-recording"
 		| "load-agent-picker"
 		| "pick-agent"
 		| "toggle-tool"
@@ -600,6 +608,8 @@ export async function showSubagentManager(
 				applyConsultResourceSetting(value, ctx, runtime),
 			"set-consultation-cwd": async ({ value }) => applyConsultationCwdSetting(value, ctx, runtime),
 			"set-delegation-cwd": async ({ value }) => applyDelegationCwdSetting(value, ctx, runtime),
+			"set-usage-recording": async ({ value, signal }) =>
+				applyUsageRecordingSetting(value, ctx, runtime, { signal, isCurrent }),
 			"load-agent-picker": async () => {
 				availableAgents = discoverAgents(ctx.cwd, "user", readSubagentSettings() ?? {}).agents;
 				if (availableAgents.length === 0) {
@@ -698,7 +708,8 @@ export async function showSubagentSettings(
 		| "set-completion"
 		| "set-consult-resources"
 		| "set-consultation-cwd"
-		| "set-delegation-cwd";
+		| "set-delegation-cwd"
+		| "set-usage-recording";
 	const menu = defineMenu<undefined, "settings", SettingsAction, ExtensionCommandContext>({
 		start: "settings",
 		screens: { settings: () => subagentSettingsScreen(runtime) },
@@ -708,6 +719,8 @@ export async function showSubagentSettings(
 				applyConsultResourceSetting(value, ctx, runtime),
 			"set-consultation-cwd": async ({ value }) => applyConsultationCwdSetting(value, ctx, runtime),
 			"set-delegation-cwd": async ({ value }) => applyDelegationCwdSetting(value, ctx, runtime),
+			"set-usage-recording": async ({ value, signal }) =>
+				applyUsageRecordingSetting(value, ctx, runtime, { signal, isCurrent }),
 		},
 	});
 	await runMenu(ctx, menu, {
@@ -721,7 +734,8 @@ function subagentSettingsScreen(runtime: SubagentSettingsRuntime) {
 	const completion = inspectCompletionDeliverySettings();
 	const consult = inspectConsultResourceSettings();
 	const cwdPolicy = inspectCwdPolicySettings();
-	const error = completion.error ?? consult.error ?? cwdPolicy.error;
+	const usageRecording = inspectUsageRecordingSettings();
+	const error = completion.error ?? consult.error ?? cwdPolicy.error ?? usageRecording.error;
 	return {
 		kind: "settings" as const,
 		title: error ? "Subagent User Settings · Read only" : "Subagent User Settings",
@@ -775,8 +789,65 @@ function subagentSettingsScreen(runtime: SubagentSettingsRuntime) {
 						values: ["Wait until my next turn", "Resume automatically when finished"],
 						action: "set-completion" as const,
 					},
+					{
+						id: "usageRecording",
+						label: "Local usage recording",
+						description: `Opt in to content-free lifecycle and timing events kept locally for ${USAGE_RECORDING_RETENTION_DAYS} days.`,
+						currentValue: runtime.getUsageRecordingEnabled?.() ? "On · local only" : "Off",
+						values: ["Off", "On · local only"],
+						action: "set-usage-recording" as const,
+					},
 				],
 	};
+}
+
+async function applyUsageRecordingSetting(
+	value: string | undefined,
+	ctx: ExtensionCommandContext,
+	runtime: SubagentSettingsRuntime,
+	options: { signal: AbortSignal; isCurrent: () => boolean },
+) {
+	if (options.signal.aborted || !options.isCurrent()) return { kind: "close" as const };
+	const previous = runtime.getUsageRecordingEnabled?.() ?? false;
+	const next = value === "On · local only";
+	if (next === previous) return { kind: "stay" as const };
+	if (!runtime.setUsageRecordingEnabled) {
+		ctx.ui.notify("Usage recording is unavailable in this session.", "error");
+		return { kind: "rejected" as const };
+	}
+	try {
+		updateUsageRecordingSetting(next);
+	} catch (error) {
+		ctx.ui.notify(`Subagent settings were not saved: ${formatError(error)}`, "error");
+		return { kind: "rejected" as const };
+	}
+	try {
+		await runtime.setUsageRecordingEnabled(next);
+		if (options.signal.aborted || !options.isCurrent()) return { kind: "close" as const };
+		ctx.ui.notify(
+			next
+				? `Local content-free usage recording enabled. Records stay on this device for ${USAGE_RECORDING_RETENTION_DAYS} days.`
+				: "Local usage recording disabled. Existing records expire under the retention policy.",
+			"info",
+		);
+		return { kind: "stay" as const };
+	} catch (error) {
+		if (options.signal.aborted || !options.isCurrent()) return { kind: "close" as const };
+		try {
+			updateUsageRecordingSetting(previous);
+			await runtime.setUsageRecordingEnabled(previous);
+			if (options.signal.aborted || !options.isCurrent()) return { kind: "close" as const };
+		} catch (rollbackError) {
+			if (options.signal.aborted || !options.isCurrent()) return { kind: "close" as const };
+			ctx.ui.notify(
+				`Usage recording could not be applied or rolled back: ${formatError(new AggregateError([error, rollbackError]))}`,
+				"error",
+			);
+			return { kind: "rejected" as const };
+		}
+		ctx.ui.notify(`Subagent settings were not applied: ${formatError(error)}`, "error");
+		return { kind: "rejected" as const };
+	}
 }
 
 function applyCompletionSetting(

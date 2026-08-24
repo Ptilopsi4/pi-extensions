@@ -870,6 +870,54 @@ test("subagent settings UI preserves unknown JSON and applies completion deliver
 	}
 });
 
+test("subagent settings UI explicitly enables local-only usage recording", async () => {
+	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-usage-settings-ui-"));
+	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = directory;
+	try {
+		const settingsPath = path.join(directory, "pi-subagents.json");
+		writeFileSync(settingsPath, JSON.stringify({ future: true }));
+		const mock = createMockPi();
+		subagents(mock.pi);
+		const command = mock.commands.get("subagents");
+		assert.ok(command);
+		let rendered = "";
+		let customCalls = 0;
+		const context = createMockContext({
+			mode: "tui",
+			hasUI: true,
+			custom: async (factory: unknown) => {
+				const harness = createCustomSelectorHarness(factory, 90);
+				rendered = stripVTControlCharacters(harness.render().join("\n"));
+				if (customCalls++ === 0) {
+					for (let index = 0; index < 4; index++) harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+					await harness.waitForPending();
+				} else {
+					harness.handleInput("\u0003");
+				}
+				return harness.result;
+			},
+		});
+		await command.handler("settings", context.ctx);
+		assert.match(rendered, /Local usage recording/);
+		assert.match(rendered, /content-free.*30 days/i);
+		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
+			future: true,
+			usageRecording: { enabled: true },
+		});
+		assert.match(context.notifications.at(-1)?.message ?? "", /local.*recording enabled/i);
+		await command.handler("status", context.ctx);
+		assert.match(context.notifications.at(-1)?.message ?? "", /Local usage recording: enabled/i);
+		assert.match(context.notifications.at(-1)?.message ?? "", /Usage retention: 30 days/i);
+		assert.ok(existsSync(path.join(directory, "pi-subagents-usage")));
+	} finally {
+		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
 test("subagent settings UI exposes and immediately applies both cwd policies", async () => {
 	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-cwd-settings-ui-"));
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;

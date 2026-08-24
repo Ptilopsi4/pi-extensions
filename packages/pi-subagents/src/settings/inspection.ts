@@ -96,6 +96,13 @@ export interface SubagentSettingsSnapshot {
 	error?: string;
 }
 
+export interface UsageRecordingSettingsSnapshot {
+	path: string;
+	enabled: boolean;
+	source: SettingsSource;
+	error?: string;
+}
+
 export function resolveDelegationWorkflow(
 	blockingEnabled: boolean,
 	statefulEnabled: boolean,
@@ -118,6 +125,26 @@ export function buildSubagentSettingsSnapshot(
 		settings: inspected.settings,
 		source: inspected.settings ? "user settings" : "default",
 		...(inspected.error ? { error: inspected.error } : {}),
+	};
+}
+
+export function buildUsageRecordingSettingsSnapshot(
+	inspected: InspectedSubagentSettingsDocument,
+): UsageRecordingSettingsSnapshot {
+	if (!inspected.raw || !inspected.settings) {
+		return {
+			path: inspected.path,
+			enabled: false,
+			source: "default",
+			...(inspected.error ? { error: inspected.error } : {}),
+		};
+	}
+	const explicit =
+		isPlainObject(inspected.raw.usageRecording) && hasOwn(inspected.raw.usageRecording, "enabled");
+	return {
+		path: inspected.path,
+		enabled: inspected.settings.usageRecording?.enabled === true,
+		source: explicit ? "user settings" : "default",
 	};
 }
 

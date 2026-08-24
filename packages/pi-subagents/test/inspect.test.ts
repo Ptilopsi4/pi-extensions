@@ -424,6 +424,9 @@ test("subagent_inspect uses scoped model snapshots and structured diagnostics wi
 	assert.equal(statusDetails.configuredWorkflowSource, "default");
 	assert.equal(statusDetails.configuredCompletionDelivery, "next-turn");
 	assert.equal(statusDetails.configuredCompletionDeliverySource, "default");
+	assert.deepEqual(statusDetails.usageRecording, { enabled: false });
+	assert.equal(statusDetails.configuredUsageRecording, false);
+	assert.equal(statusDetails.configuredUsageRecordingSource, "default");
 	assert.equal(statusDetails.maxParallelTasks, 8);
 	assert.equal(statusDetails.configuredMaxParallelTasks, 8);
 	assert.equal(statusDetails.configuredMaxParallelTasksSource, "default");

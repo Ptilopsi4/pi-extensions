@@ -67,6 +67,53 @@ test("completion delivery acknowledges one deterministic timestamp when the pare
 	broker.close();
 });
 
+test("completion delivery reports accepted and failed send attempts", () => {
+	const attempts: Array<{
+		ids: string[];
+		delivery: string;
+		triggerTurn: boolean;
+		outcome: string;
+	}> = [];
+	let sends = 0;
+	const broker = new CompletionDeliveryBroker(
+		{
+			sendMessage() {
+				sends += 1;
+				if (sends === 1) throw new Error("primary failed");
+			},
+		} as never,
+		{ isIdle: () => true, hasPendingMessages: () => false },
+		"next-turn",
+		{
+			onDeliveryAttempt: (completions, input) => {
+				attempts.push({
+					ids: completions.map((value) => value.completionId),
+					delivery: input.delivery,
+					triggerTurn: input.triggerTurn,
+					outcome: input.outcome,
+				});
+			},
+		},
+	);
+	broker.enqueue(completion("sa_fallback"));
+	broker.flush();
+	assert.deepEqual(attempts, [
+		{
+			ids: ["completion:sa_fallback:1"],
+			delivery: "steer",
+			triggerTurn: false,
+			outcome: "failed",
+		},
+		{
+			ids: ["completion:sa_fallback:1"],
+			delivery: "nextTurn",
+			triggerTurn: false,
+			outcome: "accepted",
+		},
+	]);
+	broker.close();
+});
+
 test("an unobserved asynchronous injection remains pending for retry", () => {
 	const harness = deliveryHarness();
 	const acknowledged: string[] = [];

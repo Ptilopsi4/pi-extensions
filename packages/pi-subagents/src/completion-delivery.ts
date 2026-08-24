@@ -45,6 +45,14 @@ type CompletionPi = Pick<ExtensionAPI, "sendMessage">;
 
 export interface CompletionDeliveryBrokerOptions {
 	onDeliveryError?: (error: unknown) => void;
+	onDeliveryAttempt?: (
+		completions: readonly AgentTurnCompletion[],
+		input: {
+			delivery: "steer" | "nextTurn";
+			triggerTurn: boolean;
+			outcome: "accepted" | "failed";
+		},
+	) => void;
 	onAcknowledged?: (completions: readonly AgentTurnCompletion[], acknowledgedAt: number) => void;
 	now?: () => number;
 }
@@ -116,14 +124,34 @@ export class CompletionDeliveryBroker {
 					deliverAs: "steer",
 					...(triggerTurn ? { triggerTurn: true } : {}),
 				});
+				this.notifyDeliveryAttempt(batch, {
+					delivery: "steer",
+					triggerTurn,
+					outcome: "accepted",
+				});
 			} catch (primaryError) {
+				this.notifyDeliveryAttempt(batch, {
+					delivery: "steer",
+					triggerTurn,
+					outcome: "failed",
+				});
 				this.removeAwaiting(batch);
 				if (triggerTurn) this.wakeInFlight = false;
 				canWake = false;
 				this.awaitingParentAck.push(...batch);
 				try {
 					this.pi.sendMessage(message, { deliverAs: "nextTurn", triggerTurn: false });
+					this.notifyDeliveryAttempt(batch, {
+						delivery: "nextTurn",
+						triggerTurn: false,
+						outcome: "accepted",
+					});
 				} catch (fallbackError) {
+					this.notifyDeliveryAttempt(batch, {
+						delivery: "nextTurn",
+						triggerTurn: false,
+						outcome: "failed",
+					});
 					this.removeAwaiting(batch);
 					this.pending = [...batches.slice(index).flat(), ...this.pending];
 					try {
@@ -185,6 +213,21 @@ export class CompletionDeliveryBroker {
 		this.awaitingParentAck = this.awaitingParentAck.filter(
 			(completion) => !removed.has(completion.completionId),
 		);
+	}
+
+	private notifyDeliveryAttempt(
+		completions: readonly AgentTurnCompletion[],
+		input: {
+			delivery: "steer" | "nextTurn";
+			triggerTurn: boolean;
+			outcome: "accepted" | "failed";
+		},
+	): void {
+		try {
+			this.options.onDeliveryAttempt?.(completions, input);
+		} catch {
+			// Delivery already succeeded, so an observer cannot retract it.
+		}
 	}
 
 	private isRootIdle(): boolean {
