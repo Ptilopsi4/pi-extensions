@@ -611,7 +611,7 @@ export function createAccountAliasProvider(options: {
 		headers: base.headers,
 		auth: {
 			apiKey: {
-				name: `${adapter.displayName} ${binding.accountName} account alias`,
+				name: `${adapter.displayName} ${binding.accountName} alias; manage it with /accounts`,
 				check: async ({ signal }) => check(signal),
 				resolve: async ({ signal }) => resolve(signal),
 			},

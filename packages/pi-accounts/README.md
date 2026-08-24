@@ -74,7 +74,7 @@ Open the interactive account manager:
 
 The standard manager runs in TUI or RPC mode; Back returns through provider/account screens and Escape closes the root.
 Print and JSON modes reject it observably.
-Any extra text after `/accounts` is ignored so the entry point stays singular.
+`/accounts` accepts no arguments and rejects trailing text with its usage string.
 Provider-owned OAuth challenges, account-name text input, and exact replacement/removal confirmations remain specialized dialogs because they carry credential and destructive-action policy rather than ordinary navigation.
 
 When no accounts are saved yet, the menu starts with login:
@@ -159,7 +159,8 @@ Switching Copilot accounts rebuilds the projection from the complete pre-overlay
 A currently selected model that is unavailable to the named account is rejected before the turn starts.
 
 Experimental aliases read credentials directly from `pi-accounts.json` and never copy them into Pi `auth.json`.
-They do not appear in `/login`; create, replace, and remove their named credentials through `/accounts`.
+Pi requires every provider to declare an authentication method and lists ambient methods in `/login`, so enabled aliases appear there as externally managed entries.
+Selecting one shows that it is managed through `/accounts`; `/login` cannot create, replace, or remove the named credential.
 Each alias refreshes and converts only its bound credential through the provider-owned OAuth implementation.
 It never falls back to the original provider, environment auth, Pi `auth.json`, `default`, or another named account.
 Disablement, replacement, removal, and shutdown invalidate alias requests, and request dispatch rechecks the setting, credential, endpoint, headers, and Copilot entitlement.
@@ -212,6 +213,7 @@ It is excluded from active workspace checks, version bumps, and publishing.
 - Case-insensitive alias collisions are skipped because Pi resolves CLI provider references case-insensitively.
 - Another extension using the same provider ID can still produce a startup load-order collision because Pi has no factory-time ownership preflight API.
 - Runtime cleanup uses provider object identity and does not remove a foreign provider that replaced an alias.
+- Pi lists alias authentication as externally managed in `/login` because the provider API has no hide-from-login flag.
 - Live OAuth login and model requests depend on provider service availability and account entitlement.
 
 ## 🗂️ Package layout

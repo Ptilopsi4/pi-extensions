@@ -159,6 +159,8 @@ test("alias providers preserve model metadata and map stream identity without mu
 	});
 	const aliasModel = alias.getModels()[0];
 	assert.ok(aliasModel);
+	assert.match(alias.auth.apiKey?.name ?? "", /manage it with \/accounts/);
+	assert.equal(alias.auth.apiKey?.login, undefined);
 	assert.equal(aliasModel.provider, "openai-codex-work");
 	assert.equal(aliasModel.cost.input, 1);
 	const previous = assistant("openai-codex-work");

@@ -47,12 +47,13 @@ export function createAccountCommand(
 		ctx: ExtensionContext,
 	) => Promise<EnsureActiveProviderAuthResult>,
 	aliases: AliasControls,
-	getMenuOwner: () => MenuOwner,
+	getMenuOwner: (ctx: ExtensionCommandContext) => MenuOwner,
 ) {
 	return {
 		description: "Open the interactive subscription account manager",
-		handler: async (_args: string, ctx: ExtensionCommandContext) => {
-			await showAccountsMenu(pi, ctx, store, adapters, syncProvider, aliases, getMenuOwner());
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			if (args.trim()) throw new Error("Usage: /accounts");
+			await showAccountsMenu(pi, ctx, store, adapters, syncProvider, aliases, getMenuOwner(ctx));
 		},
 	};
 }
@@ -310,6 +311,7 @@ async function showAccountsMenu(
 					requireAdapter(adapters, providerId),
 					accountName,
 					syncProvider,
+					owner.isCurrent,
 				);
 				return { kind: "close" };
 			},
@@ -334,6 +336,7 @@ async function showAccountsMenu(
 					option.accountName,
 					syncProvider,
 					() => aliases.reconcile(ctx, { notifyErrors: true, signal }),
+					owner.isCurrent,
 					aliases.getBinding(ctx.model?.provider),
 				);
 				return { kind: "close" };
@@ -359,6 +362,7 @@ async function showAccountsMenu(
 					);
 					return { kind: "stay" };
 				} catch (error) {
+					if (!owner.isCurrent()) return { kind: "close" };
 					ctx.ui.notify(
 						`Could not ${enabled ? "enable" : "disable"} account provider aliases: ${safeTerminalText(redactTokenText(errorMessage(error)))}`,
 						"error",
@@ -719,6 +723,7 @@ async function switchAccount(
 		providerId: AccountProviderId,
 		ctx: ExtensionContext,
 	) => Promise<EnsureActiveProviderAuthResult>,
+	isCurrent: () => boolean,
 ): Promise<void> {
 	const name = nameArg.trim();
 	if (!name) {
@@ -726,8 +731,12 @@ async function switchAccount(
 		return;
 	}
 	if (isDefaultPiLoginArg(name)) {
-		await store.updateProvider(adapter.id, (state) => ({ ...state, active: undefined }));
+		await store.updateProvider(adapter.id, (state) =>
+			isCurrent() ? { ...state, active: undefined } : state,
+		);
+		if (!isCurrent()) return;
 		const result = await syncProvider(adapter.id, ctx);
+		if (!isCurrent()) return;
 		if (result.status === "error") {
 			ctx.ui.notify(
 				`Could not restore default Pi ${adapter.displayName} login; requests will fail closed: ${result.message}`,
@@ -742,15 +751,17 @@ async function switchAccount(
 	if (!parsed.ok) return ctx.ui.notify(parsed.error, "warning");
 	let found = false;
 	await store.updateProvider(adapter.id, (state) => {
-		if (!getOwnCredential(state.accounts, parsed.name)) return state;
+		if (!isCurrent() || !getOwnCredential(state.accounts, parsed.name)) return state;
 		found = true;
 		return { ...state, active: parsed.name };
 	});
+	if (!isCurrent()) return;
 	if (!found) {
 		ctx.ui.notify(`${adapter.displayName} account "${parsed.name}" was not found.`, "warning");
 		return;
 	}
 	const result = await syncProvider(adapter.id, ctx);
+	if (!isCurrent()) return;
 	ctx.ui.notify(
 		formatActivationMessage("Activated", adapter, parsed.name, result),
 		result.status === "active" ? "info" : "error",
@@ -767,6 +778,7 @@ async function removeAccount(
 		ctx: ExtensionContext,
 	) => Promise<EnsureActiveProviderAuthResult>,
 	reconcileAliases: () => Promise<AccountAliasStatus>,
+	isCurrent: () => boolean,
 	currentAlias?: AccountAliasBinding,
 ): Promise<void> {
 	const parsed = parseAccountName(nameArg);
@@ -774,18 +786,20 @@ async function removeAccount(
 	let removed = false;
 	let removedActive = false;
 	await store.updateProvider(adapter.id, (state) => {
-		if (!getOwnCredential(state.accounts, parsed.name)) return state;
+		if (!isCurrent() || !getOwnCredential(state.accounts, parsed.name)) return state;
 		removed = true;
 		removedActive = state.active === parsed.name;
 		const accounts = defineOwnMap(state.accounts);
 		delete accounts[parsed.name];
 		return { ...state, active: removedActive ? undefined : state.active, accounts };
 	});
+	if (!isCurrent()) return;
 	if (!removed) {
 		ctx.ui.notify(`${adapter.displayName} account "${parsed.name}" was not found.`, "warning");
 		return;
 	}
 	const aliasStatus = await reconcileAliases();
+	if (!isCurrent()) return;
 	if (aliasStatus.error) throw new Error(aliasStatus.error);
 	if (currentAlias?.providerId === adapter.id && currentAlias.accountName === parsed.name) {
 		ctx.ui.notify(
@@ -795,6 +809,7 @@ async function removeAccount(
 	}
 	if (removedActive) {
 		const result = await syncProvider(adapter.id, ctx);
+		if (!isCurrent()) return;
 		if (result.status === "error") {
 			ctx.ui.notify(
 				`Removed ${adapter.displayName} account "${parsed.name}", but default auth restoration failed closed: ${result.message}`,

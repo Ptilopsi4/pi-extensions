@@ -472,6 +472,70 @@ test("enabled aliases initialize in the awaited extension factory", async () => 
 	assert.match(notifications.map((entry) => entry.message).join("\n"), /aliases are experimental/);
 });
 
+test("session shutdown stops aborted alias startup before provider auth can republish", async () => {
+	const store = new AccountStore(new InMemoryAccountStorageBackend());
+	await store.write({
+		version: 1,
+		settings: { accountProviderAliases: true },
+		providers: {
+			anthropic: { active: "work", accounts: { work: credential("work") } },
+		},
+	});
+	let conversions = 0;
+	const anthropic = fakeProvider("anthropic");
+	anthropic.oauth.toAuth = async (current) => {
+		conversions += 1;
+		return { apiKey: current.access };
+	};
+	let markReconcileStarted!: () => void;
+	const reconcileStarted = new Promise<void>((resolve) => {
+		markReconcileStarted = resolve;
+	});
+	const aliasModule: AccountAliasModule = {
+		createAccountAliasRuntime: async () => ({
+			async initializeFactory() {},
+			async reconcile(_ctx, signal) {
+				markReconcileStarted();
+				if (!signal) throw new Error("Missing session cancellation signal");
+				await new Promise<void>((_resolve, reject) => {
+					const rejectAborted = () => reject(signal.reason);
+					if (signal.aborted) rejectAborted();
+					else signal.addEventListener("abort", rejectAborted, { once: true });
+				});
+				throw new Error("unreachable");
+			},
+			async shutdown() {},
+			getStatus: () => ({
+				enabled: true,
+				managed: 1,
+				available: 1,
+				collisions: [],
+			}),
+			getBinding: () => undefined,
+		}),
+	};
+	const mock = createMockPi();
+	await accountsExtension(mock.pi, {
+		store,
+		providers: [fakeProvider("openai-codex"), anthropic, fakeProvider("github-copilot")],
+		aliasModuleLoader: async () => aliasModule,
+	});
+	const { registry, keys } = runtimeHarness(mock);
+	const { ctx, statuses } = createMockContext({
+		model: { provider: "anthropic", id: "claude" },
+		modelRegistry: registry,
+	});
+
+	const startup = mock.events.get("session_start")?.[0]?.({}, ctx);
+	await reconcileStarted;
+	await mock.events.get("session_shutdown")?.[0]?.({}, ctx);
+	await startup;
+
+	assert.equal(conversions, 0);
+	assert.equal(keys.has("anthropic"), false);
+	assert.equal(statuses.get(ACCOUNTS_STATUS_KEY), undefined);
+});
+
 test("enabled factory registers native aliases with built-in model catalogs", async () => {
 	const store = new AccountStore(new InMemoryAccountStorageBackend());
 	await store.write({
@@ -653,13 +717,34 @@ test("accounts command rejects observably outside TUI and RPC modes", async () =
 	for (const mode of ["print", "json"] as const) {
 		const { ctx } = createMockContext({ mode, hasUI: false });
 		await assert.rejects(
-			Promise.resolve(mock.commands.get("accounts")?.handler("switch anthropic work", ctx)),
+			Promise.resolve(mock.commands.get("accounts")?.handler("", ctx)),
 			/requires interactive UI/,
 		);
 	}
 });
 
-test("accounts empty state offers only login and ignores command arguments", async () => {
+test("accounts command rejects trailing arguments before opening UI", async () => {
+	const mock = createMockPi();
+	accountsExtension(mock.pi, {
+		store: new AccountStore(new InMemoryAccountStorageBackend()),
+		providers: [
+			fakeProvider("openai-codex"),
+			fakeProvider("anthropic"),
+			fakeProvider("github-copilot"),
+		],
+	});
+	const interactive = createInteractiveAccountContext();
+
+	await assert.rejects(
+		Promise.resolve(
+			mock.commands.get("accounts")?.handler("switch anthropic work", interactive.ctx),
+		),
+		/Usage: \/accounts/,
+	);
+	assert.equal(interactive.selectCalls.length, 0);
+});
+
+test("accounts empty state offers login and manager actions", async () => {
 	const store = new AccountStore(new InMemoryAccountStorageBackend());
 	const mock = createMockPi();
 	accountsExtension(mock.pi, {
@@ -676,7 +761,7 @@ test("accounts empty state offers only login and ignores command arguments", asy
 		{ selections: [] },
 	);
 
-	await mock.commands.get("accounts")?.handler("anything ignored", ctx);
+	await mock.commands.get("accounts")?.handler("", ctx);
 
 	assert.match(selectCalls[0]?.title ?? "", /No saved accounts yet/);
 	assert.deepEqual(selectCalls[0]?.options, ["Login new account", "Settings", "Status", "Help"]);
@@ -709,7 +794,7 @@ test("accounts menu summarizes all supported providers and prioritizes current p
 		modelRegistry: registry,
 	});
 
-	await mock.commands.get("accounts")?.handler("ignored", ctx);
+	await mock.commands.get("accounts")?.handler("", ctx);
 
 	assert.match(selectCalls[0]?.title ?? "", /Current model:\nAnthropic \/ claude/);
 	assert.match(selectCalls[0]?.title ?? "", /Anthropic: work/);
@@ -747,7 +832,7 @@ test("accounts menu prioritizes login when the current provider has no saved acc
 		modelRegistry: registry,
 	});
 
-	await mock.commands.get("accounts")?.handler("ignored", ctx);
+	await mock.commands.get("accounts")?.handler("", ctx);
 
 	assert.deepEqual(selectCalls[0]?.options, [
 		"Login new account",
@@ -780,7 +865,7 @@ test("accounts menu uses generic provider switch for unsupported current models"
 		modelRegistry: registry,
 	});
 
-	await mock.commands.get("accounts")?.handler("ignored", ctx);
+	await mock.commands.get("accounts")?.handler("", ctx);
 
 	assert.deepEqual(selectCalls[0]?.options, [
 		"Login new account",
@@ -816,7 +901,7 @@ test("switch another provider account selects provider before account", async ()
 		{ selections: ["Switch another provider’s account", "OpenAI Codex", "work"] },
 	);
 
-	await mock.commands.get("accounts")?.handler("ignored", ctx);
+	await mock.commands.get("accounts")?.handler("", ctx);
 
 	assert.equal((await store.readProviderAsync("openai-codex")).active, "work");
 	assert.equal(keys.get("openai-codex"), "access-codex");
@@ -852,7 +937,7 @@ test("provider accounts activate independently and default clears only one provi
 	assert.equal(keys.get("openai-codex"), "access-codex");
 	assert.equal(keys.get("anthropic"), "access-claude");
 
-	await mock.commands.get("accounts")?.handler("ignored", ctx);
+	await mock.commands.get("accounts")?.handler("", ctx);
 	const data = await store.readAsync();
 	assert.equal(data.providers.anthropic?.active, undefined);
 	assert.equal(data.providers["openai-codex"]?.active, "personal");
@@ -901,9 +986,16 @@ test("Codex connections invalidate only when the applied account identity change
 		providers: [codex, fakeProvider("anthropic"), fakeProvider("github-copilot")],
 	});
 	const { registry } = runtimeHarness(mock);
+	const sessionManager = {
+		getSessionId: () => "test-session",
+		getSessionName: () => undefined,
+		getBranch: () => [],
+		getEntries: () => [],
+	};
 	const { ctx } = createMockContext({
 		model: { provider: "openai-codex", id: "codex" },
 		modelRegistry: registry,
+		sessionManager,
 	});
 
 	await mock.events.get("session_start")?.[0]?.({}, ctx);
@@ -913,10 +1005,11 @@ test("Codex connections invalidate only when the applied account identity change
 		{
 			model: { provider: "openai-codex", id: "codex" },
 			modelRegistry: registry,
+			sessionManager,
 		},
 		{ selections: ["Switch OpenAI Codex account", "default"] },
 	).ctx;
-	await mock.commands.get("accounts")?.handler("ignored", switchContext);
+	await mock.commands.get("accounts")?.handler("", switchContext);
 	assert.deepEqual(invalidations, ["test-session", "test-session"]);
 });
 
@@ -1074,7 +1167,7 @@ test("generic login stores the full provider-owned credential and activates it",
 		{ selections: ["Login new account", "GitHub Copilot"], inputs: ["personal"] },
 	);
 
-	await mock.commands.get("accounts")?.handler("ignored", ctx);
+	await mock.commands.get("accounts")?.handler("", ctx);
 	const stored = (await store.readAsync()).providers["github-copilot"];
 	assert.equal(stored?.active, "personal");
 	assert.deepEqual(stored?.accounts.personal?.availableModelIds, ["allowed"]);
@@ -1113,7 +1206,7 @@ test("session shutdown aborts idle OAuth login before stale credentials can publ
 		{ selections: ["Login new account", "GitHub Copilot"], inputs: ["personal"] },
 	);
 
-	const login = mock.commands.get("accounts")?.handler("ignored", ctx);
+	const login = mock.commands.get("accounts")?.handler("", ctx);
 	await started;
 	await mock.events.get("session_shutdown")?.[0]?.({}, ctx);
 	await login;
@@ -1142,7 +1235,7 @@ test("login rejects default as a reserved account name", async () => {
 		{ selections: ["Login new account", "Anthropic"], inputs: ["default"] },
 	);
 
-	await mock.commands.get("accounts")?.handler("ignored", ctx);
+	await mock.commands.get("accounts")?.handler("", ctx);
 
 	assert.equal((await store.readProviderAsync("anthropic")).accounts.default, undefined);
 	assert.match(notifications.at(-1)?.message ?? "", /reserved/);
@@ -1171,7 +1264,7 @@ test("login asks before replacing an existing account name", async () => {
 		{ selections: ["Login new account", "Anthropic"], inputs: ["work"], confirms: [false] },
 	);
 
-	await mock.commands.get("accounts")?.handler("ignored", cancelled.ctx);
+	await mock.commands.get("accounts")?.handler("", cancelled.ctx);
 	assert.equal(logins, 0);
 	assert.equal((await store.readProviderAsync("anthropic")).accounts.work?.access, "access-old");
 	assert.match(cancelled.confirmCalls[0]?.message ?? "", /already exists/);
@@ -1180,7 +1273,7 @@ test("login asks before replacing an existing account name", async () => {
 		{ model: { provider: "anthropic", id: "claude" }, modelRegistry: registry },
 		{ selections: ["Login new account", "Anthropic"], inputs: ["work"], confirms: [true] },
 	);
-	await mock.commands.get("accounts")?.handler("ignored", replaced.ctx);
+	await mock.commands.get("accounts")?.handler("", replaced.ctx);
 	assert.equal(logins, 1);
 	assert.equal((await store.readProviderAsync("anthropic")).accounts.work?.access, "access-new");
 });
@@ -1203,7 +1296,7 @@ test("login selects a provider default model only when the current model is unkn
 		{ selections: ["Login new account", "OpenAI Codex"], inputs: ["work"] },
 	);
 
-	await mock.commands.get("accounts")?.handler("ignored", ctx);
+	await mock.commands.get("accounts")?.handler("", ctx);
 
 	assert.equal(mock.setModels.length, 1);
 });
@@ -1477,9 +1570,16 @@ test("account reset during OAuth conversion cannot restore a stale runtime overr
 		providers: [fakeProvider("openai-codex"), anthropic, fakeProvider("github-copilot")],
 	});
 	const { registry, keys } = runtimeHarness(mock);
+	const sessionManager = {
+		getSessionId: () => "test-session",
+		getSessionName: () => undefined,
+		getBranch: () => [],
+		getEntries: () => [],
+	};
 	const { ctx } = createMockContext({
 		model: { provider: "anthropic", id: "claude" },
 		modelRegistry: registry,
+		sessionManager,
 	});
 
 	const startup = mock.events.get("session_start")?.[0]?.({}, ctx);
@@ -1488,10 +1588,11 @@ test("account reset during OAuth conversion cannot restore a stale runtime overr
 		{
 			model: { provider: "anthropic", id: "claude" },
 			modelRegistry: registry,
+			sessionManager,
 		},
 		{ selections: ["Switch Anthropic account", "default"] },
 	).ctx;
-	const reset = mock.commands.get("accounts")?.handler("ignored", resetContext);
+	const reset = mock.commands.get("accounts")?.handler("", resetContext);
 	releaseConversion?.();
 	await Promise.all([startup, reset]);
 	assert.equal((await store.readProviderAsync("anthropic")).active, undefined);
@@ -1545,9 +1646,9 @@ test("an overlapping account switch reports when its requested account was super
 		{ selections: ["Switch OpenAI Codex account", "beta"] },
 	);
 
-	const older = mock.commands.get("accounts")?.handler("ignored", olderContext.ctx);
+	const older = mock.commands.get("accounts")?.handler("", olderContext.ctx);
 	await alphaStarted;
-	await mock.commands.get("accounts")?.handler("ignored", newerContext.ctx);
+	await mock.commands.get("accounts")?.handler("", newerContext.ctx);
 	releaseAlpha?.();
 	await older;
 
@@ -1587,7 +1688,7 @@ test("remove account confirms and active removal restores default provider auth"
 
 	await mock.events.get("session_start")?.[0]?.({}, ctx);
 	assert.equal(keys.get("anthropic"), "access-work");
-	await mock.commands.get("accounts")?.handler("ignored", ctx);
+	await mock.commands.get("accounts")?.handler("", ctx);
 
 	const state = await store.readProviderAsync("anthropic");
 	assert.equal(state.active, undefined);

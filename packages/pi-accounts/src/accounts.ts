@@ -12,7 +12,7 @@ import {
 	getOwnCredential,
 	type StoredOAuthCredential,
 } from "./account-store.js";
-import { type AliasControls, createAccountCommand } from "./accounts-menu.js";
+import { type AliasControls, createAccountCommand, type MenuOwner } from "./accounts-menu.js";
 import {
 	type AccountProviderAdapter,
 	type AccountProviderId,
@@ -71,7 +71,8 @@ export default function accountsExtension(
 	const abortProviders = new Set<AccountProviderId>();
 	const syncTasks = new Map<AccountProviderId, Promise<EnsureActiveProviderAuthResult>>();
 	let sessionGeneration = 0;
-	let menuController = new AbortController();
+	let sessionController = new AbortController();
+	let activeSessionManager: ExtensionContext["sessionManager"] | undefined;
 	let aliasRuntime: AccountAliasRuntime | undefined;
 	let aliasRuntimePromise: Promise<AccountAliasRuntime> | undefined;
 	let aliasSettingsTail: Promise<void> = Promise.resolve();
@@ -105,8 +106,10 @@ export default function accountsExtension(
 	): Promise<AccountAliasStatus> => {
 		let enabledRequested = aliasRuntime?.getStatus().enabled ?? false;
 		try {
+			options.signal?.throwIfAborted();
 			if (!aliasRuntime) {
 				const data = await store.readAsync();
+				options.signal?.throwIfAborted();
 				enabledRequested = data.settings?.accountProviderAliases === true;
 				if (!enabledRequested) {
 					aliasStartupError = undefined;
@@ -114,6 +117,7 @@ export default function accountsExtension(
 				}
 			}
 			const status = await (await ensureAliasRuntime()).reconcile(ctx, options.signal);
+			options.signal?.throwIfAborted();
 			aliasStartupError = status.error;
 			if (status.enabled && status.collisions.length > 0 && options.notifyErrors) {
 				ctx.ui.notify(
@@ -123,6 +127,8 @@ export default function accountsExtension(
 			}
 			return status;
 		} catch (error) {
+			if (options.signal?.aborted) throw options.signal.reason ?? error;
+			if (isAbortError(error)) throw error;
 			aliasStartupError = safeTerminalText(redactTokenText(errorMessage(error)));
 			if (options.notifyErrors) {
 				ctx.ui.notify(`Account provider aliases failed: ${aliasStartupError}`, "error");
@@ -137,48 +143,104 @@ export default function accountsExtension(
 		}
 	};
 
+	const captureSessionOwner = (ctx: ExtensionContext): MenuOwner => {
+		const generation = sessionGeneration;
+		const controller = sessionController;
+		const sessionManager = ctx.sessionManager;
+		return {
+			signal: controller.signal,
+			isCurrent: () =>
+				generation === sessionGeneration &&
+				controller === sessionController &&
+				!controller.signal.aborted &&
+				(activeSessionManager === undefined || activeSessionManager === sessionManager),
+		};
+	};
+
+	const beginSession = (ctx: ExtensionContext): MenuOwner => {
+		sessionGeneration += 1;
+		sessionController.abort(new DOMException("Accounts session replaced", "AbortError"));
+		sessionController = new AbortController();
+		activeSessionManager = ctx.sessionManager;
+		for (const coordinator of coordinators.values()) coordinator.invalidate(ctx);
+		return captureSessionOwner(ctx);
+	};
+
 	const syncProvider = (
 		providerId: AccountProviderId,
 		ctx: ExtensionContext,
 		model = ctx.model,
+		owner = captureSessionOwner(ctx),
 	): Promise<EnsureActiveProviderAuthResult> => {
 		let task!: Promise<EnsureActiveProviderAuthResult>;
 		task = (async () => {
+			assertCurrent(owner);
 			const adapter = requireAdapter(adapters, providerId);
 			const coordinator = coordinators.get(providerId);
 			if (!coordinator) throw new Error(`Missing runtime coordinator for ${providerId}.`);
 			let result = await coordinator.ensureActive(ctx, store);
+			assertCurrent(owner);
 			let latest = syncTasks.get(providerId);
-			if (latest && latest !== task) return latest;
+			if (latest && latest !== task) {
+				const latestResult = await latest;
+				assertCurrent(owner);
+				return latestResult;
+			}
 			try {
 				const identity = await authIdentity(store, result);
+				assertCurrent(owner);
 				latest = syncTasks.get(providerId);
-				if (latest && latest !== task) return latest;
+				if (latest && latest !== task) {
+					const latestResult = await latest;
+					assertCurrent(owner);
+					return latestResult;
+				}
 				const previousIdentity = appliedIdentities.get(providerId);
 				const shouldInvalidate =
 					previousIdentity !== identity &&
 					!(previousIdentity === undefined && identity === "default");
 				if (shouldInvalidate) {
 					await adapter.invalidateConnections?.(ctx.sessionManager.getSessionId());
+					assertCurrent(owner);
 					latest = syncTasks.get(providerId);
-					if (latest && latest !== task) return latest;
+					if (latest && latest !== task) {
+						const latestResult = await latest;
+						assertCurrent(owner);
+						return latestResult;
+					}
 				}
 				appliedIdentities.set(providerId, identity);
 			} catch (error) {
+				assertCurrent(owner);
 				latest = syncTasks.get(providerId);
-				if (latest && latest !== task) return latest;
+				if (latest && latest !== task) {
+					const latestResult = await latest;
+					assertCurrent(owner);
+					return latestResult;
+				}
 				const credential = await selectedCredential(store, providerId, result);
+				assertCurrent(owner);
 				latest = syncTasks.get(providerId);
-				if (latest && latest !== task) return latest;
+				if (latest && latest !== task) {
+					const latestResult = await latest;
+					assertCurrent(owner);
+					return latestResult;
+				}
 				result = await coordinator.forceFailClosed(
 					ctx,
 					result.status === "inactive" ? "unknown" : result.accountName,
 					error,
 					credential,
 				);
+				assertCurrent(owner);
 			}
 			latest = syncTasks.get(providerId);
-			if (latest && latest !== task) return latest;
+			if (latest && latest !== task) {
+				const latestResult = await latest;
+				assertCurrent(owner);
+				return latestResult;
+			}
+			assertCurrent(owner);
 			results.set(providerId, result);
 			updateStatus(ctx, results, model, aliasRuntime?.getBinding(model?.provider));
 			return result;
@@ -187,9 +249,11 @@ export default function accountsExtension(
 		return task;
 	};
 
-	const syncAll = async (ctx: ExtensionContext): Promise<void> => {
+	const syncAll = async (ctx: ExtensionContext, owner: MenuOwner): Promise<void> => {
 		for (const provider of providers) {
-			const result = await syncProvider(provider.id, ctx);
+			assertCurrent(owner);
+			const result = await syncProvider(provider.id, ctx, ctx.model, owner);
+			assertCurrent(owner);
 			if (result.status === "error") {
 				ctx.ui.notify(
 					`${provider.displayName} account "${result.accountName}" failed closed: ${result.message}`,
@@ -197,6 +261,7 @@ export default function accountsExtension(
 				);
 			}
 		}
+		assertCurrent(owner);
 		updateStatus(ctx, results, ctx.model, aliasRuntime?.getBinding(ctx.model?.provider));
 	};
 
@@ -228,49 +293,61 @@ export default function accountsExtension(
 		adapters,
 		syncProvider,
 		aliasControls,
-		() => {
-			const generation = sessionGeneration;
-			return {
-				signal: menuController.signal,
-				isCurrent: () => generation === sessionGeneration && !menuController.signal.aborted,
-			};
-		},
+		(ctx) => captureSessionOwner(ctx),
 	);
 	pi.registerCommand("accounts", accountCommand);
 
 	pi.on("session_start", async (_event, ctx) => {
-		sessionGeneration += 1;
-		menuController.abort(new DOMException("Accounts session replaced", "AbortError"));
-		menuController = new AbortController();
-		if (migrationNotice) {
-			ctx.ui.notify(migrationNotice, "warning");
-			migrationNotice = undefined;
+		const owner = beginSession(ctx);
+		try {
+			if (migrationNotice) {
+				ctx.ui.notify(migrationNotice, "warning");
+				migrationNotice = undefined;
+			}
+			const aliasStatus = await reconcileAliases(ctx, {
+				notifyErrors: true,
+				signal: owner.signal,
+			});
+			assertCurrent(owner);
+			if (aliasStatus.enabled) {
+				ctx.ui.notify(
+					"Account provider aliases are experimental and remain bound to their named accounts.",
+					"warning",
+				);
+			}
+			await syncAll(ctx, owner);
+			assertCurrent(owner);
+			updateStatus(ctx, results, ctx.model, aliasRuntime?.getBinding(ctx.model?.provider));
+		} catch (error) {
+			if (!owner.isCurrent() || isAbortError(error)) return;
+			throw error;
 		}
-		const aliasStatus = await reconcileAliases(ctx, { notifyErrors: true });
-		if (aliasStatus.enabled) {
-			ctx.ui.notify(
-				"Account provider aliases are experimental and remain bound to their named accounts.",
-				"warning",
-			);
-		}
-		await syncAll(ctx);
-		updateStatus(ctx, results, ctx.model, aliasRuntime?.getBinding(ctx.model?.provider));
 	});
 
 	pi.on("model_select", async (event, ctx) => {
-		const providerId = toProviderId(event.model.provider);
-		if (providerId) await syncProvider(providerId, ctx, event.model);
-		else {
-			updateStatus(ctx, results, event.model, aliasRuntime?.getBinding(event.model.provider));
+		const owner = captureSessionOwner(ctx);
+		try {
+			assertCurrent(owner);
+			const providerId = toProviderId(event.model.provider);
+			if (providerId) await syncProvider(providerId, ctx, event.model, owner);
+			else {
+				assertCurrent(owner);
+				updateStatus(ctx, results, event.model, aliasRuntime?.getBinding(event.model.provider));
+			}
+		} catch (error) {
+			if (!owner.isCurrent() || isAbortError(error)) return;
+			throw error;
 		}
 	});
 
 	pi.on("before_agent_start", async (_event, ctx) => {
+		const owner = captureSessionOwner(ctx);
 		abortProviders.clear();
 		const providerId = toProviderId(ctx.model?.provider);
 		if (!providerId) return;
 		try {
-			const result = await syncProvider(providerId, ctx);
+			const result = await syncProvider(providerId, ctx, ctx.model, owner);
+			assertCurrent(owner);
 			const coordinator = coordinators.get(providerId);
 			if (result.status === "error") abortProviders.add(providerId);
 			if (
@@ -286,12 +363,14 @@ export default function accountsExtension(
 				);
 			}
 		} catch (error) {
+			if (!owner.isCurrent() || isAbortError(error)) return;
 			abortProviders.add(providerId);
 			throw error;
 		}
 	});
 
 	pi.on("turn_start", (_event, ctx) => {
+		if (!captureSessionOwner(ctx).isCurrent()) return;
 		const providerId = toProviderId(ctx.model?.provider);
 		if (!providerId || !abortProviders.has(providerId)) return;
 		abortProviders.delete(providerId);
@@ -300,15 +379,14 @@ export default function accountsExtension(
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		sessionGeneration += 1;
-		menuController.abort(new DOMException("Accounts session shut down", "AbortError"));
+		sessionController.abort(new DOMException("Accounts session shut down", "AbortError"));
+		activeSessionManager = undefined;
 		abortProviders.clear();
+		for (const coordinator of coordinators.values()) coordinator.invalidate(ctx);
 		await aliasSettingsTail;
 		await Promise.allSettled([
 			...(aliasRuntime ? [aliasRuntime.shutdown(ctx)] : []),
-			...[...coordinators.values()].map(async (coordinator) => {
-				coordinator.invalidate(ctx);
-				await coordinator.clear(ctx);
-			}),
+			...[...coordinators.values()].map((coordinator) => coordinator.clear(ctx)),
 		]);
 		setStatus(ctx, undefined);
 	});
@@ -412,6 +490,16 @@ function isStaleContextError(error: unknown): boolean {
 		error instanceof Error &&
 		error.message.includes("This extension ctx is stale after session replacement or reload")
 	);
+}
+
+function assertCurrent(owner: MenuOwner): void {
+	if (!owner.isCurrent()) {
+		throw owner.signal.reason ?? new DOMException("Accounts session is stale", "AbortError");
+	}
+}
+
+function isAbortError(error: unknown): boolean {
+	return error instanceof Error && error.name === "AbortError";
 }
 
 function disabledAliasStatus(error?: string): AccountAliasStatus {
