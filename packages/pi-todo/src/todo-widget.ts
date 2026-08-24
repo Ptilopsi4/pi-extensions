@@ -6,7 +6,7 @@ import type {
 	SessionEntry,
 	Theme,
 } from "@earendil-works/pi-coding-agent";
-import { stripTerminalSequences, truncateToWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 export const TOOL_NAME = "update_todo_list";
@@ -160,22 +160,36 @@ export function renderTodoWidget(
 	const divider = theme.fg("borderMuted", "─".repeat(Math.max(0, width)));
 	const lines = [divider, theme.fg("muted", `Todo · ${completed}/${items.length} complete`)];
 
+	const renderWidth = Math.max(0, width);
 	for (const item of items) {
 		const text = sanitizeTodoText(item.text);
+		let prefix: string;
+		let styledText: string;
 		switch (item.status) {
 			case "completed":
-				lines.push(theme.fg("success", "✓ ") + theme.fg("muted", theme.strikethrough(text)));
+				prefix = theme.fg("success", "✓ ");
+				styledText = theme.fg("muted", theme.strikethrough(text));
 				break;
 			case "in_progress":
-				lines.push(theme.fg("accent", "▶ ") + theme.fg("accent", theme.bold(text)));
+				prefix = theme.fg("accent", "▶ ");
+				styledText = theme.fg("accent", theme.bold(text));
 				break;
 			case "pending":
-				lines.push(theme.fg("dim", "○ ") + theme.fg("text", text));
+				prefix = theme.fg("dim", "○ ");
+				styledText = theme.fg("text", text);
 				break;
 		}
+
+		if (renderWidth <= 2) {
+			lines.push(prefix);
+			continue;
+		}
+
+		const wrappedText = wrapTextWithAnsi(styledText, renderWidth - 2);
+		lines.push(...wrappedText.map((line, index) => `${index === 0 ? prefix : "  "}${line}`));
 	}
 
-	return lines.map((line) => truncateToWidth(line, Math.max(0, width), ""));
+	return lines.map((line) => truncateToWidth(line, renderWidth, ""));
 }
 
 export function reconcileTodoContext(
