@@ -1,14 +1,28 @@
 import assert from "node:assert/strict";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, test, vi } from "vitest";
 import activeToolStatus, {
 	ACTIVE_TOOL_REFRESH_INTERVAL_MS,
 	formatActiveToolWidget,
+	renderActiveToolWidget,
 	sanitizeToolName,
 	WIDGET_KEY,
 } from "./index.js";
 
 type Handler = (event: never, ctx: ExtensionContext) => unknown;
+type WidgetFactory = (_tui: never, theme: Theme) => Component;
+type WidgetRecord = [
+	string,
+	string[] | WidgetFactory | undefined,
+	{ placement: "aboveEditor" } | undefined,
+];
+
+const DIVIDER = "─".repeat(80);
+const IDENTITY_THEME = {
+	fg: (_role: string, text: string) => text,
+} as unknown as Theme;
 
 afterEach(() => {
 	vi.useRealTimers();
@@ -37,18 +51,18 @@ function createHarness(initialTools: string[] = []) {
 	};
 }
 
-function createContext() {
-	const widgets: Array<[string, string[] | undefined, { placement: "aboveEditor" } | undefined]> =
-		[];
+function createContext(mode: ExtensionContext["mode"] = "tui") {
+	const widgets: WidgetRecord[] = [];
 	const sessionManager = {} as ExtensionContext["sessionManager"];
 	const ctx = {
+		mode,
 		hasUI: true,
 		isIdle: () => true,
 		sessionManager,
 		ui: {
 			setWidget(
 				key: string,
-				content: string[] | undefined,
+				content: string[] | WidgetFactory | undefined,
 				options?: { placement: "aboveEditor" },
 			) {
 				widgets.push([key, content, options]);
@@ -58,14 +72,27 @@ function createContext() {
 	return { ctx, widgets };
 }
 
+function renderWidgetRecord(
+	record: WidgetRecord | undefined,
+	width = 80,
+): WidgetRecord | undefined {
+	if (!record) return undefined;
+	const [key, content, options] = record;
+	const rendered =
+		typeof content === "function"
+			? content(undefined as never, IDENTITY_THEME).render(width)
+			: content;
+	return [key, rendered, options];
+}
+
 test("shows every active tool above the editor and refreshes when the set changes", async () => {
 	vi.useFakeTimers();
 	const harness = createHarness(["read", "bash"]);
 	const current = createContext();
 	await harness.emit("session_start", {}, current.ctx);
-	assert.deepEqual(current.widgets.at(-1), [
+	assert.deepEqual(renderWidgetRecord(current.widgets.at(-1)), [
 		WIDGET_KEY,
-		["Active tools (2)", "read · bash"],
+		[DIVIDER, "Active tools (2)", "read · bash"],
 		{ placement: "aboveEditor" },
 	]);
 
@@ -74,9 +101,9 @@ test("shows every active tool above the editor and refreshes when the set change
 
 	harness.setActiveTools(["read", "edit", "write"]);
 	await vi.advanceTimersByTimeAsync(ACTIVE_TOOL_REFRESH_INTERVAL_MS);
-	assert.deepEqual(current.widgets.at(-1), [
+	assert.deepEqual(renderWidgetRecord(current.widgets.at(-1)), [
 		WIDGET_KEY,
-		["Active tools (3)", "read · edit · write"],
+		[DIVIDER, "Active tools (3)", "read · edit · write"],
 		{ placement: "aboveEditor" },
 	]);
 
@@ -86,14 +113,14 @@ test("shows every active tool above the editor and refreshes when the set change
 		{ toolCallId: "loader", toolName: "firecrawl_load" },
 		current.ctx,
 	);
-	assert.deepEqual(current.widgets.at(-1), [
+	assert.deepEqual(renderWidgetRecord(current.widgets.at(-1)), [
 		WIDGET_KEY,
-		["Active tools (2)", "read · firecrawl_search"],
+		[DIVIDER, "Active tools (2)", "read · firecrawl_search"],
 		{ placement: "aboveEditor" },
 	]);
 
 	await harness.emit("session_shutdown", {}, current.ctx);
-	assert.deepEqual(current.widgets.at(-1), [WIDGET_KEY, undefined, undefined]);
+	assert.deepEqual(renderWidgetRecord(current.widgets.at(-1)), [WIDGET_KEY, undefined, undefined]);
 });
 
 test("session replacement ignores stale events and shutdown clears the owned widget", async () => {
@@ -105,21 +132,57 @@ test("session replacement ignores stale events and shutdown clears the owned wid
 	harness.setActiveTools(["edit"]);
 	await harness.emit("session_start", {}, current.ctx);
 	await harness.emit("before_agent_start", {}, previous.ctx);
-	assert.deepEqual(current.widgets.at(-1), [
+	assert.deepEqual(renderWidgetRecord(current.widgets.at(-1)), [
 		WIDGET_KEY,
-		["Active tool (1)", "edit"],
+		[DIVIDER, "Active tool (1)", "edit"],
 		{ placement: "aboveEditor" },
 	]);
 
 	await harness.emit("session_shutdown", {}, previous.ctx);
-	assert.deepEqual(current.widgets.at(-1), [
+	assert.deepEqual(renderWidgetRecord(current.widgets.at(-1)), [
 		WIDGET_KEY,
-		["Active tool (1)", "edit"],
+		[DIVIDER, "Active tool (1)", "edit"],
 		{ placement: "aboveEditor" },
 	]);
 
 	await harness.emit("session_shutdown", {}, current.ctx);
-	assert.deepEqual(current.widgets.at(-1), [WIDGET_KEY, undefined, undefined]);
+	assert.deepEqual(renderWidgetRecord(current.widgets.at(-1)), [WIDGET_KEY, undefined, undefined]);
+});
+
+test("keeps non-TUI widget content as plain strings", async () => {
+	const harness = createHarness(["read"]);
+	const rpc = createContext("rpc");
+	await harness.emit("session_start", {}, rpc.ctx);
+	assert.deepEqual(rpc.widgets.at(-1), [
+		WIDGET_KEY,
+		["Active tool (1)", "read"],
+		{ placement: "aboveEditor" },
+	]);
+	await harness.emit("session_shutdown", {}, rpc.ctx);
+});
+
+test("renders an editor-style divider and wraps every tool within the available width", () => {
+	const roles: string[] = [];
+	const theme = {
+		fg(role: string, text: string) {
+			roles.push(role);
+			return text;
+		},
+	} as unknown as Theme;
+	const lines = renderActiveToolWidget(
+		["Active tools (6)", "read · bash · edit · write · runtime_diagnostics · subagent_spawn"],
+		theme,
+		40,
+	);
+
+	assert.deepEqual(lines.map(stripTerminalSequences), [
+		"─".repeat(40),
+		"Active tools (6)",
+		"read · bash · edit · write ·",
+		"runtime_diagnostics · subagent_spawn",
+	]);
+	assert.deepEqual(roles, ["borderMuted"]);
+	assert.ok(lines.every((line) => visibleWidth(line) <= 40));
 });
 
 test("formats every tool as bounded safe display text", () => {

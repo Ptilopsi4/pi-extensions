@@ -1,4 +1,5 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 export const WIDGET_KEY = "active-tool-status";
 const MAX_TOOL_NAME_LENGTH = 32;
@@ -17,7 +18,14 @@ export default function activeToolStatus(pi: ExtensionAPI): void {
 		const content = formatActiveToolWidget(pi.getActiveTools());
 		const value = content?.join("\n");
 		if (hasPublished && value === publishedValue) return;
-		ctx.ui.setWidget(WIDGET_KEY, content, { placement: "aboveEditor" });
+		const widget =
+			content && ctx.mode === "tui"
+				? (_tui: unknown, theme: Theme) => ({
+						render: (width: number) => renderActiveToolWidget(content, theme, width),
+						invalidate: () => {},
+					})
+				: content;
+		ctx.ui.setWidget(WIDGET_KEY, widget, { placement: "aboveEditor" });
 		publishedValue = value;
 		hasPublished = true;
 	};
@@ -75,6 +83,19 @@ export function formatActiveToolWidget(toolNames: Iterable<string>): string[] | 
 	if (tools.length === 0) return undefined;
 	const label = tools.length === 1 ? "Active tool" : "Active tools";
 	return [`${label} (${tools.length})`, tools.join(" · ")];
+}
+
+export function renderActiveToolWidget(
+	lines: readonly string[],
+	theme: Theme,
+	width: number,
+): string[] {
+	const renderWidth = Math.max(0, width);
+	const contentLines =
+		renderWidth === 0
+			? lines.map(() => "")
+			: lines.flatMap((line) => wrapTextWithAnsi(line, renderWidth));
+	return [theme.fg("borderMuted", "─".repeat(renderWidth)), ...contentLines];
 }
 
 export function sanitizeToolName(value: string): string {
