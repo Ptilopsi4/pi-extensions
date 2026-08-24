@@ -24,6 +24,7 @@ test("subagents registers consistent blocking guidance and one management comman
 			"subagent",
 			"subagent_spawn",
 			"subagent_send",
+			"subagent_await",
 			"subagent_manage",
 			"subagent_mailbox",
 			"subagent_inspect",

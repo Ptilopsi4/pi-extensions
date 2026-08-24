@@ -771,7 +771,7 @@ test("registered detached workers share a workspace without a write override", a
 	}
 });
 
-test("registered detached spawn auto-resumes without exposing a wait tool", async () => {
+test("registered detached spawn auto-resumes while exposing the explicit await tool", async () => {
 	const originalDir = process.env.PI_CODING_AGENT_DIR;
 	const agentDir = mkdtempSync(path.join(os.tmpdir(), "pi-subagent-sdk-tools-"));
 	process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -796,8 +796,8 @@ test("registered detached spawn auto-resumes without exposing a wait tool", asyn
 			},
 		});
 		assert.equal(
-			mock.tools.some((tool) => tool.name === "subagent_wait"),
-			false,
+			mock.tools.some((tool) => tool.name === "subagent_await"),
+			true,
 		);
 		const initialModel = { id: "initial" };
 		const selectedModel = { id: "selected" };

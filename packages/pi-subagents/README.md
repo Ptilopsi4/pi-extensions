@@ -97,18 +97,19 @@ A failed write drops that event, reports one bounded warning, and retries on lat
 
 ## 🛠️ Tools
 
-`pi-subagents` registers seven tools by default.
+`pi-subagents` registers eight tools by default.
 Run `/subagents`, choose **How subagents run**, review the concrete tool changes, then select **Save and reload** to apply one of these workflows:
 
 | Workflow | Registered tools |
 | --- | --- |
-| **Background and blocking methods** (compatibility default) | `subagent`, `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, `subagent_inspect`, and `subagent_consult` |
+| **Background and blocking methods** (compatibility default) | `subagent`, `subagent_spawn`, `subagent_send`, `subagent_await`, `subagent_manage`, `subagent_mailbox`, `subagent_inspect`, and `subagent_consult` |
 | **Keep Pi available** (recommended) | `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect` |
 | **Wait for every subagent** (compatibility) | `subagent`, `subagent_inspect`, and `subagent_consult` |
 | **Subagents disabled** | `subagent_inspect` only; delegation is disabled |
 
 `subagent` and `subagent_consult` remain explicit compatibility routes with no current deprecation deadline.
 The four async lifecycle tools stay separate because starting work, sending follow-ups, managing lifecycle, and queueing mailbox messages have different contracts.
+`subagent_await` is a separate blocking join and is omitted from **Keep Pi available**.
 Any default change, tool removal, or lifecycle consolidation requires a separately approved compatibility migration.
 
 The preview compares the selection with the tools registered in the current session, even when a manual settings edit is pending, and remains read-only until confirmation.
@@ -122,6 +123,7 @@ The available tools are:
 - `subagent` — delegate blocking single, parallel, fan-in, chained, panel-review, or explicit dependency-workflow tasks.
   The main agent cannot process queued steering until the call returns.
 - `subagent_spawn` and related lifecycle tools — when enabled, start reusable detached work, return immediately, and receive bounded completion messages automatically.
+- `subagent_await` — intentionally block until one retained turn settles or its independent wait timeout expires; timeout and cancellation never interrupt the child.
 - `subagent_inspect` — inspect agent/model/run/runtime metadata without launching work or changing state.
 - `subagent_consult` — run one ephemeral read-only consultation and wait for its answer.
 
@@ -163,6 +165,7 @@ Choose the API by lifecycle:
 | Bounded synchronous read-only evidence whose independent perspective justifies waiting | Use `subagent_consult` when blocking delegation is enabled |
 | Intentional synchronous workflow, panel, chain, or fan-in | Use blocking `subagent` when making the main agent unavailable is justified |
 | Reusable history, follow-ups, or mailboxes | Use `subagent_spawn` and lifecycle tools when enabled |
+| One retained result is now required and useful overlapping parent work is complete | Use `subagent_await` when blocking delegation is enabled |
 | Side-effect-free agent/model/run diagnostics | Use `subagent_inspect` |
 
 Execution modes:
@@ -636,7 +639,9 @@ With default `next-turn` delivery, the current response must not depend on the r
 With opt-in `auto-resume`, detached work may affect the final answer because completion requests a synthesis turn after the main agent settles.
 After spawning, immediately continue the identified local task instead of merely announcing the spawn, waiting, polling `subagent_inspect` or `subagent_mailbox`, duplicating the child task, or ending while useful local work remains.
 Add another detached agent only for truly independent work with safe workspace concurrency and disjoint write ownership.
-Detached lifecycle work intentionally has no `subagent_wait` tool.
+When both blocking and stateful delegation are enabled, `subagent_await` may intentionally join one retained turn after useful overlapping parent work is complete.
+Its `timeoutMs` defaults to 30 seconds and limits only the wait; timeout or caller cancellation does not interrupt or close the child.
+The normal at-least-once completion channel remains active, so the same completion may still arrive after the await result.
 
 A detached `worker` may directly implement a bounded slice with clear ownership while the main agent handles another useful slice and retains integration and final verification.
 Without concurrent main-agent work, use one worker only for an explicit user-requested specialist model, tool profile, or isolation boundary.

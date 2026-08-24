@@ -54,6 +54,7 @@ Use custom verifier agents only when independent child verification is explicitl
 The current recommendation is the user-selected `async-only` workflow, while `all` remains the compatibility default.
 
 `async-only` exposes `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect`.
+`all` additionally exposes `subagent_await` as an intentional blocking join for one retained turn.
 
 `subagent_spawn` is preferred only when detached execution creates real parallelism rather than moving the main agent's only useful task into a child.
 
@@ -66,6 +67,7 @@ Blocking `subagent` remains available for intentional synchronous output, but on
 `subagent_consult` remains the synchronous read-only exception while its use case is still supported.
 
 The four async lifecycle tools remain split because start, follow-up, lifecycle, and queue operations have distinct contracts.
+`subagent_await` remains separate because waiting blocks the parent, its timeout never interrupts the child, and the async-only workflow must omit it.
 
 Changing the default, removing compatibility tools, or consolidating lifecycle tools needs a separate approved migration decision.
 

@@ -103,6 +103,7 @@ test("Subagents idle startup registers every surface without loading deferred im
 			"subagent",
 			"subagent_spawn",
 			"subagent_send",
+			"subagent_await",
 			"subagent_manage",
 			"subagent_mailbox",
 			"subagent_inspect",

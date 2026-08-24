@@ -17,7 +17,7 @@ import {
 	toolHeader,
 } from "./render-common.js";
 
-export type StatefulRenderTool = "spawn" | "send" | "manage" | "mailbox";
+export type StatefulRenderTool = "spawn" | "send" | "await" | "manage" | "mailbox";
 
 export function createStatefulToolRenderer(tool: StatefulRenderTool) {
 	return {
@@ -71,6 +71,11 @@ function renderStatefulCall(tool: StatefulRenderTool, args: Record<string, unkno
 			0,
 		);
 	}
+	if (tool === "await") {
+		const metadata = ["blocking"];
+		if (typeof args.timeoutMs === "number") metadata.push(`timeout:${args.timeoutMs}ms`);
+		return new Text(toolHeader(theme, "subagent_await", args.agentId, metadata), 0, 0);
+	}
 	if (tool === "manage") {
 		const metadata: string[] = [];
 		if (typeof args.agentId === "string") metadata.push(`id:${safeLine(args.agentId, "", 256)}`);
@@ -98,9 +103,12 @@ function renderStatefulResult(
 	const details = recordValue(result.details);
 	const args = recordValue(context.args) ?? {};
 	if (!details) return renderFallbackResult(result, options, theme, context.isError);
-	if (tool === "spawn" || tool === "send") {
+	if (tool === "spawn" || tool === "send" || tool === "await") {
 		const agent = recordValue(details.agent);
 		if (!agent) return renderFallbackResult(result, options, theme, context.isError);
+		if (tool === "await" && details.timedOut === true) {
+			return new Text(renderAwaitTimeout(agent, result, options.expanded, theme), 0, 0);
+		}
 		return new Text(renderAgentResult(agent, result, options.expanded, theme), 0, 0);
 	}
 	if (tool === "manage") {
@@ -167,6 +175,22 @@ function renderAgentResult(
 		const error = safeBlock(agent.error, "", 2 * 1024).trim();
 		if (task) lines.push(theme.fg("dim", `task: ${task}`));
 		if (error) lines.push(theme.fg("error", `error: ${error}`));
+		const content = safeBlock(textResult(result), "", 8 * 1024).trim();
+		if (content) lines.push(theme.fg("toolOutput", content));
+	} else lines.push(expansionHint());
+	return lines.join("\n");
+}
+
+function renderAwaitTimeout(
+	agent: Record<string, unknown>,
+	result: AgentToolResult<unknown>,
+	expanded: boolean,
+	theme: Theme,
+): string {
+	const lines = [
+		`${statusBadge(theme, "running")} · ${theme.fg("accent", safeLine(agent.id, "agent", 256))} · ${theme.fg("warning", "wait timed out")} · ${theme.fg("muted", safeLine(agent.state, "unknown", 128))}`,
+	];
+	if (expanded) {
 		const content = safeBlock(textResult(result), "", 8 * 1024).trim();
 		if (content) lines.push(theme.fg("toolOutput", content));
 	} else lines.push(expansionHint());
