@@ -14,7 +14,7 @@ The list follows the active session branch and disappears cleanly when no tracke
 - Keeps task text concise and action-oriented, with at most one task in progress.
 - Shows a compact themed task list and completion count above the editor in TUI mode.
 - Restores the latest valid list when Pi starts a session or navigates between branches.
-- Reminds the model of the current list before every model call so progress stays visible after compaction.
+- Restores the exact current list to model context only when compaction removes its latest visible successful tool update.
 - Sanitizes terminal and bidirectional controls before rendering model-provided text.
 - Works without settings, files, network access, or external services.
 
@@ -46,7 +46,7 @@ Ask Pi to perform work with multiple meaningful steps.
 
 The agent can create a concise list through `update_todo_list`, mark one task `in_progress`, and revise the list when the plan changes.
 
-While a list is active, the extension reminds the agent to update it immediately after task status changes and to reconcile it before progress reports or the final response.
+Stable tool guidance tells the agent to update the list immediately after task status changes and to reconcile it before progress reports or the final response.
 
 The agent sends the complete current list with every update and sends an empty list when no tracked work remains.
 
@@ -73,9 +73,11 @@ The tool result stores a versioned snapshot in the session branch so branch navi
 
 Branch reconstruction also accepts valid results stored under the previous `todo_widget` name, but the extension only registers `update_todo_list` for new calls.
 
-Before each model call, the extension appends one hidden, non-persistent context reminder containing the current list as JSON data.
+During ordinary turns, the model reads the complete list from the persisted `update_todo_list` assistant tool call, while its successful result confirms the active state and preserves append-only prompt history.
 
-The reminder is kept at the end of model context, survives compaction through branch reconstruction, and is removed when the list is cleared.
+If compaction or branch context construction removes that matching call/result pair, the extension appends one hidden, non-persistent state-only fallback containing the current list as JSON data.
+
+The fallback stays at the end of model context until a later valid todo tool call and successful result become visible, and it is omitted when the list is cleared.
 
 In TUI mode, updates appear immediately in a widget above the editor.
 

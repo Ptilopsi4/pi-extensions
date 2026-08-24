@@ -197,7 +197,11 @@ export function reconcileTodoContext(
 	items: readonly TodoItem[],
 ): ContextEvent["messages"] {
 	const existing = messages.filter(isTodoContextMessage);
-	const content = items.length > 0 ? todoContextContent(items) : undefined;
+	const withoutExisting = messages.filter((message) => !isTodoContextMessage(message));
+	const content =
+		items.length > 0 && !hasModelVisibleTodoState(withoutExisting, items)
+			? todoContextContent(items)
+			: undefined;
 	if (
 		existing.length === 1 &&
 		messages.at(-1) === existing[0] &&
@@ -207,7 +211,6 @@ export function reconcileTodoContext(
 	}
 	if (existing.length === 0 && content === undefined) return messages;
 
-	const withoutExisting = messages.filter((message) => !isTodoContextMessage(message));
 	if (content === undefined) return withoutExisting;
 	return [
 		...withoutExisting,
@@ -234,11 +237,44 @@ export function sanitizeTodoText(value: string): string {
 
 function todoContextContent(items: readonly TodoItem[]): string {
 	return `[PI TODO STATUS v${TODO_CONTEXT_VERSION}]
-An active todo list follows as JSON data.
-Keep it aligned with actual work: call update_todo_list before starting a task, as soon as a task finishes, and whenever the plan changes.
-Before a progress report or final response, call update_todo_list to reconcile every item; do not report completion while the list is stale.
-Active todo list:
+Current todo list as JSON data:
 ${JSON.stringify(items)}`;
+}
+
+function hasModelVisibleTodoState(
+	messages: ContextEvent["messages"],
+	items: readonly TodoItem[],
+): boolean {
+	const currentResults = new Map<string, string>();
+	for (const message of messages) {
+		if (
+			message.role === "toolResult" &&
+			!message.isError &&
+			(message.toolName === TOOL_NAME || message.toolName === LEGACY_TOOL_NAME) &&
+			isTodoDetails(message.details) &&
+			todoItemsEqual(message.details.items, items)
+		) {
+			currentResults.set(message.toolCallId, message.toolName);
+		}
+	}
+	if (currentResults.size === 0) return false;
+
+	return messages.some(
+		(message) =>
+			message.role === "assistant" &&
+			message.content.some(
+				(content) =>
+					content.type === "toolCall" &&
+					currentResults.get(content.id) === content.name &&
+					isTodoToolArguments(content.arguments) &&
+					todoItemsEqual(content.arguments.items, items),
+			),
+	);
+}
+
+function isTodoToolArguments(value: unknown): value is { items: TodoItem[] } {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	return isTodoItems((value as Record<string, unknown>).items);
 }
 
 function isTodoContextMessage(
@@ -280,11 +316,14 @@ function reconstructItems(entries: readonly SessionEntry[]): TodoItem[] {
 function isTodoDetails(value: unknown): value is TodoDetails {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
 	const record = value as Record<string, unknown>;
-	if (record.version !== TODO_DETAILS_VERSION || !Array.isArray(record.items)) return false;
-	if (record.items.length > MAX_TODO_ITEMS) return false;
+	return record.version === TODO_DETAILS_VERSION && isTodoItems(record.items);
+}
+
+function isTodoItems(value: unknown): value is TodoItem[] {
+	if (!Array.isArray(value) || value.length > MAX_TODO_ITEMS) return false;
 
 	let currentCount = 0;
-	for (const item of record.items) {
+	for (const item of value) {
 		if (typeof item !== "object" || item === null || Array.isArray(item)) return false;
 		const candidate = item as Record<string, unknown>;
 		if (
@@ -299,6 +338,15 @@ function isTodoDetails(value: unknown): value is TodoDetails {
 		if (candidate.status === "in_progress") currentCount += 1;
 	}
 	return currentCount <= 1;
+}
+
+function todoItemsEqual(left: readonly TodoItem[], right: readonly TodoItem[]): boolean {
+	return (
+		left.length === right.length &&
+		left.every(
+			(item, index) => item.text === right[index]?.text && item.status === right[index]?.status,
+		)
+	);
 }
 
 function cloneItems(items: readonly TodoItem[]): TodoItem[] {
