@@ -41,6 +41,27 @@ const configuredTools = [
 	},
 ] as const;
 
+const TEST_SETTINGS = {
+	settingsPath: "/test/pi-tool.json",
+	readSettings: async () => ({
+		kind: "missing" as const,
+		settings: { activeToolStatus: false },
+	}),
+	updateSettings: async (patch: { activeToolStatus?: boolean }) => ({
+		activeToolStatus: patch.activeToolStatus ?? false,
+	}),
+	awaitSettingsWrites: async () => {},
+};
+
+function startToolExtension(pi: Parameters<typeof toolExtension>[0]) {
+	toolExtension(pi, TEST_SETTINGS);
+}
+
+async function openToolCatalog(tui: ReturnType<typeof createTuiHarness>) {
+	tui.press("tui.select.confirm");
+	await tui.waitForOpen();
+}
+
 test("catalog lists every tool alphabetically with active state and complete exposed metadata", () => {
 	const catalog = createToolCatalog(configuredTools as never, ["read"], {
 		read: "Read file contents from the current workspace",
@@ -80,7 +101,7 @@ test("catalog lists every tool alphabetically with active state and complete exp
 
 test("TUI browser searches across exposed tool metadata", async () => {
 	const mock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
-	toolExtension(mock.pi);
+	startToolExtension(mock.pi);
 	await mock.events.get("session_start")?.[0]?.({}, createMockContext({ hasUI: true }).ctx);
 	const command = mock.commands.get("tool");
 	assert.ok(command);
@@ -95,6 +116,7 @@ test("TUI browser searches across exposed tool metadata", async () => {
 	};
 	const running = command.handler("", { ...base, ui: { ...base.ui, custom: tui.custom } });
 	await tui.waitForOpen();
+	await openToolCatalog(tui);
 	for (const size of [
 		{ width: 60, rows: 16 },
 		{ width: 24, rows: 8 },
@@ -119,7 +141,7 @@ test("TUI browser searches across exposed tool metadata", async () => {
 
 test("exact detail documents do not become implicit browse search metadata", async () => {
 	const mock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
-	toolExtension(mock.pi);
+	startToolExtension(mock.pi);
 	await mock.events.get("session_start")?.[0]?.({}, createMockContext({ hasUI: true }).ctx);
 	const command = mock.commands.get("tool");
 	assert.ok(command);
@@ -134,6 +156,7 @@ test("exact detail documents do not become implicit browse search metadata", asy
 	};
 	const running = command.handler("", { ...base, ui: { ...base.ui, custom: tui.custom } });
 	await tui.waitForOpen();
+	await openToolCatalog(tui);
 	tui.type("Parameter schema");
 	assert.match(stripVTControlCharacters(tui.render().join("\n")), /No matching items/u);
 	tui.press("ctrl+c");
@@ -142,17 +165,19 @@ test("exact detail documents do not become implicit browse search metadata", asy
 
 test("/tool supports RPC list and detail navigation", async () => {
 	const mock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
-	toolExtension(mock.pi);
+	startToolExtension(mock.pi);
 	await mock.events.get("session_start")?.[0]?.({}, createMockContext({ hasUI: true }).ctx);
 	const command = mock.commands.get("tool");
 	assert.ok(command);
 	const rpc = createRpcHarness([
+		{ kind: "select", response: "Browse tools" },
 		{ kind: "select", response: "read [active]" },
 		{ kind: "select", response: "Next" },
 		{ kind: "select", response: "Next" },
 		{ kind: "select", response: "Next" },
 		{ kind: "select", response: "Back" },
-		{ kind: "select", response: "Done" },
+		{ kind: "select", response: "Back" },
+		{ kind: "select", response: "Close" },
 	]);
 	let promptOptionReads = 0;
 	const base = createMockContext({
@@ -172,10 +197,10 @@ test("/tool supports RPC list and detail navigation", async () => {
 	};
 	await command.handler("", { ...base, ui: { ...base.ui, ...rpc.ui } });
 	rpc.assertConsumed();
-	assert.deepEqual(rpc.dialogs[0]?.options, ["deploy [inactive]", "read [active]", "Done"]);
-	assert.doesNotMatch(rpc.dialogs[0]?.options?.join("\n") ?? "", /Parameter schema|File path/u);
+	assert.deepEqual(rpc.dialogs[1]?.options, ["deploy [inactive]", "read [active]", "Back"]);
+	assert.doesNotMatch(rpc.dialogs[1]?.options?.join("\n") ?? "", /Parameter schema|File path/u);
 	const detailPages = rpc.dialogs
-		.slice(1, 5)
+		.slice(2, 6)
 		.map(({ title }) => title)
 		.join("\n");
 	assert.match(detailPages, /Parameter schema/u);
@@ -186,9 +211,186 @@ test("/tool supports RPC list and detail navigation", async () => {
 	assert.equal(promptOptionReads, 1);
 });
 
+test("session start applies manual settings and warns when invalid settings are ignored", async () => {
+	const enabledMock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
+	toolExtension(enabledMock.pi, {
+		...TEST_SETTINGS,
+		readSettings: async () => ({
+			kind: "loaded" as const,
+			settings: { activeToolStatus: true },
+		}),
+	});
+	const enabledContext = createMockContext({ hasUI: true, mode: "tui" });
+	await enabledMock.events.get("session_start")?.[0]?.({}, enabledContext.ctx);
+	assert.equal(typeof enabledContext.widgets.get("tool:active-tools"), "function");
+	await enabledMock.events.get("session_shutdown")?.[0]?.({}, enabledContext.ctx);
+
+	const invalidMock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
+	toolExtension(invalidMock.pi, {
+		...TEST_SETTINGS,
+		readSettings: async () => ({
+			kind: "invalid" as const,
+			reason: "/test/pi-tool.json: invalid JSON",
+			settings: { activeToolStatus: false },
+		}),
+	});
+	const invalidContext = createMockContext({ hasUI: true, mode: "tui" });
+	await invalidMock.events.get("session_start")?.[0]?.({}, invalidContext.ctx);
+	assert.match(invalidContext.notifications[0]?.message ?? "", /ignored invalid settings/u);
+	assert.equal(invalidContext.widgets.has("tool:active-tools"), false);
+	await invalidMock.events.get("session_shutdown")?.[0]?.({}, invalidContext.ctx);
+});
+
+test("a delayed settings load cannot overwrite a replacement session", async () => {
+	let resolveFirst!: (value: { kind: "loaded"; settings: { activeToolStatus: boolean } }) => void;
+	let reads = 0;
+	const firstLoad = new Promise<{
+		kind: "loaded";
+		settings: { activeToolStatus: boolean };
+	}>((resolve) => {
+		resolveFirst = resolve;
+	});
+	const mock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
+	toolExtension(mock.pi, {
+		...TEST_SETTINGS,
+		readSettings: async () => {
+			reads += 1;
+			return reads === 1
+				? firstLoad
+				: { kind: "loaded" as const, settings: { activeToolStatus: true } };
+		},
+	});
+	const previous = createMockContext({ hasUI: true, mode: "tui" });
+	const current = createMockContext({ hasUI: true, mode: "tui" });
+	const start = mock.events.get("session_start")?.[0];
+	assert.ok(start);
+	const previousStart = Promise.resolve(start({}, previous.ctx));
+	await Promise.resolve();
+	await start({}, current.ctx);
+	assert.equal(typeof current.widgets.get("tool:active-tools"), "function");
+	resolveFirst({ kind: "loaded", settings: { activeToolStatus: false } });
+	await previousStart;
+	assert.equal(typeof current.widgets.get("tool:active-tools"), "function");
+	assert.equal(previous.widgets.has("tool:active-tools"), false);
+	await mock.events.get("session_shutdown")?.[0]?.({}, current.ctx);
+});
+
+test("/tool toggles and persists the active-tool widget in TUI mode", async () => {
+	const saved: boolean[] = [];
+	const mock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
+	toolExtension(mock.pi, {
+		settingsPath: "/test/pi-tool.json",
+		readSettings: TEST_SETTINGS.readSettings,
+		updateSettings: async (patch) => {
+			saved.push(patch.activeToolStatus ?? false);
+			return { activeToolStatus: patch.activeToolStatus ?? false };
+		},
+		awaitSettingsWrites: TEST_SETTINGS.awaitSettingsWrites,
+	});
+	const lifecycle = createMockContext({ hasUI: true, mode: "tui" });
+	await mock.events.get("session_start")?.[0]?.({}, lifecycle.ctx);
+	const command = mock.commands.get("tool");
+	assert.ok(command);
+	const tui = createTuiHarness({ width: 80, rows: 20 });
+	const base = createMockContext({
+		hasUI: true,
+		mode: "tui",
+		getSystemPromptOptions: () => ({ cwd: "/home/test/project", toolSnippets: {} }),
+	}).ctx as unknown as {
+		ui: Record<string, unknown>;
+		[key: string]: unknown;
+	};
+	const running = command.handler("", { ...base, ui: { ...base.ui, custom: tui.custom } });
+	await tui.waitForOpen();
+	tui.press("tui.select.down");
+	tui.press("tui.select.confirm");
+	await tui.waitForOpen();
+	assert.match(stripVTControlCharacters(tui.render().join("\n")), /Active tool status.*Off/u);
+	tui.press("tui.select.confirm");
+	await tui.waitForOpen();
+	assert.match(stripVTControlCharacters(tui.render().join("\n")), /Active tool status.*On/u);
+	assert.deepEqual(saved, [true]);
+	assert.equal(typeof lifecycle.widgets.get("tool:active-tools"), "function");
+	tui.press("ctrl+c");
+	await running;
+	await mock.events.get("session_shutdown")?.[0]?.({}, lifecycle.ctx);
+	assert.equal(lifecycle.widgets.get("tool:active-tools"), undefined);
+});
+
+test("/tool toggles and persists the active-tool widget in RPC mode", async () => {
+	const saved: boolean[] = [];
+	const mock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
+	toolExtension(mock.pi, {
+		settingsPath: "/test/pi-tool.json",
+		readSettings: TEST_SETTINGS.readSettings,
+		updateSettings: async (patch) => {
+			saved.push(patch.activeToolStatus ?? false);
+			return { activeToolStatus: patch.activeToolStatus ?? false };
+		},
+		awaitSettingsWrites: TEST_SETTINGS.awaitSettingsWrites,
+	});
+	const lifecycle = createMockContext({ hasUI: true, mode: "rpc" });
+	await mock.events.get("session_start")?.[0]?.({}, lifecycle.ctx);
+	const command = mock.commands.get("tool");
+	assert.ok(command);
+	const rpc = createRpcHarness([
+		{ kind: "select", response: "Settings" },
+		{ kind: "select", response: "Active tool status (Off)" },
+		{ kind: "select", response: "Back" },
+		{ kind: "select", response: "Close" },
+	]);
+	const base = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		getSystemPromptOptions: () => ({ cwd: "/home/test/project", toolSnippets: {} }),
+	}).ctx as unknown as {
+		ui: Record<string, unknown>;
+		[key: string]: unknown;
+	};
+	await command.handler("", { ...base, ui: { ...base.ui, ...rpc.ui } });
+	rpc.assertConsumed();
+	assert.deepEqual(saved, [true]);
+	assert.deepEqual(lifecycle.widgets.get("tool:active-tools"), ["Active tool (1)", "read"]);
+	await mock.events.get("session_shutdown")?.[0]?.({}, lifecycle.ctx);
+});
+
+test("a failed settings save restores the previous widget state", async () => {
+	const mock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
+	toolExtension(mock.pi, {
+		settingsPath: "/test/pi-tool.json",
+		readSettings: TEST_SETTINGS.readSettings,
+		updateSettings: async () => Promise.reject(new Error("injected save failure")),
+		awaitSettingsWrites: TEST_SETTINGS.awaitSettingsWrites,
+	});
+	const lifecycle = createMockContext({ hasUI: true, mode: "rpc" });
+	await mock.events.get("session_start")?.[0]?.({}, lifecycle.ctx);
+	const command = mock.commands.get("tool");
+	assert.ok(command);
+	const rpc = createRpcHarness([
+		{ kind: "select", response: "Settings" },
+		{ kind: "select", response: "Active tool status (Off)" },
+		{ kind: "select", response: "Back" },
+		{ kind: "select", response: "Close" },
+	]);
+	const base = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		getSystemPromptOptions: () => ({ cwd: "/home/test/project", toolSnippets: {} }),
+	});
+	const context = base.ctx as unknown as {
+		ui: Record<string, unknown>;
+		[key: string]: unknown;
+	};
+	await command.handler("", { ...context, ui: { ...context.ui, ...rpc.ui } });
+	rpc.assertConsumed();
+	assert.equal(lifecycle.widgets.get("tool:active-tools"), undefined);
+	assert.match(base.notifications[0]?.message ?? "", /widget was restored.*injected save failure/u);
+	await mock.events.get("session_shutdown")?.[0]?.({}, lifecycle.ctx);
+});
+
 test("/tool rejects arguments and noninteractive modes before opening the catalog", async () => {
 	const mock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
-	toolExtension(mock.pi);
+	startToolExtension(mock.pi);
 	const command = mock.commands.get("tool");
 	assert.ok(command);
 	await assert.rejects(async () => {
@@ -203,7 +405,7 @@ test("/tool rejects arguments and noninteractive modes before opening the catalo
 
 test("nested parameter schema indentation survives the TUI detail boundary", async () => {
 	const mock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
-	toolExtension(mock.pi);
+	startToolExtension(mock.pi);
 	await mock.events.get("session_start")?.[0]?.({}, createMockContext({ hasUI: true }).ctx);
 	const command = mock.commands.get("tool");
 	assert.ok(command);
@@ -218,10 +420,11 @@ test("nested parameter schema indentation survives the TUI detail boundary", asy
 	};
 	const running = command.handler("", { ...base, ui: { ...base.ui, custom: tui.custom } });
 	await tui.waitForOpen();
+	await openToolCatalog(tui);
 	tui.type("builtin temporary");
 	tui.press("tui.select.confirm");
 	await tui.waitForOpen();
-	assert.equal(tui.openCount, 1, "browse details must stay in one standard menu interaction");
+	assert.equal(tui.openCount, 2, "browse details must stay in one standard menu interaction");
 	const frame = stripVTControlCharacters(tui.render().join("\n"));
 	assert.match(frame, /^ {2}"type": "object",$/mu);
 	assert.match(frame, /^ {4}"path": \{$/mu);
@@ -240,7 +443,7 @@ test("nested parameter schema indentation survives the TUI detail boundary", asy
 	assert.match(finalDetailFrame, /Columns\s+stay aligned/u);
 	tui.press("tui.select.cancel");
 	await tui.waitForOpen();
-	assert.equal(tui.openCount, 1, "returning from details must not remount the browser");
+	assert.equal(tui.openCount, 2, "returning from details must not remount the browser");
 	assert.match(stripVTControlCharacters(tui.render().join("\n")), /Search: > builtin temporary/u);
 	tui.press("ctrl+c");
 	await running;
@@ -255,7 +458,7 @@ test("terminal controls are stripped by the browse display boundary", async () =
 		},
 	];
 	const mock = createMockPi({ allTools: unsafeTools as never, activeTools: [] });
-	toolExtension(mock.pi);
+	startToolExtension(mock.pi);
 	await mock.events.get("session_start")?.[0]?.({}, createMockContext({ hasUI: true }).ctx);
 	const command = mock.commands.get("tool");
 	assert.ok(command);
@@ -270,6 +473,7 @@ test("terminal controls are stripped by the browse display boundary", async () =
 	};
 	const running = command.handler("", { ...base, ui: { ...base.ui, custom: tui.custom } });
 	await tui.waitForOpen();
+	await openToolCatalog(tui);
 	let frame = tui.render().join("\n");
 	assert.equal(frame.includes("\u001b]0;owned"), false);
 	assert.equal(frame.includes("\u0007"), false);
@@ -285,9 +489,11 @@ test("terminal controls are stripped by the browse display boundary", async () =
 	await running;
 
 	const rpc = createRpcHarness([
+		{ kind: "select", response: "Browse tools" },
 		{ kind: "select", response: "read [inactive]" },
 		{ kind: "select", response: "Back" },
-		{ kind: "select", response: "Done" },
+		{ kind: "select", response: "Back" },
+		{ kind: "select", response: "Close" },
 	]);
 	await command.handler("", { ...base, mode: "rpc", ui: { ...base.ui, ...rpc.ui } });
 	rpc.assertConsumed();
@@ -318,14 +524,16 @@ test("duplicate sanitized labels keep stable raw tool identity in RPC", async ()
 		.find((line) => line.startsWith("Path: "));
 	assert.ok(secondPath);
 	const mock = createMockPi({ allTools: duplicateTools as never, activeTools: [] });
-	toolExtension(mock.pi);
+	startToolExtension(mock.pi);
 	await mock.events.get("session_start")?.[0]?.({}, createMockContext({ hasUI: true }).ctx);
 	const command = mock.commands.get("tool");
 	assert.ok(command);
 	const rpc = createRpcHarness([
+		{ kind: "select", response: "Browse tools" },
 		{ kind: "select", response: "same [inactive] [2]" },
 		{ kind: "select", response: "Back" },
-		{ kind: "select", response: "Done" },
+		{ kind: "select", response: "Back" },
+		{ kind: "select", response: "Close" },
 	]);
 	const base = createMockContext({
 		hasUI: true,
@@ -337,13 +545,13 @@ test("duplicate sanitized labels keep stable raw tool identity in RPC", async ()
 	};
 	await command.handler("", { ...base, ui: { ...base.ui, ...rpc.ui } });
 	rpc.assertConsumed();
-	assert.deepEqual(rpc.dialogs[0]?.options, ["same [inactive]", "same [inactive] [2]", "Done"]);
-	assert.match(rpc.dialogs[1]?.title ?? "", new RegExp(escapeRegExp(secondPath), "u"));
+	assert.deepEqual(rpc.dialogs[1]?.options, ["same [inactive]", "same [inactive] [2]", "Back"]);
+	assert.match(rpc.dialogs[2]?.title ?? "", new RegExp(escapeRegExp(secondPath), "u"));
 });
 
 test("session replacement aborts and disposes an open menu", async () => {
 	const mock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
-	toolExtension(mock.pi);
+	startToolExtension(mock.pi);
 	const lifecycle = createMockContext({ hasUI: true, mode: "tui" }).ctx;
 	await mock.events.get("session_start")?.[0]?.({}, lifecycle);
 	const command = mock.commands.get("tool");
@@ -359,6 +567,7 @@ test("session replacement aborts and disposes an open menu", async () => {
 	};
 	const running = command.handler("", { ...base, ui: { ...base.ui, custom: tui.custom } });
 	await tui.waitForOpen();
+	await openToolCatalog(tui);
 	tui.press("tui.select.confirm");
 	assert.match(stripVTControlCharacters(tui.render().join("\n")), /Parameter schema/u);
 	await mock.events.get("session_start")?.[0]?.({}, lifecycle);
@@ -369,7 +578,7 @@ test("session replacement aborts and disposes an open menu", async () => {
 
 test("session shutdown aborts and disposes an open menu", async () => {
 	const mock = createMockPi({ allTools: [...configuredTools], activeTools: ["read"] });
-	toolExtension(mock.pi);
+	startToolExtension(mock.pi);
 	const lifecycle = createMockContext({ hasUI: true, mode: "tui" }).ctx;
 	await mock.events.get("session_start")?.[0]?.({}, lifecycle);
 	const command = mock.commands.get("tool");
@@ -393,7 +602,7 @@ test("session shutdown aborts and disposes an open menu", async () => {
 
 test("an empty catalog remains bounded and can close", async () => {
 	const mock = createMockPi({ allTools: [], activeTools: [] });
-	toolExtension(mock.pi);
+	startToolExtension(mock.pi);
 	await mock.events.get("session_start")?.[0]?.({}, createMockContext({ hasUI: true }).ctx);
 	const command = mock.commands.get("tool");
 	assert.ok(command);
@@ -408,6 +617,7 @@ test("an empty catalog remains bounded and can close", async () => {
 	};
 	const running = command.handler("", { ...base, ui: { ...base.ui, custom: tui.custom } });
 	await tui.waitForOpen();
+	await openToolCatalog(tui);
 	const frame = stripVTControlCharacters(tui.render().join("\n"));
 	assert.match(frame, /Tools · 0\/0 active/u);
 	assert.match(frame, /No items available/u);
@@ -418,7 +628,7 @@ test("an empty catalog remains bounded and can close", async () => {
 test("each command reads a fresh sorted catalog and active state", async () => {
 	const allTools: Array<(typeof configuredTools)[number]> = [configuredTools[0]];
 	const mock = createMockPi({ allTools, activeTools: [] });
-	toolExtension(mock.pi);
+	startToolExtension(mock.pi);
 	await mock.events.get("session_start")?.[0]?.({}, createMockContext({ hasUI: true }).ctx);
 	const command = mock.commands.get("tool");
 	assert.ok(command);
@@ -431,17 +641,25 @@ test("each command reads a fresh sorted catalog and active state", async () => {
 		[key: string]: unknown;
 	};
 
-	const first = createRpcHarness([{ kind: "select", response: "Done" }]);
+	const first = createRpcHarness([
+		{ kind: "select", response: "Browse tools" },
+		{ kind: "select", response: "Back" },
+		{ kind: "select", response: "Close" },
+	]);
 	await command.handler("", { ...base, ui: { ...base.ui, ...first.ui } });
 	first.assertConsumed();
-	assert.deepEqual(first.dialogs[0]?.options, ["read [inactive]", "Done"]);
+	assert.deepEqual(first.dialogs[1]?.options, ["read [inactive]", "Back"]);
 
 	allTools.push(configuredTools[1]);
 	mock.rawPi.setActiveTools(["deploy"]);
-	const second = createRpcHarness([{ kind: "select", response: "Done" }]);
+	const second = createRpcHarness([
+		{ kind: "select", response: "Browse tools" },
+		{ kind: "select", response: "Back" },
+		{ kind: "select", response: "Close" },
+	]);
 	await command.handler("", { ...base, ui: { ...base.ui, ...second.ui } });
 	second.assertConsumed();
-	assert.deepEqual(second.dialogs[0]?.options, ["deploy [active]", "read [inactive]", "Done"]);
+	assert.deepEqual(second.dialogs[1]?.options, ["deploy [active]", "read [inactive]", "Back"]);
 });
 
 function escapeRegExp(value: string): string {

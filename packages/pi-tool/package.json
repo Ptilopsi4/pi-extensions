@@ -1,7 +1,7 @@
 {
 	"name": "@narumitw/pi-tool",
 	"version": "0.2.3",
-	"description": "Browse configured Pi tools and inspect their exposed metadata.",
+	"description": "Browse configured Pi tools and optionally show the active tool set.",
 	"type": "module",
 	"license": "MIT",
 	"private": false,
@@ -38,11 +38,13 @@
 		"@narumitw/pi-tui-kit": "^0.53.0"
 	},
 	"peerDependencies": {
-		"@earendil-works/pi-coding-agent": "*"
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.9",
 		"@earendil-works/pi-coding-agent": "0.84.2",
+		"@earendil-works/pi-tui": "0.84.2",
 		"@types/node": "26.2.0",
 		"typescript": "7.0.2",
 		"esbuild": "0.28.2"
