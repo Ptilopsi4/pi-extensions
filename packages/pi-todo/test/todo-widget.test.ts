@@ -119,21 +119,59 @@ function identityTheme() {
 	return { calls, theme };
 }
 
+function todoToolResultMessage(
+	details: TodoDetails,
+	toolName = TOOL_NAME,
+	isError = false,
+): ContextEvent["messages"][number] {
+	return {
+		role: "toolResult",
+		toolCallId: "todo-call",
+		toolName,
+		content: [{ type: "text", text: "updated" }],
+		details,
+		isError,
+		timestamp: 0,
+	};
+}
+
+function todoToolCallMessage(
+	items: unknown,
+	toolName = TOOL_NAME,
+): ContextEvent["messages"][number] {
+	return {
+		role: "assistant",
+		content: [
+			{
+				type: "toolCall",
+				id: "todo-call",
+				name: toolName,
+				arguments: { items },
+			},
+		],
+		api: "openai-responses",
+		provider: "test",
+		model: "test",
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "toolUse",
+		timestamp: 0,
+	};
+}
+
 function toolResultEntry(details: TodoDetails, toolName = TOOL_NAME): SessionEntry {
 	return {
 		type: "message",
 		id: "tool-result",
 		parentId: null,
 		timestamp: new Date(0).toISOString(),
-		message: {
-			role: "toolResult",
-			toolCallId: "todo-call",
-			toolName,
-			content: [{ type: "text", text: "updated" }],
-			details,
-			isError: false,
-			timestamp: 0,
-		},
+		message: todoToolResultMessage(details, toolName),
 	} as SessionEntry;
 }
 
@@ -160,18 +198,19 @@ test("registers concise guidance for using and maintaining the todo list", () =>
 	]);
 });
 
-test("keeps one current todo reminder at the end of model context", async () => {
+test("uses visible todo calls and injects only missing current state", async () => {
 	const harness = createHarness();
 	const current = createContext();
 	await harness.emit("session_start", current.ctx);
-	await setTodos(harness, current.ctx, [
+	const items: TodoItem[] = [
 		{ text: "inspect", status: "completed" },
 		{ text: "implement", status: "in_progress" },
-	]);
+	];
+	await setTodos(harness, current.ctx, items);
 
-	const base = [
+	const base: ContextEvent["messages"] = [
 		{
-			role: "compactionSummary" as const,
+			role: "compactionSummary",
 			summary: "Earlier work was compacted.",
 			tokensBefore: 100,
 			timestamp: 0,
@@ -185,33 +224,65 @@ test("keeps one current todo reminder at the end of model context", async () => 
 	assert.equal(reminder.customType, TODO_CONTEXT_MESSAGE_TYPE);
 	assert.equal(reminder.display, false);
 	assert.deepEqual(reminder.details, { version: TODO_CONTEXT_VERSION });
-	assert.match(reminder.content as string, /call update_todo_list before starting/u);
-	assert.match(reminder.content as string, /Before a progress report or final response/u);
-	assert.ok(
-		(reminder.content as string).includes(
-			'[{"text":"inspect","status":"completed"},{"text":"implement","status":"in_progress"}]',
-		),
+	assert.equal(
+		reminder.content,
+		`[PI TODO STATUS v${TODO_CONTEXT_VERSION}]\nCurrent todo list as JSON data:\n${JSON.stringify(items)}`,
 	);
+	assert.doesNotMatch(reminder.content as string, /call update_todo_list/u);
 
 	const unchanged = await harness.context(transformed, current.ctx);
 	assert.equal(unchanged, transformed);
 
-	await setTodos(harness, current.ctx, [{ text: "implement", status: "completed" }]);
-	const updated = await harness.context(transformed, current.ctx);
-	assert.equal(
-		updated.filter(
+	for (const toolName of [TOOL_NAME, "todo_widget"]) {
+		const details: TodoDetails = { version: TODO_DETAILS_VERSION, items };
+		const visible = [
+			...base,
+			todoToolCallMessage(items, toolName),
+			todoToolResultMessage(details, toolName),
+		];
+		assert.equal(await harness.context(visible, current.ctx), visible);
+	}
+
+	const details: TodoDetails = { version: TODO_DETAILS_VERSION, items };
+	const incompleteContexts = [
+		[...base, todoToolCallMessage("invalid")],
+		[...base, todoToolCallMessage([{ text: "stale", status: "pending" }])],
+		[...base, todoToolCallMessage(items)],
+		[...base, todoToolResultMessage(details)],
+		[...base, todoToolCallMessage(items), todoToolResultMessage(details, TOOL_NAME, true)],
+	];
+	for (const incomplete of incompleteContexts) {
+		const fallback = await harness.context(incomplete, current.ctx);
+		const reminders = fallback.filter(
 			(message) => message.role === "custom" && message.customType === TODO_CONTEXT_MESSAGE_TYPE,
-		).length,
-		1,
+		);
+		assert.equal(reminders.length, 1);
+		const fallbackReminder = reminders[0];
+		assert.equal(fallbackReminder?.role, "custom");
+		if (fallbackReminder?.role !== "custom") assert.fail("Expected a custom todo reminder");
+		assert.equal(fallbackReminder.content, reminder.content);
+	}
+
+	const replacementItems: TodoItem[] = [{ text: "implement", status: "completed" }];
+	await setTodos(harness, current.ctx, replacementItems);
+	const replacementDetails: TodoDetails = {
+		version: TODO_DETAILS_VERSION,
+		items: replacementItems,
+	};
+	const replacement = [
+		...transformed,
+		todoToolCallMessage(replacementItems),
+		todoToolResultMessage(replacementDetails),
+	];
+	assert.deepEqual(
+		await harness.context(replacement, current.ctx),
+		replacement.filter(
+			(message) => message.role !== "custom" || message.customType !== TODO_CONTEXT_MESSAGE_TYPE,
+		),
 	);
-	const updatedReminder = updated.at(-1);
-	assert.equal(updatedReminder?.role, "custom");
-	if (updatedReminder?.role !== "custom") assert.fail("Expected an updated todo reminder");
-	assert.match(updatedReminder.content as string, /"implement","status":"completed"/u);
-	assert.doesNotMatch(updatedReminder.content as string, /"inspect"/u);
 
 	await setTodos(harness, current.ctx, []);
-	assert.deepEqual(await harness.context(updated, current.ctx), base);
+	assert.deepEqual(await harness.context(transformed, current.ctx), base);
 });
 
 test("renders completed, current, and pending tasks with themed semantic symbols", () => {
