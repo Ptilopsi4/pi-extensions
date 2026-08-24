@@ -33,6 +33,21 @@ pi -e npm:@narumitw/pi-goal \
 > [!IMPORTANT]
 > Pi extensions run with your full user permissions. Review an extension before installing it from any third party.
 
+## ⭐ Extensions I use every day
+
+These extensions are part of my daily Pi setup:
+
+| Extension | Why I use it |
+| --- | --- |
+| [`pi-btw`](./packages/pi-btw) | Ask a quick side question without polluting the main context. |
+| [`pi-accounts`](./packages/pi-accounts) | Switch between my multiple Codex accounts. |
+| [`pi-caffeinate`](./packages/pi-caffeinate) | Keep my machine awake so Pi can keep working. |
+| [`pi-codex-compact`](./packages/pi-codex-compact) | Spend a little more for better compaction quality. |
+| [`pi-stamp`](./packages/pi-stamp) | See useful details for each response, such as its timestamp. |
+| [`pi-starship`](./packages/pi-starship) | Match Pi's footer to my Starship shell setup. |
+| [`pi-sync`](./packages/pi-sync) | Sync my Pi configuration across all my devices through S3. |
+| [`pi-usage`](./packages/pi-usage) | Check my Codex usage and limit reset times without opening Codex. |
+
 ## 📦 Choose an extension
 
 ### Coding and delegation
