@@ -1,6 +1,6 @@
 {
 	"name": "@narumitw/pi-codex-compact",
-	"version": "0.51.1",
+	"version": "0.51.2",
 	"description": "Codex Remote Compaction V2 for compatible Pi providers.",
 	"type": "module",
 	"license": "MIT",
@@ -35,7 +35,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@narumitw/pi-tui-kit": "^0.49.1"
+		"@narumitw/pi-tui-kit": "^0.58.0"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-agent-core": "*",

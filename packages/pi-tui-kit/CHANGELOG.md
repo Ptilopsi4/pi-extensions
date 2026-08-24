@@ -1,5 +1,12 @@
 # @narumitw/pi-tui-kit
 
+## 0.58.0
+
+### Minor Changes
+
+- b9eba3a: Add a width-safe `HorizontalRule` component with inset, labeled, aligned, sanitized, and callback-styled rendering.
+  Use themed top and bottom rules consistently across every standard TUI screen.
+
 ## 0.57.1
 
 ### Patch Changes
