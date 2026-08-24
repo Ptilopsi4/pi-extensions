@@ -146,7 +146,8 @@ export function renderTodoWidget(
 	width: number,
 ): string[] {
 	const completed = items.filter((item) => item.status === "completed").length;
-	const lines = [theme.fg("muted", `Todo · ${completed}/${items.length} complete`)];
+	const divider = theme.fg("borderMuted", "─".repeat(Math.max(0, width)));
+	const lines = [divider, theme.fg("muted", `Todo · ${completed}/${items.length} complete`)];
 
 	for (const item of items) {
 		const text = sanitizeTodoText(item.text);

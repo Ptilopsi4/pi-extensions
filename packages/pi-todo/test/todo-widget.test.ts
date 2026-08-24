@@ -156,7 +156,14 @@ test("renders completed, current, and pending tasks with themed semantic symbols
 		80,
 	);
 
-	assert.deepEqual(lines, ["Todo · 1/3 complete", "✓ done", "▶ working", "○ later"]);
+	assert.deepEqual(lines, [
+		"─".repeat(80),
+		"Todo · 1/3 complete",
+		"✓ done",
+		"▶ working",
+		"○ later",
+	]);
+	assert.ok(calls.some(([kind, role]) => kind === "fg" && role === "borderMuted"));
 	assert.ok(calls.some(([kind, role]) => kind === "fg" && role === "success"));
 	assert.ok(calls.some(([kind, role]) => kind === "fg" && role === "accent"));
 	assert.ok(calls.some(([kind, role]) => kind === "fg" && role === "dim"));
@@ -215,6 +222,7 @@ test("tool replaces the complete list, updates the widget, clears it, and reject
 	assert.equal(typeof widget?.content, "function");
 	const { theme } = identityTheme();
 	assert.deepEqual(widget?.content?.(undefined as never, theme).render(80), [
+		"─".repeat(80),
 		"Todo · 1/3 complete",
 		"✓ task 1",
 		"▶ task 2",
@@ -257,7 +265,7 @@ test("restores branch-local state on startup and tree navigation", async () => {
 			.at(-1)
 			?.content?.(undefined as never, theme)
 			.render(80),
-		["Todo · 0/1 complete", "▶ restored"],
+		["─".repeat(80), "Todo · 0/1 complete", "▶ restored"],
 	);
 
 	current.branch.push(
@@ -272,7 +280,7 @@ test("restores branch-local state on startup and tree navigation", async () => {
 			.at(-1)
 			?.content?.(undefined as never, theme)
 			.render(80),
-		["Todo · 1/1 complete", "✓ finished branch"],
+		["─".repeat(80), "Todo · 1/1 complete", "✓ finished branch"],
 	);
 });
 
