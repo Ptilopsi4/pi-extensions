@@ -42,6 +42,7 @@ test("delegation workflow settings control the registered tool surface", () => {
 					"subagent",
 					"subagent_spawn",
 					"subagent_send",
+					"subagent_await",
 					"subagent_manage",
 					"subagent_mailbox",
 					"subagent_inspect",
@@ -65,13 +66,14 @@ test("delegation workflow settings control the registered tool surface", () => {
 				name: "blocking only",
 				settings: { blocking: { enabled: true }, stateful: { enabled: false } },
 				tools: ["subagent", "subagent_inspect", "subagent_consult"],
-				forbiddenPromptText: /subagent_(?:spawn|send|manage|mailbox)/i,
+				forbiddenPromptText: /subagent_(?:spawn|send|await|manage|mailbox)/i,
 			},
 			{
 				name: "disabled",
 				settings: { blocking: { enabled: false }, stateful: { enabled: false } },
 				tools: ["subagent_inspect"],
-				forbiddenPromptText: /blocking subagent|subagent_(?:spawn|send|manage|mailbox|consult)/i,
+				forbiddenPromptText:
+					/blocking subagent|subagent_(?:spawn|send|await|manage|mailbox|consult)/i,
 			},
 		] as const;
 		for (const scenario of cases) {

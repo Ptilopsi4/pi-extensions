@@ -28,7 +28,7 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 		assert.equal(await controller.clearAgents(), 0);
 		assert.deepEqual(
 			mock.tools.map((tool) => tool.name),
-			["subagent_spawn", "subagent_send", "subagent_manage", "subagent_mailbox"],
+			["subagent_spawn", "subagent_send", "subagent_await", "subagent_manage", "subagent_mailbox"],
 		);
 		assert.equal(
 			mock.tools.some((tool) =>
@@ -120,6 +120,25 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 			send.parameters.properties?.allowConcurrentWrites?.description ?? "",
 			/deprecated compatibility field.*allowed by default/i,
 		);
+		const awaitTool = mock.tools.find((tool) => tool.name === "subagent_await") as {
+			description: string;
+			promptGuidelines?: string[];
+			parameters: {
+				required?: string[];
+				properties?: Record<string, { description?: string; maximum?: number; minimum?: number }>;
+			};
+		};
+		assert.match(awaitTool.description, /blocks Pi.*queued steering/i);
+		assert.match(awaitTool.description, /timeout.*never interrupts or closes/i);
+		assert.deepEqual(awaitTool.parameters.required, ["agentId"]);
+		assert.equal(awaitTool.parameters.properties?.timeoutMs?.minimum, 1);
+		assert.equal(awaitTool.parameters.properties?.timeoutMs?.maximum, 2_147_483_647);
+		assert.match(
+			awaitTool.parameters.properties?.timeoutMs?.description ?? "",
+			/defaults to 30000/i,
+		);
+		assert.match(awaitTool.promptGuidelines?.join("\n") ?? "", /required.*blocking.*intentional/i);
+		assert.match(awaitTool.promptGuidelines?.join("\n") ?? "", /do not repeatedly call/i);
 		const manage = mock.tools.find((tool) => tool.name === "subagent_manage") as {
 			description: string;
 			parameters: { properties?: Record<string, { description?: string; enum?: string[] }> };

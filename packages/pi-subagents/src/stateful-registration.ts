@@ -197,6 +197,21 @@ const StatefulTimeoutSchema = Type.Integer({
 	description:
 		"Work deadline in milliseconds selected for the task difficulty. On expiry, Pi aborts the work and makes one separately bounded summary attempt. Retained as the agent default.",
 });
+const DEFAULT_SUBAGENT_AWAIT_TIMEOUT_MS = 30_000;
+const SubagentAwaitParams = Type.Object({
+	agentId: Type.String({
+		minLength: 1,
+		description: "Retained agent ID or canonical task path.",
+	}),
+	timeoutMs: Type.Optional(
+		Type.Integer({
+			minimum: 1,
+			maximum: MAX_SUBAGENT_TIMEOUT_MS,
+			description:
+				"Maximum time to wait in milliseconds. A wait timeout stops only this tool call and does not interrupt or close the subagent. Defaults to 30000.",
+		}),
+	),
+});
 const StatefulTurnLimitFields = {
 	idleTimeoutMs: Type.Optional(
 		Type.Integer({
@@ -1071,6 +1086,30 @@ export function registerStatefulSubagents(
 		},
 	});
 
+	if (blockingEnabled) {
+		pi.registerTool({
+			name: "subagent_await",
+			label: "Await Subagent",
+			description:
+				"Wait for one retained subagent's current turn to settle and return its latest bounded output. This blocks Pi from processing queued steering until the wait finishes. A wait timeout or caller cancellation stops only the wait and never interrupts or closes the subagent; use subagent_manage for lifecycle changes. Automatic completion delivery remains active and may later repeat the same at-least-once completion.",
+			promptSnippet:
+				"Intentionally block until one retained subagent settles or the wait times out",
+			promptGuidelines: [
+				"Use subagent_await only when the retained result is required before the next action, useful overlapping main-agent work is complete, and blocking Pi is intentional.",
+				"Do not repeatedly call subagent_await after a timeout; the subagent keeps running and completion delivery remains active. Use subagent_manage only when the user wants to interrupt or close it.",
+			],
+			parameters: SubagentAwaitParams,
+			...createStatefulToolRenderer("await"),
+			async execute(_id, params, signal): Promise<StatefulActionToolResult> {
+				const generation = runtimeGeneration;
+				const timeoutMs = params.timeoutMs ?? DEFAULT_SUBAGENT_AWAIT_TIMEOUT_MS;
+				const waited = await requireRegistry().wait(params.agentId, timeoutMs, signal);
+				assertCurrentSpawn(signal, generation, runtimeGeneration);
+				return awaitResult(waited.agent, waited.timedOut, timeoutMs);
+			},
+		});
+	}
+
 	pi.registerTool({
 		name: "subagent_manage",
 		label: "Manage Subagents",
@@ -1232,6 +1271,34 @@ function result(agent: ManagedAgent, text: string) {
 	return {
 		content: [{ type: "text" as const, text }],
 		details: { agent: summarizeStatefulAgent(agent) },
+	};
+}
+
+function awaitResult(agent: ManagedAgent, timedOut: boolean, timeoutMs: number) {
+	const latestTurn = agent.history.at(-1);
+	const output = timedOut
+		? ""
+		: truncateUtf8(latestTurn?.output ?? "", DEFAULT_MAX_CONTEXT_BYTES).text;
+	const error = timedOut ? "" : truncateUtf8(agent.error ?? "", MAX_TOOL_MESSAGE_BYTES).text;
+	const text = timedOut
+		? `Stopped waiting for ${agent.taskPath ?? agent.id} after ${timeoutMs}ms; it remains ${agent.state}. The wait did not interrupt or close the subagent.`
+		: [`Subagent ${agent.taskPath ?? agent.id} settled as ${agent.state}.`, output || error]
+				.filter(Boolean)
+				.join("\n\n");
+	return {
+		content: [
+			{
+				type: "text" as const,
+				text: truncateUtf8(text, DEFAULT_MAX_CONTEXT_BYTES).text,
+			},
+		],
+		details: {
+			agent: summarizeStatefulAgent(agent),
+			timedOut,
+			timeoutMs,
+			...(output ? { output } : {}),
+			...(error ? { error } : {}),
+		},
 	};
 }
 

@@ -42,6 +42,7 @@ function workflowEffects(current: DelegationWorkflow, next: DelegationWorkflow):
 	const blockingEnabled = (value: DelegationWorkflow) =>
 		value === "all" || value === "blocking-only";
 	const asyncEnabled = (value: DelegationWorkflow) => value === "all" || value === "async-only";
+	const awaitEnabled = (value: DelegationWorkflow) => blockingEnabled(value) && asyncEnabled(value);
 	const effects: string[] = [];
 	if (blockingEnabled(current) !== blockingEnabled(next)) {
 		effects.push(
@@ -55,6 +56,13 @@ function workflowEffects(current: DelegationWorkflow, next: DelegationWorkflow):
 			asyncEnabled(next)
 				? "Allow background tools: `subagent_spawn`, `subagent_send`, `subagent_manage`, and `subagent_mailbox`"
 				: "Remove background tools: `subagent_spawn`, `subagent_send`, `subagent_manage`, and `subagent_mailbox`",
+		);
+	}
+	if (awaitEnabled(current) !== awaitEnabled(next)) {
+		effects.push(
+			awaitEnabled(next)
+				? "Allow the blocking retained-agent join: `subagent_await`"
+				: "Remove the blocking retained-agent join: `subagent_await`",
 		);
 	}
 	return effects;

@@ -148,10 +148,11 @@ const consultDetails = {
 	},
 };
 
-test("all seven subagent tools register native call and result renderers", () => {
+test("all eight subagent tools register native call and result renderers", () => {
 	const tools = registeredTools();
 	assert.deepEqual([...tools.keys()].sort(), [
 		"subagent",
+		"subagent_await",
 		"subagent_consult",
 		"subagent_inspect",
 		"subagent_mailbox",
@@ -773,6 +774,7 @@ test("tool renderers tolerate partial args, sanitize fallback text, and respect 
 		"subagent_inspect",
 		"subagent_spawn",
 		"subagent_send",
+		"subagent_await",
 		"subagent_manage",
 		"subagent_mailbox",
 	]) {
