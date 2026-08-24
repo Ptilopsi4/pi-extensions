@@ -54,6 +54,7 @@ Options:
   --v1-extension <path>          pi-subagents entrypoint override
   --v2-extension <path>          pi-subagents-v2 entrypoint override
   --run                          Execute live-provider trials; otherwise preview only
+  --resume                       Continue missing trials from a compatible output file
 `;
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
@@ -64,12 +65,12 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const options = parseCapabilityBenchmarkArgs(process.argv.slice(2));
 const root = path.resolve(options.workspace ?? sourceRoot);
-const extensions: Record<CapabilityBenchmarkArm, string> = {
-	"pi-subagents": path.resolve(root, options.v1Extension ?? "packages/pi-subagents/src/index.ts"),
-	"pi-subagents-v2": path.resolve(
-		root,
-		options.v2Extension ?? "packages/pi-subagents-v2/src/index.ts",
-	),
+const v1Extension = path.resolve(root, options.v1Extension ?? "packages/pi-subagents/src/index.ts");
+const extensions: Record<CapabilityBenchmarkArm, string | undefined> = {
+	"parent-only": undefined,
+	"v1-sync": v1Extension,
+	"v1-async": v1Extension,
+	"v2-job": path.resolve(root, options.v2Extension ?? "packages/pi-subagents-v2/src/index.ts"),
 };
 const plan = createCapabilityTrialPlan(options.repetitions);
 const configuration = {
@@ -77,22 +78,24 @@ const configuration = {
 	model: options.model,
 	thinkingLevel: options.thinkingLevel,
 	repetitions: options.repetitions,
-	pairs: CAPABILITY_TASKS.length * options.repetitions,
+	pairedInstances: CAPABILITY_TASKS.length * options.repetitions,
+	trials: plan.length,
 	retries: 0,
 	timeoutMs: options.timeoutMs,
 	readinessTimeoutMs: options.readinessTimeoutMs,
 	concurrency: 1,
 	controls: {
-		fixture: "fresh generated identical fixture per paired arm",
+		fixture: "fresh generated identical fixture per four-arm instance",
 		parent: "same model, thinking, prompt information, core tools, and disabled resources",
 		child: "same explicit user-agent model, thinking, prompt, and tool allow-list",
-		order: "alternating arm order by task and repetition",
+		order: "balanced four-arm rotation by task and repetition",
 		evaluator: "fixed text rubric plus independent node:test for mutation",
 		eventRetention: "bounded responses, lifecycle boundaries, and non-user message_end evidence",
 	},
 	comparability: {
-		quality: "diagnostic paired comparison; provider seeds unavailable",
-		cost: "not comparable because v2 does not propagate child usage into parent session stats",
+		quality: "diagnostic matched-task comparison; provider seeds unavailable",
+		cost: "not comparable because arms use different call counts and v2 omits nested child usage",
+		equalInferenceBudget: false,
 		toolSurface:
 			"arm-specific names and surface size are product differences and cannot be blinded",
 	},
@@ -111,7 +114,10 @@ const configuration = {
 		piCommand: options.piCommand,
 		repository: repositoryIdentity(root),
 		extensions: Object.fromEntries(
-			Object.entries(extensions).map(([arm, value]) => [arm, displayPath(value, root)]),
+			Object.entries(extensions).map(([arm, value]) => [
+				arm,
+				value ? displayPath(value, root) : null,
+			]),
 		),
 	},
 };
@@ -132,7 +138,10 @@ if (!options.run) {
 }
 
 const outputPath = path.resolve(options.outputPath);
-const records: CapabilityTrialRecord[] = [];
+const records: CapabilityTrialRecord[] = options.resume
+	? loadResumeRecords(outputPath, configuration, plan)
+	: [];
+const completedTrials = new Set(records.map(trialRecordKey));
 const activeClients = new Set<RpcClient>();
 let interrupted = false;
 for (const signal of ["SIGHUP", "SIGINT", "SIGTERM"] as const) {
@@ -148,9 +157,11 @@ for (const signal of ["SIGHUP", "SIGINT", "SIGTERM"] as const) {
 await persist();
 for (const trial of plan) {
 	if (interrupted) break;
+	if (completedTrials.has(trialPlanKey(trial))) continue;
 	const task = requireTask(trial.taskId);
 	const record = await runTrial(options, trial, task, extensions[trial.arm], root);
 	records.push(record);
+	completedTrials.add(trialRecordKey(record));
 	await persist();
 	process.stderr.write(
 		`${trial.taskId} ${trial.arm}: ${record.outcome}, success=${record.success}, evidence=${record.evidenceScore}, tools=${record.toolCompliance}\n`,
@@ -182,11 +193,72 @@ async function persist(): Promise<void> {
 	await rename(temporary, outputPath);
 }
 
+function loadResumeRecords(
+	outputPath: string,
+	expected: {
+		version: string;
+		model: string;
+		thinkingLevel: string;
+		repetitions: number;
+		timeoutMs: number;
+		readinessTimeoutMs: number;
+		order: CapabilityTrialPlan[];
+	},
+	plan: readonly CapabilityTrialPlan[],
+): CapabilityTrialRecord[] {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(readFileSync(outputPath, "utf8"));
+	} catch (error) {
+		throw new Error(
+			`Cannot resume benchmark output: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+	if (!isRecord(parsed) || !Array.isArray(parsed.rawRecords)) {
+		throw new Error("Cannot resume benchmark output without rawRecords");
+	}
+	for (const key of [
+		"version",
+		"model",
+		"thinkingLevel",
+		"repetitions",
+		"timeoutMs",
+		"readinessTimeoutMs",
+	] as const) {
+		if (parsed[key] !== expected[key]) {
+			throw new Error(`Cannot resume benchmark output with different ${key}`);
+		}
+	}
+	if (JSON.stringify(parsed.order) !== JSON.stringify(expected.order)) {
+		throw new Error("Cannot resume benchmark output with a different trial order");
+	}
+	const allowed = new Set(plan.map(trialPlanKey));
+	const records = parsed.rawRecords as CapabilityTrialRecord[];
+	const seen = new Set<string>();
+	for (const record of records) {
+		if (!isRecord(record)) throw new Error("Cannot resume malformed benchmark records");
+		const key = trialRecordKey(record as CapabilityTrialRecord);
+		if (!allowed.has(key) || seen.has(key)) {
+			throw new Error("Cannot resume unknown or duplicate benchmark records");
+		}
+		seen.add(key);
+	}
+	return records;
+}
+
+function trialPlanKey(trial: CapabilityTrialPlan): string {
+	return `${trial.pairIndex}:${trial.repetition}:${trial.orderIndex}:${trial.arm}:${trial.taskId}`;
+}
+
+function trialRecordKey(record: CapabilityTrialRecord): string {
+	return trialPlanKey(record);
+}
+
 async function runTrial(
 	benchmarkOptions: CapabilityBenchmarkOptions,
 	trial: CapabilityTrialPlan,
 	task: CapabilityTask,
-	extension: string,
+	extension: string | undefined,
 	rootDirectory: string,
 ): Promise<CapabilityTrialRecord> {
 	const launchedAt = performance.now();
@@ -289,7 +361,7 @@ async function runTrial(
 function startRpcClient(
 	benchmarkOptions: CapabilityBenchmarkOptions,
 	arm: CapabilityBenchmarkArm,
-	extension: string,
+	extension: string | undefined,
 	cwd: string,
 	rootDirectory: string,
 	onRecord: (value: unknown) => void,
@@ -297,20 +369,23 @@ function startRpcClient(
 	const agentDir = mkdtempSync(path.join(os.tmpdir(), `subagent-capability-agent-${arm}-`));
 	copyAuthentication(agentDir);
 	writeBenchmarkAgents(agentDir, benchmarkOptions);
-	if (arm === "pi-subagents") {
+	if (arm === "v1-sync" || arm === "v1-async") {
 		writeFileSync(
 			path.join(agentDir, "pi-subagents.json"),
 			`${JSON.stringify(
-				{
-					blocking: { enabled: true },
-					stateful: { enabled: true, completionDelivery: "auto-resume" },
-				},
+				arm === "v1-sync"
+					? { blocking: { enabled: true }, stateful: { enabled: false } }
+					: {
+							blocking: { enabled: true },
+							stateful: { enabled: true, completionDelivery: "auto-resume" },
+						},
 				null,
 				2,
 			)}\n`,
 			{ mode: 0o600 },
 		);
 	}
+	const extensionArguments = extension ? ["-e", extension] : [];
 	const child = spawn(
 		benchmarkOptions.piCommand,
 		[
@@ -322,8 +397,7 @@ function startRpcClient(
 			"--thinking",
 			benchmarkOptions.thinkingLevel,
 			"--no-extensions",
-			"-e",
-			extension,
+			...extensionArguments,
 			"--no-skills",
 			"--no-prompt-templates",
 			"--no-context-files",

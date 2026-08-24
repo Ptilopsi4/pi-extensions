@@ -95,7 +95,7 @@ benchmark-codex-compact *args:
 benchmark-async-subagents *args:
     node scripts/benchmark-async-subagents.ts {{ args }}
 
-# Preview or run the paired pi-subagents and pi-subagents-v2 capability benchmark
+# Preview or run the four-arm parent, v1 sync, v1 async, and v2 benchmark
 benchmark-subagent-capabilities *args:
     node scripts/benchmark-subagent-capabilities.ts {{ args }}
 

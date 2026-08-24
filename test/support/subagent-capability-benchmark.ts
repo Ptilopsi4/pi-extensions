@@ -2,9 +2,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export const SUBAGENT_CAPABILITY_BENCHMARK_VERSION =
-	"pi-extensions:subagent-capability-benchmark:v1" as const;
+	"pi-extensions:subagent-capability-benchmark:v2" as const;
 export const CAPABILITY_RESULT_PREFIX = "CAPABILITY_BENCHMARK_RESULT:";
-export const CAPABILITY_BENCHMARK_ARMS = ["pi-subagents", "pi-subagents-v2"] as const;
+export const CAPABILITY_BENCHMARK_ARMS = ["parent-only", "v1-sync", "v1-async", "v2-job"] as const;
 export const CAPABILITY_BENCHMARK_THINKING_LEVELS = [
 	"off",
 	"minimal",
@@ -32,15 +32,14 @@ export interface CapabilityEvidenceItem {
 }
 
 export interface CapabilityTask {
-	id: "single-research" | "parallel-research" | "consult-review" | "worker-fix";
-	category: "background" | "parallel" | "consultation" | "mutation";
+	id: "single-research" | "parallel-research" | "security-review" | "worker-fix";
+	category: "background" | "parallel" | "review" | "mutation";
 	description: string;
 	childTasks: string[];
 	parentWork: string;
 	evidence: CapabilityEvidenceItem[];
 	requiredStartCount: number;
 	requiredWaitCount: number;
-	requiredConsultCount: number;
 	fixtureCheck: boolean;
 }
 
@@ -48,7 +47,7 @@ export const CAPABILITY_TASKS: readonly CapabilityTask[] = [
 	{
 		id: "single-research",
 		category: "background",
-		description: "One detached explorer returns three exact implementation facts.",
+		description: "One explorer returns three exact implementation facts.",
 		childTasks: [
 			[
 				"Inspect src/queue.ts, src/delivery.ts, and src/shutdown.ts in the current fixture.",
@@ -68,13 +67,12 @@ export const CAPABILITY_TASKS: readonly CapabilityTask[] = [
 		],
 		requiredStartCount: 1,
 		requiredWaitCount: 1,
-		requiredConsultCount: 0,
 		fixtureCheck: false,
 	},
 	{
 		id: "parallel-research",
 		category: "parallel",
-		description: "Two detached explorers cover independent protocol and retention files.",
+		description: "Two independent scopes cover protocol and retention files.",
 		childTasks: [
 			[
 				"Inspect only src/protocol.ts in the current fixture.",
@@ -96,13 +94,12 @@ export const CAPABILITY_TASKS: readonly CapabilityTask[] = [
 		],
 		requiredStartCount: 2,
 		requiredWaitCount: 2,
-		requiredConsultCount: 0,
 		fixtureCheck: false,
 	},
 	{
-		id: "consult-review",
-		category: "consultation",
-		description: "One synchronous read-only consultation finds three planted security defects.",
+		id: "security-review",
+		category: "review",
+		description: "One bounded read-only review finds three planted security defects.",
 		childTasks: [
 			[
 				"Review only src/review.ts in the current fixture for three security defects.",
@@ -110,21 +107,20 @@ export const CAPABILITY_TASKS: readonly CapabilityTask[] = [
 				"Do not edit files.",
 			].join("\n"),
 		],
-		parentWork: "Use the consultation result directly; do not perform a second repository review.",
+		parentWork: "Read BENCHMARK.md while the delegated review runs, then synthesize its evidence.",
 		evidence: [
 			{ id: "owner-prefix", terms: ["src/review.ts", "startsWith", "owner"] },
 			{ id: "path-traversal", terms: ["src/review.ts", "path.join", "traversal"] },
 			{ id: "token-leak", terms: ["src/review.ts", "slice(0, 8)", "token"] },
 		],
-		requiredStartCount: 0,
-		requiredWaitCount: 0,
-		requiredConsultCount: 1,
+		requiredStartCount: 1,
+		requiredWaitCount: 1,
 		fixtureCheck: false,
 	},
 	{
 		id: "worker-fix",
 		category: "mutation",
-		description: "One detached worker fixes two functions and the parent verifies the fixture.",
+		description: "One implementation scope fixes two functions and verifies the fixture.",
 		childTasks: [
 			[
 				"Fix only src/math.mjs so all tests in test/math.test.mjs pass.",
@@ -143,7 +139,6 @@ export const CAPABILITY_TASKS: readonly CapabilityTask[] = [
 		],
 		requiredStartCount: 1,
 		requiredWaitCount: 1,
-		requiredConsultCount: 0,
 		fixtureCheck: true,
 	},
 ] as const;
@@ -157,6 +152,7 @@ export interface CapabilityBenchmarkOptions {
 	piCommand: string;
 	outputPath?: string;
 	run: boolean;
+	resume: boolean;
 	workspace?: string;
 	v1Extension?: string;
 	v2Extension?: string;
@@ -179,9 +175,10 @@ export interface CapabilityEventAnalysis {
 	completionObserved: boolean;
 	prematureFinal: boolean;
 	toolCounts: {
+		sync: number;
 		start: number;
 		wait: number;
-		consult: number;
+		unexpected: number;
 	};
 }
 
@@ -287,11 +284,16 @@ export function parseCapabilityBenchmarkArgs(args: readonly string[]): Capabilit
 	let v1Extension: string | undefined;
 	let v2Extension: string | undefined;
 	let run = false;
+	let resume = false;
 
 	for (let index = 0; index < args.length; index++) {
 		const argument = args[index];
 		if (argument === "--run") {
 			run = true;
+			continue;
+		}
+		if (argument === "--resume") {
+			resume = true;
 			continue;
 		}
 		const value = args[index + 1];
@@ -337,6 +339,7 @@ export function parseCapabilityBenchmarkArgs(args: readonly string[]): Capabilit
 	}
 	if (!model) throw new Error("--model is required so parent and child use one fixed model");
 	if (run && !outputPath) throw new Error("--output is required with --run");
+	if (resume && (!run || !outputPath)) throw new Error("--resume requires --run and --output");
 	return {
 		model,
 		thinkingLevel,
@@ -345,6 +348,7 @@ export function parseCapabilityBenchmarkArgs(args: readonly string[]): Capabilit
 		readinessTimeoutMs,
 		piCommand,
 		run,
+		resume,
 		...(outputPath ? { outputPath } : {}),
 		...(workspace ? { workspace } : {}),
 		...(v1Extension ? { v1Extension } : {}),
@@ -357,10 +361,11 @@ export function createCapabilityTrialPlan(repetitions: number): CapabilityTrialP
 	let pairIndex = 0;
 	for (let repetition = 0; repetition < repetitions; repetition++) {
 		for (const [taskIndex, task] of CAPABILITY_TASKS.entries()) {
-			const v1First = (repetition + taskIndex) % 2 === 0;
-			const order: readonly CapabilityBenchmarkArm[] = v1First
-				? ["pi-subagents", "pi-subagents-v2"]
-				: ["pi-subagents-v2", "pi-subagents"];
+			const rotation = (repetition * CAPABILITY_TASKS.length + taskIndex) % 4;
+			const order = [
+				...CAPABILITY_BENCHMARK_ARMS.slice(rotation),
+				...CAPABILITY_BENCHMARK_ARMS.slice(0, rotation),
+			];
 			for (const [orderIndex, arm] of order.entries()) {
 				plan.push({ pairIndex, repetition, orderIndex, arm, taskId: task.id });
 			}
@@ -375,41 +380,58 @@ export function buildCapabilityPrompt(
 	task: CapabilityTask,
 	thinkingLevel: CapabilityBenchmarkThinkingLevel,
 ): string {
-	const names =
-		arm === "pi-subagents"
-			? { start: "subagent_spawn", wait: "subagent_await", consult: "subagent_consult" }
-			: {
-					start: "subagent-v2-start",
-					wait: "subagent-v2-wait",
-					consult: "subagent-v2-consult",
-				};
+	const agent = task.category === "mutation" ? "benchmark-worker" : "benchmark-explorer";
 	const steps: string[] = [];
-	if (task.requiredConsultCount > 0) {
+	if (arm === "parent-only") {
 		steps.push(
-			`Call ${names.consult} exactly once with agent benchmark-explorer and timeoutMs 120000.`,
-			`Pass this exact consultation task:\n${task.childTasks[0]}`,
+			"Complete the workload directly with core tools and do not delegate.",
+			...task.childTasks.map((childTask, index) => `Direct scope ${index + 1}:\n${childTask}`),
+			"Read BENCHMARK.md and retain its fixture identifier.",
 		);
+		if (task.fixtureCheck) {
+			steps.push("Run node --test test/math.test.mjs after editing and inspect src/math.mjs.");
+		}
+	} else if (arm === "v1-sync") {
+		steps.push(
+			"Call the blocking subagent tool exactly once and wait for its result.",
+			`Use agent ${agent}, thinkingLevel ${thinkingLevel}, and timeoutMs 120000.`,
+		);
+		if (task.childTasks.length === 1) {
+			steps.push(`Pass this exact task:\n${task.childTasks[0]}`);
+		} else {
+			steps.push(
+				"Use one parallel batch with no aggregator and these exact tasks:",
+				...task.childTasks.map((childTask, index) => `Parallel task ${index + 1}:\n${childTask}`),
+			);
+		}
+		steps.push("After the blocking result returns, read BENCHMARK.md.");
+		if (task.fixtureCheck) {
+			steps.push("Then independently run node --test test/math.test.mjs and inspect src/math.mjs.");
+		}
 	} else {
+		const names =
+			arm === "v1-async"
+				? { start: "subagent_spawn", wait: "subagent_await" }
+				: { start: "subagent-v2-start", wait: "subagent-v2-wait" };
 		steps.push(
 			`Start exactly ${task.requiredStartCount} background job(s) with ${names.start}.`,
-			`Use ${task.category === "mutation" ? "benchmark-worker" : "benchmark-explorer"} and timeoutMs 120000.`,
-		);
-		for (const [index, childTask] of task.childTasks.entries()) {
-			steps.push(`Job ${index + 1} exact task:\n${childTask}`);
-		}
-		steps.push(
+			`Use ${agent}, thinkingLevel ${thinkingLevel}, and timeoutMs 120000.`,
+			...task.childTasks.map((childTask, index) => `Job ${index + 1} exact task:\n${childTask}`),
 			task.parentWork,
 			`Then call ${names.wait} exactly once for each started job with timeoutMs 120000.`,
 			"Do not poll with inspection and do not start replacement jobs.",
 		);
 	}
 	return [
-		"This is one non-interactive paired capability benchmark trial.",
+		"This is one non-interactive four-arm subagent benchmark trial.",
+		`Arm: ${arm}.`,
 		`Task ID: ${task.id}.`,
 		`Use the configured ${thinkingLevel} thinking level and do not change models.`,
 		...steps,
-		"Synthesize the delegated result yourself and include every requested fact with exact paths and symbols.",
-		"Do not claim success before the required tool result is visible.",
+		"Synthesize the available evidence and include every requested fact with exact paths and symbols.",
+		...(arm === "parent-only"
+			? []
+			: ["Do not claim success before the required subagent result is visible."]),
 		`End with exactly one line: ${CAPABILITY_RESULT_PREFIX} {"taskId":"${task.id}","complete":true}`,
 	].join("\n\n");
 }
@@ -419,17 +441,11 @@ export function analyzeCapabilityEvents(
 	task: CapabilityTask,
 	events: readonly unknown[],
 ): CapabilityEventAnalysis {
-	const names =
-		arm === "pi-subagents"
-			? { start: "subagent_spawn", wait: "subagent_await", consult: "subagent_consult" }
-			: {
-					start: "subagent-v2-start",
-					wait: "subagent-v2-wait",
-					consult: "subagent-v2-consult",
-				};
+	const expected = expectedToolCounts(arm, task);
+	let sync = 0;
 	let start = 0;
 	let wait = 0;
-	let consult = 0;
+	let unexpected = 0;
 	let completionIndex = -1;
 	let finalIndex = -1;
 	let finalAnswer: string | undefined;
@@ -440,14 +456,19 @@ export function analyzeCapabilityEvents(
 		const message = value.message;
 		if (message.role === "toolResult" && message.isError !== true) {
 			const toolName = typeof message.toolName === "string" ? message.toolName : "";
-			if (toolName === names.start) start++;
-			if (toolName === names.wait && !isTimedOutResult(message.details)) {
+			if (toolName === "subagent") {
+				sync++;
+				if (arm === "v1-sync") completionIndex = index;
+			} else if (toolName === (arm === "v1-async" ? "subagent_spawn" : "subagent-v2-start")) {
+				start++;
+			} else if (
+				toolName === (arm === "v1-async" ? "subagent_await" : "subagent-v2-wait") &&
+				!isTimedOutResult(message.details)
+			) {
 				wait++;
-				if (wait >= task.requiredWaitCount) completionIndex = index;
-			}
-			if (toolName === names.consult) {
-				consult++;
-				completionIndex = index;
+				if (wait >= expected.wait) completionIndex = index;
+			} else if (toolName.startsWith("subagent")) {
+				unexpected++;
 			}
 			continue;
 		}
@@ -461,20 +482,43 @@ export function analyzeCapabilityEvents(
 	}
 	const score = scoreCapabilityEvidence(finalAnswer ?? "", task.evidence);
 	const toolCompliance =
-		start === task.requiredStartCount &&
-		wait === task.requiredWaitCount &&
-		consult === task.requiredConsultCount;
+		sync === expected.sync &&
+		start === expected.start &&
+		wait === expected.wait &&
+		unexpected === 0;
 	const markerValid = marker?.taskId === task.id && marker.complete === true;
+	const completionObserved =
+		arm === "parent-only"
+			? markerValid && finalIndex >= 0
+			: completionIndex >= 0 && finalIndex > completionIndex;
 	return {
 		...(finalAnswer ? { finalAnswer } : {}),
 		...(markerValid && marker ? { marker } : {}),
 		matchedEvidence: score.matched,
 		evidenceScore: score.score,
 		toolCompliance,
-		completionObserved: completionIndex >= 0 && finalIndex > completionIndex,
-		prematureFinal: finalIndex >= 0 && (completionIndex < 0 || finalIndex < completionIndex),
-		toolCounts: { start, wait, consult },
+		completionObserved,
+		prematureFinal:
+			arm === "parent-only"
+				? false
+				: finalIndex >= 0 && (completionIndex < 0 || finalIndex < completionIndex),
+		toolCounts: { sync, start, wait, unexpected },
 	};
+}
+
+function expectedToolCounts(
+	arm: CapabilityBenchmarkArm,
+	task: CapabilityTask,
+): { sync: number; start: number; wait: number } {
+	if (arm === "v1-sync") return { sync: 1, start: 0, wait: 0 };
+	if (arm === "v1-async" || arm === "v2-job") {
+		return {
+			sync: 0,
+			start: task.requiredStartCount,
+			wait: task.requiredWaitCount,
+		};
+	}
+	return { sync: 0, start: 0, wait: 0 };
 }
 
 export function scoreCapabilityEvidence(
@@ -538,12 +582,12 @@ export function summarizeCapabilityBenchmark(records: readonly CapabilityTrialRe
 	};
 	return {
 		version: SUBAGENT_CAPABILITY_BENCHMARK_VERSION,
-		pairs: new Set(records.map((record) => record.pairIndex)).size,
+		pairedInstances: new Set(records.map((record) => record.pairIndex)).size,
 		costComparable: false,
-		arms: {
-			"pi-subagents": summarize("pi-subagents"),
-			"pi-subagents-v2": summarize("pi-subagents-v2"),
-		},
+		equalInferenceBudget: false,
+		arms: Object.fromEntries(
+			CAPABILITY_BENCHMARK_ARMS.map((arm) => [arm, summarize(arm)]),
+		) as Record<CapabilityBenchmarkArm, CapabilityArmSummary>,
 	};
 }
 
@@ -750,10 +794,12 @@ function redactValue(value: unknown, seen: WeakSet<object>): unknown {
 	if (typeof value === "string") return redactString(value);
 	if (Array.isArray(value)) return value.map((item) => redactValue(item, seen));
 	if (!isRecord(value)) return value;
+	if (value.type === "thinking") return "[reasoning omitted]";
 	if (seen.has(value)) return "[circular]";
 	seen.add(value);
 	const output: Record<string, unknown> = {};
 	for (const [key, item] of Object.entries(value)) {
+		if (reasoningKey(key)) continue;
 		output[key] = sensitiveKey(key) ? "[redacted]" : redactValue(item, seen);
 	}
 	return output;
@@ -770,6 +816,10 @@ function redactString(value: string): string {
 	);
 	if (home) output = output.split(home).join("$HOME");
 	return output.length <= 16 * 1024 ? output : `${output.slice(0, 16 * 1024)}\n[truncated]`;
+}
+
+function reasoningKey(key: string): boolean {
+	return /^(?:thinking|thinkingSignature|encrypted_content)$/u.test(key);
 }
 
 function sensitiveKey(key: string): boolean {
