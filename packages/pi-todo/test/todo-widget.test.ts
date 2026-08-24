@@ -241,6 +241,28 @@ test("renders completed, current, and pending tasks with themed semantic symbols
 	assert.ok(calls.some(([kind, role]) => kind === "style" && role === "strikethrough"));
 });
 
+test("wraps task text with hanging indentation at narrow widths", () => {
+	const { theme } = identityTheme();
+	const wrappedWords = renderTodoWidget(
+		[{ text: "alpha beta gamma", status: "in_progress" }],
+		theme,
+		10,
+	);
+	assert.deepEqual(wrappedWords.slice(2), ["▶ alpha", "  beta", "  gamma"]);
+
+	const wrappedCjk = renderTodoWidget([{ text: "界界界", status: "pending" }], theme, 6);
+	assert.deepEqual(wrappedCjk.slice(2), ["○ 界界", "  界"]);
+
+	for (const width of [0, 1, 2]) {
+		const lines = renderTodoWidget(
+			[{ text: "hidden until enough room", status: "completed" }],
+			theme,
+			width,
+		);
+		for (const line of lines) assert.ok(visibleWidth(line) <= width);
+	}
+});
+
 test("sanitizes terminal and bidi controls and bounds every rendered line", () => {
 	const hostile = "safe\u001b]8;;https://evil\u0007link\u001b]8;;\u0007\n界界\u202e";
 	assert.equal(sanitizeTodoText(hostile), "safelink 界界");

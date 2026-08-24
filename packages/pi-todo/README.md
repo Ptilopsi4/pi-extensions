@@ -80,6 +80,7 @@ The reminder is kept at the end of model context, survives compaction through br
 In TUI mode, updates appear immediately in a widget above the editor.
 
 The widget header shows completed and total task counts, followed by themed completed, in-progress, and pending rows.
+Long task text wraps to the available terminal width with continuation lines aligned beneath the text.
 
 In RPC, print, and JSON modes, the tool still returns structured details but does not create a visual widget.
 
@@ -97,7 +98,7 @@ Terminal escape sequences, control characters, and bidirectional display control
 - The extension provides a model tool rather than a slash command or manual task editor.
 - The extension reminds the model to update statuses but cannot infer task completion or force a tool call.
 - Branch reconstruction uses only valid versioned `update_todo_list` or legacy `todo_widget` tool results on the active branch.
-- Long task text is shown on one bounded terminal line and may be truncated to the available width.
+- The widget has no independent scrolling or height-based collapsing, so Pi may clip later rows when terminal height is constrained.
 
 ## 🗂️ Package layout
 
