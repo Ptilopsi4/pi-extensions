@@ -11,8 +11,8 @@ Pi TUI Kit provides declarative screens, standalone task and confirmation flows,
 
 - Defines typed action, detail, settings, choice, review, multi-select, and document screens.
 - Adapts shared flows across Pi TUI and RPC modes.
-- Owns standard navigation, cancellation, disposal, lifecycle, and width-safe rendering.
-- Provides focused task, confirmation, live-choice, custom-interaction, terminal-text, hint, and testing helpers.
+- Owns standard navigation, cancellation, disposal, lifecycle, consistent horizontal framing, and width-safe rendering.
+- Provides focused task, confirmation, live-choice, custom-interaction, terminal-text, hint, horizontal-rule, and testing helpers.
 - Publishes built ESM and TypeScript declarations for independently installable extensions.
 
 ## 📦 Install
@@ -84,6 +84,33 @@ export function showMenu(ctx: ExtensionCommandContext) {
   return runMenu(ctx, menu, { getState: () => undefined });
 }
 ```
+
+## ➖ Horizontal rules
+
+Use `HorizontalRule` as a width-safe divider in custom components and Kit-adjacent widgets.
+Every standard Kit TUI screen uses its full-width themed form above and below the screen content.
+It fills the supplied width by default, supports symmetric `paddingX`, and can render a sanitized label aligned left, center, or right.
+Pass the active callback theme through render-time style functions instead of pre-baking terminal colors.
+Style functions must preserve the displayed text and its terminal-cell width.
+
+```ts
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { HorizontalRule } from "@narumitw/pi-tui-kit";
+
+export function createPreviewDivider(theme: Pick<Theme, "fg">) {
+  return new HorizontalRule({
+    label: "Preview",
+    labelAlignment: "left",
+    paddingX: 1,
+    ruleStyle: (text) => theme.fg("borderMuted", text),
+    labelStyle: (text) => theme.fg("muted", text),
+  });
+}
+```
+
+Long and wide-character labels truncate by terminal cells on narrow renders.
+Terminal and bidirectional controls are removed from labels at the display boundary.
+When the available width cannot preserve the requested padding, the component reduces the inset to keep one rule cell visible.
 
 ## 🧭 Complete menu example
 
@@ -368,6 +395,8 @@ const result = await runCustomInteraction<{ kind: "back" | "close" }>(ctx, {
 - **`multiSelect`** — optimistic toggles with stable cursor restoration, serialized saves, rollback, selected-row descriptions, optional fuzzy search and bulk action rows, and a bounded TUI viewport.
 
 All standard TUI screens use Pi's injected keybindings, sanitize display text, rebuild themed content after invalidation, and bound rendered output to the supplied terminal width.
+At normal terminal heights, every screen renders a themed full-width horizontal rule above and below its content.
+Height-adaptive browse and review screens omit the rules only when preserving them would remove critical content at constrained heights.
 Escape follows the screen's Back/Close hint; `Ctrl+C` closes the menu.
 
 Disabled action rows stay visible and focusable for context but never navigate, close, or invoke a domain action.
@@ -748,6 +777,7 @@ Consumer fixtures continue to own domain state, persistence, generation checks, 
 - `runQuestionnaire()` — adapts required choices, free-form answers, optional TUI notes, direct single-question submission, multi-question read-only review, and sequential RPC while preserving typed Submitted, Back, Close, Stale, Unsupported, and Error outcomes.
 - `formatInteractionHints()` — formats sanitized, normalized, de-duplicated injected bindings and literal shortcut keys for specialized interaction hints; the lightweight `@narumitw/pi-tui-kit/interaction-hints` subpath exports it and its public types.
 - `sanitizeTerminalText()` — removes terminal and bidirectional display controls from untrusted single-line presentation text without mutating raw payloads; the lightweight `@narumitw/pi-tui-kit/terminal-text` subpath exports it.
+- `HorizontalRule` — renders a full-width or inset horizontal divider with an optional sanitized and aligned label plus render-time style callbacks.
 - `runCustomInteraction()` — owns cancellation, stale checks, exactly-once disposal, optional pending work draining, and typed results around one extension-owned custom TUI component.
 - `resolveMenuScreen()` — resolves and validates a dynamic screen for tests or adapters.
 - `createMenuNavigator()` — lower-level stack and selection state helper.
@@ -769,6 +799,7 @@ Version 12 added optional searchable `choice` fields, version 11 added Live Choi
 - `src/questionnaire.ts` — standalone questionnaire TUI/RPC adaptation and public result contract
 - `src/interaction-hints.ts` — injected-key and literal-shortcut hint formatting, published through the lightweight `/interaction-hints` subpath
 - `src/terminal-text.ts` — terminal display sanitization published through the lightweight `/terminal-text` subpath
+- `src/horizontal-rule.ts` — width-safe full-width, inset, and labeled horizontal dividers
 - `src/custom-interaction.ts` — lifecycle ownership for specialized public custom components
 - `dist/` — generated ESM and declarations included in the npm package
 - `test/` — contract, renderer, navigation, lifecycle, and public testing-entrypoint coverage

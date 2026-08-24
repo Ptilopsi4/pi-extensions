@@ -206,6 +206,7 @@ test("Explain footer scrolls long content and clamps it across resize", async ()
 	await tui.waitForOpen();
 	assert.match(tui.render().join("\n"), /brand/u);
 	tui.press("end");
+	tui.press("tui.select.up");
 	assert.match(tui.render().join("\n"), /time/u);
 	const constrained = tui.resize({ width: 20, rows: 7 });
 	assert.ok(constrained.length <= 4);
@@ -309,8 +310,9 @@ test("Modules is searchable, adaptive, terminal-safe, and restores search after 
 		assert.match(frame, /Reachable: Yes/u);
 		assert.equal(frame.includes("\u001b[31m"), false);
 		tui.press("tui.select.pageDown");
+		tui.press("tui.select.pageDown");
 		frame = tui.render().join("\n");
-		assert.match(frame, /current\s+snapshot produced no output/iu);
+		assert.match(frame, /snapshot produced no output/iu);
 		assert.match(frame, /Variables:.*branch/u);
 		assert.match(frame, /Style fields: style/u);
 		for (const dimensions of [

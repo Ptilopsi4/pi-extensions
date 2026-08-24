@@ -31,7 +31,12 @@ interface PickerComponent {
 }
 
 function screenTitle(title: string) {
-	return title.split("\n")[0] ?? title;
+	return (
+		title
+			.split("\n")
+			.map((line) => stripVTControlCharacters(line).trim())
+			.find((line) => line && !/^─+$/u.test(line)) ?? title
+	);
 }
 
 function selectCustomLayout(title: string, choices: string[]): string | undefined {

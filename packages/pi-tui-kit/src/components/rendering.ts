@@ -1,4 +1,5 @@
 import { type Input, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { HorizontalRule } from "../horizontal-rule.js";
 import { formatInteractionHints } from "../interaction-hints.js";
 import { replaceTerminalControls, safeMenuText } from "../text.js";
 import type { ActionMenuItem } from "../types.js";
@@ -40,7 +41,9 @@ export function renderFrame<ScreenId extends string, ActionId extends string>(
 	confirmAction = "select",
 ): string[] {
 	const safeWidth = Math.max(1, width);
+	const rule = renderHorizontalRule(safeWidth, options.theme);
 	const result = [
+		rule,
 		...wrapTextWithAnsi(
 			options.theme.fg("accent", options.theme.bold(safeMenuText(title))),
 			safeWidth,
@@ -53,8 +56,20 @@ export function renderFrame<ScreenId extends string, ActionId extends string>(
 			options.theme.fg("dim", menuHint(options.keybindings, destination, confirmAction)),
 			safeWidth,
 		),
+		rule,
 	];
 	return result.map((line) => truncateToWidth(line, safeWidth, ""));
+}
+
+export function renderHorizontalRule(
+	width: number,
+	theme: MenuScreenComponentOptions<string, string>["theme"],
+): string {
+	return (
+		new HorizontalRule({
+			ruleStyle: (text) => theme.fg("border", text),
+		}).render(Math.max(1, width))[0] ?? ""
+	);
 }
 
 export function menuHint(

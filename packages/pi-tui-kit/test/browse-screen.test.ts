@@ -133,12 +133,14 @@ test("browse legacy details retain normalized ordering and empty fallback", () =
 	const harness = componentHarness(screen, { rows: 24, selectedItemId: "legacy" });
 	harness.component.handleInput("y");
 	assert.deepEqual(plainRender(harness.component, 80), [
+		"─".repeat(80),
 		"Legacy",
 		"Status: Ready state",
 		"Legacy description",
 		"nested prose",
 		"",
 		"k/j scroll · u/d page · q back · ctrl+c close",
+		"─".repeat(80),
 	]);
 	harness.component.handleInput("q");
 	harness.component.handleInput("j");
@@ -219,6 +221,7 @@ test("browse exact details preserve documents, precedence, search identity, and 
 	);
 
 	harness.component.handleInput("d");
+	harness.component.handleInput("d");
 	assert.match(plainRender(harness.component, 40).join("\n"), /tail 10/u);
 	harness.component.handleInput("q");
 	rendered = plainRender(harness.component, 40).join("\n");
@@ -249,7 +252,7 @@ test("browse detail documents share semantic Markdown and LaTeX rendering", () =
 		viewportSize: "adaptive",
 		hint: "back",
 	};
-	const harness = componentHarness(screen, { rows: 12 });
+	const harness = componentHarness(screen, { rows: 16 });
 	const focusable = harness.component as MenuScreenComponent & Focusable;
 	focusable.focused = true;
 	for (const input of "math") harness.component.handleInput(input);
@@ -366,6 +369,11 @@ test("browse is adaptively bounded, handles empty searches, and distinguishes Ba
 		harness.host.terminal.rows = rows;
 		const lines = harness.component.render(width);
 		assert.ok(lines.length <= Math.max(1, rows - 3), `${width}x${rows}`);
+		if (rows >= 8) {
+			const plain = lines.map((line) => stripVTControlCharacters(line));
+			assert.equal(plain[0], "─".repeat(width));
+			assert.equal(plain.at(-1), "─".repeat(width));
+		}
 		assert.ok(
 			lines.every((line) => visibleWidth(line) <= width),
 			`${width}x${rows}`,

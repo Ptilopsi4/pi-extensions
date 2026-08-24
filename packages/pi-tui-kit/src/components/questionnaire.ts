@@ -12,13 +12,13 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
+import { HorizontalRule } from "../horizontal-rule.js";
 import type {
 	QuestionnaireAnswer,
 	QuestionnaireLabels,
 	QuestionnaireQuestion,
 } from "../questionnaire.js";
 import type { MenuCloseReason } from "../types.js";
-import { DynamicBorder } from "./dynamic-border.js";
 
 const BRACKETED_PASTE_START = "\u001b[200~";
 const BRACKETED_PASTE_END = "\u001b[201~";
@@ -42,7 +42,7 @@ export interface QuestionnaireComponentOptions<QuestionId extends string> {
 
 export class QuestionnaireComponent<QuestionId extends string> implements Component, Focusable {
 	private readonly options: QuestionnaireComponentOptions<QuestionId>;
-	private readonly border: DynamicBorder;
+	private readonly border: HorizontalRule;
 	private readonly editor: RawPreservingEditor;
 	private readonly answers: Array<QuestionnaireAnswer<QuestionId> | undefined>;
 	private readonly selectedOptions: number[];
@@ -54,7 +54,9 @@ export class QuestionnaireComponent<QuestionId extends string> implements Compon
 
 	constructor(options: QuestionnaireComponentOptions<QuestionId>) {
 		this.options = options;
-		this.border = new DynamicBorder((text) => options.theme.fg("border", text));
+		this.border = new HorizontalRule({
+			ruleStyle: (text) => options.theme.fg("border", text),
+		});
 		this.answers = options.questions.map(() => undefined);
 		this.selectedOptions = options.questions.map(() => 0);
 		const editorTheme: EditorTheme = {

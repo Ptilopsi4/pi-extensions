@@ -12,6 +12,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { HorizontalRule } from "../horizontal-rule.js";
 import type { MenuScreen, MenuSettingItem } from "../types.js";
 import { createBrowseComponent } from "./browse.js";
 import type {
@@ -22,7 +23,6 @@ import type {
 	MenuScreenComponentOptions,
 	MultiSelectOptions,
 } from "./contracts.js";
-import { DynamicBorder } from "./dynamic-border.js";
 import { createInputComponent, type InputOptions } from "./input.js";
 import { createMultiSelectComponent } from "./multi-select.js";
 import {
@@ -178,7 +178,9 @@ function createChoiceComponent<ScreenId extends string, ActionId extends string>
 	const searchInput = new Input();
 	const restoredSearchQuery = options.searchQuery ?? "";
 	if (restoredSearchQuery) handleSearchInput(searchInput, restoredSearchQuery);
-	const border = new DynamicBorder((text: string) => options.theme.fg("border", text));
+	const border = new HorizontalRule({
+		ruleStyle: (text: string) => options.theme.fg("border", text),
+	});
 	const allItems = options.screen.items.map((item) => {
 		const current = item.id === options.screen.currentItemId ? " ✓ current" : "";
 		const unavailable = item.disabled
@@ -393,7 +395,9 @@ function createSettingsComponent<ScreenId extends string, ActionId extends strin
 	options: SettingsOptions<ScreenId, ActionId>,
 ): MenuScreenComponent {
 	const searchInput = new Input();
-	const border = new DynamicBorder((text: string) => options.theme.fg("border", text));
+	const border = new HorizontalRule({
+		ruleStyle: (text: string) => options.theme.fg("border", text),
+	});
 	const searchableItems = options.screen.items.map((item) => ({
 		item,
 		label: safeMenuText(item.label),

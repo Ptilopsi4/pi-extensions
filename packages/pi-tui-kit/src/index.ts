@@ -11,6 +11,11 @@ export {
 	runCustomInteraction,
 } from "./custom-interaction.js";
 export {
+	HorizontalRule,
+	type HorizontalRuleLabelAlignment,
+	type HorizontalRuleOptions,
+} from "./horizontal-rule.js";
+export {
 	type FormatInteractionHintsOptions,
 	formatInteractionHints,
 	type InteractionHint,

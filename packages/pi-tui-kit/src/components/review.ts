@@ -11,10 +11,11 @@ import {
 	RPC_DOCUMENT_LINE_WIDTH,
 	RPC_DOCUMENT_PAGE_SIZE,
 } from "./document-formatting.js";
-import { menuHint, renderFrame, safeMenuText } from "./rendering.js";
+import { menuHint, renderFrame, renderHorizontalRule, safeMenuText } from "./rendering.js";
 
 const DEFAULT_REVIEW_VIEWPORT_SIZE = 14;
 const RESERVED_HOST_ROWS = 3;
+const MIN_FRAMED_ROWS = 5;
 
 export type ReviewOptions<
 	ScreenId extends string,
@@ -143,7 +144,9 @@ interface AdaptiveReviewChrome {
 function renderAdaptiveReviewFrame<ActionId extends string>(
 	options: AdaptiveReviewFrameOptions<ActionId>,
 ): AdaptiveReviewFrame {
-	const availableRows = Math.max(1, Math.floor(options.terminalRows) - RESERVED_HOST_ROWS);
+	const totalRows = Math.max(1, Math.floor(options.terminalRows) - RESERVED_HOST_ROWS);
+	const framed = totalRows >= MIN_FRAMED_ROWS;
+	const availableRows = framed ? totalRows - 2 : totalRows;
 	const destination = options.screen.hint ?? "back";
 	const confirmAction = options.screen.confirm ? safeMenuText(options.screen.confirm.label) : "";
 	const fullHeader = [
@@ -184,13 +187,20 @@ function renderAdaptiveReviewFrame<ActionId extends string>(
 	const position = chrome.showPosition
 		? [options.theme.fg("dim", `${first}-${last}/${options.allLines.length}`)]
 		: [];
-	const lines = [
+	const contentLines = [
 		...chrome.header,
 		...(chrome.separator ? [""] : []),
 		...visible,
 		...position,
 		...chrome.hint,
 	].map((line) => truncateToWidth(line, options.width, ""));
+	const lines = framed
+		? [
+				renderHorizontalRule(options.width, options.theme),
+				...contentLines,
+				renderHorizontalRule(options.width, options.theme),
+			]
+		: contentLines;
 
 	return { lines, scrollOffset, maximumScroll, viewportSize: chrome.viewportSize };
 }

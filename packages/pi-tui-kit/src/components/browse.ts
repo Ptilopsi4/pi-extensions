@@ -18,11 +18,12 @@ import {
 	RPC_DOCUMENT_LINE_WIDTH,
 	RPC_DOCUMENT_PAGE_SIZE,
 } from "./document-formatting.js";
-import { handleSearchInput, safeMenuText } from "./rendering.js";
+import { handleSearchInput, renderHorizontalRule, safeMenuText } from "./rendering.js";
 import { reviewDialogPages } from "./review.js";
 
 const RESERVED_HOST_ROWS = 3;
 const MAX_CONTEXT_ROWS = 2;
+const MIN_FRAMED_ROWS = 5;
 
 type BrowseView = "list" | "detail";
 
@@ -113,6 +114,7 @@ export function createBrowseComponent<ScreenId extends string, ActionId extends 
 		render(width) {
 			const safeWidth = Math.max(1, width);
 			const availableRows = componentRows(options.tui.terminal.rows);
+			const contentRows = framedContentRows(availableRows);
 			if (view === "detail") {
 				const selectedItem = selected()?.item;
 				const content = selectedItem?.detailDocument
@@ -122,7 +124,7 @@ export function createBrowseComponent<ScreenId extends string, ActionId extends 
 							safeWidth,
 						)
 					: legacyDetailLines(selectedItem, safeWidth);
-				const layout = detailLayout(availableRows, content.length);
+				const layout = detailLayout(contentRows, content.length);
 				detailViewportRows = layout.contentRows;
 				detailMaximumScroll = Math.max(0, content.length - layout.contentRows);
 				detailScrollOffset = clamp(detailScrollOffset, 0, detailMaximumScroll);
@@ -141,14 +143,14 @@ export function createBrowseComponent<ScreenId extends string, ActionId extends 
 						: []),
 					...(layout.hintRows ? [options.theme.fg("dim", detailHint(options.keybindings))] : []),
 				];
-				return boundedLines(lines, safeWidth, availableRows);
+				return boundedFrame(lines, safeWidth, availableRows, options.theme);
 			}
 
 			const context = (options.screen.lines ?? []).flatMap((line) =>
 				wrapTextWithAnsi(options.theme.fg("muted", safeBrowseText(line)), safeWidth),
 			);
 			const layout = listLayout(
-				availableRows,
+				contentRows,
 				context.length,
 				filteredItems.length,
 				options.screen.viewportSize,
@@ -191,7 +193,7 @@ export function createBrowseComponent<ScreenId extends string, ActionId extends 
 						]
 					: []),
 			];
-			return boundedLines(lines, safeWidth, availableRows);
+			return boundedFrame(lines, safeWidth, availableRows, options.theme);
 		},
 		invalidate() {
 			detailLineCache.invalidate();
@@ -414,6 +416,21 @@ function listWindowStart(selectedIndex: number, itemCount: number, viewportSize:
 function positionText(offset: number, viewportSize: number, itemCount: number) {
 	if (itemCount === 0) return "0/0";
 	return `${offset + 1}-${Math.min(itemCount, offset + viewportSize)}/${itemCount}`;
+}
+
+function framedContentRows(rows: number) {
+	return rows >= MIN_FRAMED_ROWS ? rows - 2 : rows;
+}
+
+function boundedFrame(
+	lines: readonly string[],
+	width: number,
+	rows: number,
+	theme: BrowseOptions<string, string>["theme"],
+) {
+	if (rows < MIN_FRAMED_ROWS) return boundedLines(lines, width, rows);
+	const rule = renderHorizontalRule(width, theme);
+	return [rule, ...boundedLines(lines, width, rows - 2), rule];
 }
 
 function boundedLines(lines: readonly string[], width: number, rows: number) {
