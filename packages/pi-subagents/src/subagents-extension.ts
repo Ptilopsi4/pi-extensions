@@ -231,6 +231,7 @@ function registerBlockingSubagent(
 	loadExecution: () => Promise<BlockingExecutionModule>,
 ): (catalog: string) => void {
 	let catalog = "";
+	let deprecationWarningShown = false;
 	const activeControllers = new Set<AbortController>();
 	const activeWork = new Set<Promise<unknown>>();
 	const cancelAndWaitForWork = async (reason: string) => {
@@ -239,10 +240,20 @@ function registerBlockingSubagent(
 		}
 		await Promise.allSettled([...activeWork]);
 	};
-	pi.on("session_start", () => cancelAndWaitForWork("Blocking subagent session replaced"));
+	pi.on("session_start", () => {
+		deprecationWarningShown = false;
+		return cancelAndWaitForWork("Blocking subagent session replaced");
+	});
 	pi.on("session_shutdown", () => cancelAndWaitForWork("Blocking subagent session shut down"));
+	const statefulEnabled = () => getSettings()?.stateful?.enabled !== false;
+	const deprecationAlternatives = () =>
+		statefulEnabled()
+			? "Prefer the main agent for tightly coupled work, subagent_spawn for detached work, subagent_await for an intentional retained-agent join, or subagent_consult for bounded synchronous read-only evidence."
+			: "Prefer the main agent for tightly coupled work or subagent_consult for bounded synchronous read-only evidence; enable the background workflow before using detached alternatives.";
 	const baseDescription = () =>
 		[
+			"Deprecated compatibility tool: do not choose subagent for new work.",
+			deprecationAlternatives(),
 			"Run specialized subagents as a blocking operation with isolated contexts.",
 			"The call blocks the main agent until every worker and optional aggregator finishes, so queued steering waits.",
 			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder), workflow (named dependency tasks with optional capability routing), or panel (independent reviewers plus evidence-preserving synthesis).",
@@ -253,14 +264,17 @@ function registerBlockingSubagent(
 			`Working-directory target policy: ${getSettings()?.cwdPolicy?.delegation ?? DEFAULT_DELEGATION_CWD_POLICY}. This controls launch targets and protected project resources, not filesystem access or sandboxing.`,
 		].join(" ");
 	const promptGuidelines = () => [
-		"Use subagent only when delegation fits; the main agent should decide how many subagents to spawn from task shape instead of waiting for the user to specify a count.",
+		statefulEnabled()
+			? "The subagent tool is deprecated for new work; prefer the main agent, subagent_spawn with supported completion delivery, subagent_await for an intentional retained-agent join, or subagent_consult for bounded synchronous read-only evidence."
+			: "The subagent tool is deprecated for new work; prefer the main agent or subagent_consult for bounded synchronous read-only evidence, and enable the background workflow before using detached alternatives.",
+		"Use deprecated subagent only for an existing caller or an explicit user request whose blocking chain, fan-in, panel, or workflow semantics do not yet have a detached replacement.",
+		"When compatibility requires subagent, decide how many subagents to spawn from task shape instead of waiting for the user to specify a count.",
 		"The main agent retains overall planning, immediate critical-path work, integration, final verification, and the final answer.",
 		"Use no subagent for simple answers, quick targeted edits, latency-sensitive one-step work, tasks requiring frequent user back-and-forth, or critical-path work the main agent can perform directly.",
 		"One ordinary implementation worker should not replace work the main agent can perform directly; use a blocking single only when intentional synchronous isolation or a user-requested specialist justifies waiting.",
 		"Keep ordinary planning in the main agent, or use explicit workflow mode when a genuine dependency graph requires caller-authored orchestration.",
 		"Keep ordinary review in the main agent with a review skill and deterministic checks; reserve panel mode or custom verifier agents for consequential independent verification.",
-		"Use the blocking subagent tool only when delegated outputs are required before the main agent's next action and waiting is intentional; the main agent cannot process queued steering until the call returns.",
-		"Use a blocking subagent single, parallel, chain, workflow, panel, or fan-in call only when synchronous context or output isolation is worth making the main agent unavailable while it runs.",
+		"A compatibility subagent call blocks the main agent from processing queued steering until it returns; use it only when the explicit legacy workflow justifies making Pi unavailable.",
 		`If a blocking parallel subagent call is genuinely required, keep tasks independent, stay within the configured max ${resolveBlockingMaxParallelTasks(getSettings())}, and avoid write-heavy implementation touching the same files or shared state.`,
 		"For parallel subagent calls, omit the aggregator key entirely unless a fan-in step is required; do not send null, empty strings, or an empty object for unused optional fields.",
 		"Use workflow mode for explicit dependencies or capability routing; declare read/write or ownership scopes, require structured-v2 artifacts when downstream tasks consume them, and use retry or hedging only with the required side-effect contract.",
@@ -271,10 +285,10 @@ function registerBlockingSubagent(
 	];
 	const definition: ToolDefinition<typeof SubagentParams, SubagentDetails> = {
 		name: "subagent",
-		label: "Blocking Subagent",
+		label: "Blocking Subagent · Deprecated",
 		description: appendAgentCatalog(baseDescription(), catalog),
 		promptSnippet:
-			"Run blocking isolated subagents only when their outputs are required before the main agent can continue.",
+			"Deprecated blocking subagent compatibility tool; prefer detached or read-only alternatives.",
 		promptGuidelines: promptGuidelines(),
 		parameters: SubagentParams,
 
@@ -286,6 +300,15 @@ function registerBlockingSubagent(
 				: lifecycleController.signal;
 			const work = (async () => {
 				throwIfAborted(effectiveSignal, "Blocking subagent execution was cancelled");
+				if (!deprecationWarningShown && ctx.hasUI) {
+					deprecationWarningShown = true;
+					ctx.ui.notify(
+						statefulEnabled()
+							? "subagent is deprecated for new work. Prefer the main agent, subagent_spawn with completion delivery, subagent_await for an intentional join, or subagent_consult for synchronous read-only evidence."
+							: "subagent is deprecated for new work. Prefer the main agent or subagent_consult; enable the background workflow before using detached alternatives.",
+						"warning",
+					);
+				}
 				let executionModule: BlockingExecutionModule;
 				try {
 					executionModule = await loadExecution();

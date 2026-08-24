@@ -33,18 +33,23 @@ test("subagents registers consistent blocking guidance and one management comman
 	);
 	const tool = mock.tools[0];
 	assert.equal(tool?.name, "subagent");
-	assert.equal(tool?.label, "Blocking Subagent");
+	assert.equal(tool?.label, "Blocking Subagent · Deprecated");
+	assert.match(String(tool?.description), /deprecated compatibility tool/i);
 	assert.match(String(tool?.description), /blocks the main agent/i);
 	assert.match(String(tool?.description), /queued steering/i);
-	assert.doesNotMatch(String(tool?.description), /subagent_spawn/i);
-	assert.match(String(tool?.promptSnippet), /blocking isolated subagents/i);
+	assert.match(String(tool?.description), /subagent_spawn/i);
+	assert.match(String(tool?.description), /subagent_await/i);
+	assert.match(String(tool?.promptSnippet), /deprecated.*blocking/i);
 
 	const promptGuidelines = tool?.promptGuidelines;
 	assert.ok(Array.isArray(promptGuidelines));
 	const guidanceText = promptGuidelines.join("\n");
+	assert.match(guidanceText, /subagent.*deprecated/i);
+	assert.match(guidanceText, /existing caller|explicit user request/i);
+	assert.match(guidanceText, /subagent_spawn.*subagent_await/i);
+	assert.match(guidanceText, /chain.*fan-in.*panel.*workflow/i);
 	assert.match(guidanceText, /decide how many subagents to spawn/i);
 	assert.match(guidanceText, /no subagent/i);
-	assert.match(guidanceText, /blocking subagent.*outputs.*required.*before/i);
 	assert.match(guidanceText, /critical-path work.*main agent can perform directly/i);
 	assert.match(
 		guidanceText,
@@ -57,7 +62,6 @@ test("subagents registers consistent blocking guidance and one management comman
 	assert.match(guidanceText, /ordinary planning.*main agent.*explicit.*workflow/i);
 	assert.match(guidanceText, /ordinary review.*main agent.*review skill.*deterministic checks/i);
 	assert.doesNotMatch(guidanceText, /critical-path work needed for.*next action/i);
-	assert.doesNotMatch(guidanceText, /subagent_spawn/i);
 	assert.doesNotMatch(guidanceText, /use subagent parallel mode with 2-4/i);
 	assert.match(guidanceText, /configured max 8/i);
 	assert.match(String(tool?.description), /maximum parallel worker tasks per call: 8/i);
@@ -135,6 +139,93 @@ test("subagents registers consistent blocking guidance and one management comman
 		),
 		{ isError: true },
 	);
+});
+
+test("deprecated blocking subagent warns once per UI session without changing execution", async () => {
+	const result = {
+		content: [{ type: "text" as const, text: "LEGACY_RESULT" }],
+		details: {
+			mode: "single" as const,
+			agentScope: "user" as const,
+			projectAgentsDir: null,
+			results: [],
+		},
+	};
+	let executions = 0;
+	const createExtension = () => {
+		const mock = createMockPi();
+		subagents(mock.pi, {
+			loadBlockingExecution: async () => ({
+				executeSubagent: async () => {
+					executions++;
+					return result;
+				},
+			}),
+		});
+		return mock;
+	};
+	const mock = createExtension();
+	const tool = mock.tools.find((candidate) => candidate.name === "subagent") as SubagentTool;
+	const context = createMockContext({ mode: "tui", hasUI: true });
+	const execute = () =>
+		tool.execute(
+			"deprecated-call",
+			{ agent: "explorer", task: "compatibility task" },
+			new AbortController().signal,
+			undefined,
+			context.ctx,
+		);
+	assert.deepEqual(await execute(), result);
+	assert.deepEqual(await execute(), result);
+	assert.equal(executions, 2);
+	assert.equal(context.notifications.length, 1);
+	assert.equal(context.notifications[0]?.level, "warning");
+	assert.match(context.notifications[0]?.message ?? "", /subagent is deprecated/i);
+	assert.match(context.notifications[0]?.message ?? "", /subagent_spawn/i);
+
+	for (const handler of mock.events.get("session_start") ?? []) {
+		await handler({ reason: "new" }, context.ctx);
+	}
+	assert.deepEqual(await execute(), result);
+	assert.equal(context.notifications.length, 2, "a replacement session receives one new warning");
+	for (const handler of mock.events.get("session_shutdown") ?? []) {
+		await handler({ reason: "quit" }, context.ctx);
+	}
+
+	for (const mode of ["print", "json"] as const) {
+		const headlessMock = createExtension();
+		const headlessTool = headlessMock.tools.find(
+			(candidate) => candidate.name === "subagent",
+		) as SubagentTool;
+		const headlessContext = createMockContext({ mode, hasUI: false });
+		assert.deepEqual(
+			await headlessTool.execute(
+				`${mode}-call`,
+				{ agent: "explorer", task: "compatibility task" },
+				new AbortController().signal,
+				undefined,
+				headlessContext.ctx,
+			),
+			result,
+		);
+		assert.deepEqual(headlessContext.notifications, []);
+	}
+
+	const rpcMock = createExtension();
+	const rpcTool = rpcMock.tools.find((candidate) => candidate.name === "subagent") as SubagentTool;
+	const rpcContext = createMockContext({ mode: "rpc", hasUI: true });
+	assert.deepEqual(
+		await rpcTool.execute(
+			"rpc-call",
+			{ agent: "explorer", task: "compatibility task" },
+			new AbortController().signal,
+			undefined,
+			rpcContext.ctx,
+		),
+		result,
+	);
+	assert.equal(rpcContext.notifications.length, 1);
+	assert.equal(rpcContext.notifications[0]?.level, "warning");
 });
 
 test("blocking parallel calls honor the configured worker limit", async () => {

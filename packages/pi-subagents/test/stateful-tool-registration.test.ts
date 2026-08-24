@@ -389,9 +389,13 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 		assert.doesNotMatch(spawnGuidance, /broad asynchronous research or review/i);
 		assert.match(spawnGuidance, /next-turn.*default/i);
 		assert.match(spawnGuidance, /current response.*does not depend/i);
-		assert.match(spawnGuidance, /blocking subagent.*final answer.*depends/i);
+		assert.match(spawnGuidance, /subagent_await.*overlap.*complete/i);
+		assert.match(spawnGuidance, /deprecated subagent/i);
 		assert.doesNotMatch(spawnGuidance, /even when.*final answer.*depends/i);
-		assert.match(spawnGuidance, /do not.*blocking parallel.*same turn/i);
+		assert.match(
+			spawnGuidance,
+			/existing caller.*explicit user request.*chain.*fan-in.*panel.*workflow/i,
+		);
 		assert.match(
 			spawnGuidance,
 			/single subagent_spawn.*bounded.*clear ownership.*beside.*main-agent work/i,

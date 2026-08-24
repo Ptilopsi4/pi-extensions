@@ -56,8 +56,10 @@ export function helpLines(_runtime: SubagentSettingsRuntime): string[] {
 	return [
 		"Start here",
 		"  1. Open How subagents run.",
-		"  2. Choose Keep Pi available · Recommended.",
+		"  2. Choose Keep Pi available (async) · Recommended.",
 		"  3. Open Completion and privacy if Pi must use background results in the current answer.",
+		"The blocking subagent tool is deprecated and remains available only in compatibility workflows.",
+		"subagent_consult and subagent_await remain supported.",
 		"Current subagents shows work in progress and subagents saved for follow-up.",
 		"Settings",
 		"  Folders and trusted resources — choose where subagents start and what consultations load.",

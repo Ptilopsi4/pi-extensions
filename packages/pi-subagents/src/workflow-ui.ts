@@ -28,11 +28,11 @@ export async function showWorkflowPreview(
 export function workflowLabel(value: DelegationWorkflow): string {
 	switch (value) {
 		case "all":
-			return "Background and blocking methods";
+			return "Background plus compatibility methods (async + sync)";
 		case "async-only":
-			return "Keep Pi available";
+			return "Keep Pi available (async)";
 		case "blocking-only":
-			return "Wait for every subagent";
+			return "Compatibility blocking methods (sync)";
 		case "disabled":
 			return "Subagents disabled";
 	}
@@ -47,8 +47,8 @@ function workflowEffects(current: DelegationWorkflow, next: DelegationWorkflow):
 	if (blockingEnabled(current) !== blockingEnabled(next)) {
 		effects.push(
 			blockingEnabled(next)
-				? "Allow methods that make Pi wait: `subagent` and read-only `subagent_consult`"
-				: "Remove methods that make Pi wait: `subagent` and read-only `subagent_consult`",
+				? "Allow deprecated blocking `subagent` and supported read-only `subagent_consult`"
+				: "Remove deprecated blocking `subagent` and supported read-only `subagent_consult`",
 		);
 	}
 	if (asyncEnabled(current) !== asyncEnabled(next)) {
