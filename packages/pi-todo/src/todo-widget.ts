@@ -1,5 +1,6 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import type {
+	ContextEvent,
 	ExtensionAPI,
 	ExtensionContext,
 	SessionEntry,
@@ -10,6 +11,8 @@ import { Type } from "typebox";
 
 export const TOOL_NAME = "todo_widget";
 export const WIDGET_KEY = "todo";
+export const TODO_CONTEXT_MESSAGE_TYPE = "todo-widget-status";
+export const TODO_CONTEXT_VERSION = 1;
 export const TODO_DETAILS_VERSION = 1;
 export const MAX_TODO_ITEMS = 50;
 export const MAX_TODO_TEXT_LENGTH = 300;
@@ -81,8 +84,9 @@ export default function todoWidgetExtension(pi: ExtensionAPI): void {
 		promptSnippet: "Track progress on multi-step work with a session todo list",
 		promptGuidelines: [
 			"Use todo_widget when work has multiple meaningful steps; skip it for simple, single-step tasks.",
-			"Keep tasks concise and action-oriented. Mark one task in_progress before starting it, complete tasks promptly, and revise the list when the plan changes.",
-			"Send the complete current list on every call, keep at most one task in_progress, and send an empty list when no tracked work remains.",
+			"Keep todo_widget synchronized with actual work. Mark one task in_progress before starting it, update the list immediately after its status changes, and revise the list when the plan changes.",
+			"Before a progress report or final response, reconcile todo_widget with actual work; do not report completion while finished work remains pending or in_progress.",
+			"Send the complete current list on every todo_widget call, keep at most one task in_progress, and send an empty list when no tracked work remains.",
 		],
 		parameters: TodoParameters,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
@@ -126,6 +130,12 @@ export default function todoWidgetExtension(pi: ExtensionAPI): void {
 		publish(ctx);
 	});
 
+	pi.on("context", (event, ctx) => {
+		if (!ownsSession(ctx)) return;
+		const messages = reconcileTodoContext(event.messages, items);
+		if (messages !== event.messages) return { messages };
+	});
+
 	pi.on("session_tree", (_event, ctx) => {
 		if (!ownsSession(ctx)) return;
 		items = reconstructItems(ctx.sessionManager.getBranch());
@@ -167,6 +177,36 @@ export function renderTodoWidget(
 	return lines.map((line) => truncateToWidth(line, Math.max(0, width), ""));
 }
 
+export function reconcileTodoContext(
+	messages: ContextEvent["messages"],
+	items: readonly TodoItem[],
+): ContextEvent["messages"] {
+	const existing = messages.filter(isTodoContextMessage);
+	const content = items.length > 0 ? todoContextContent(items) : undefined;
+	if (
+		existing.length === 1 &&
+		messages.at(-1) === existing[0] &&
+		existing[0]?.content === content
+	) {
+		return messages;
+	}
+	if (existing.length === 0 && content === undefined) return messages;
+
+	const withoutExisting = messages.filter((message) => !isTodoContextMessage(message));
+	if (content === undefined) return withoutExisting;
+	return [
+		...withoutExisting,
+		{
+			role: "custom",
+			customType: TODO_CONTEXT_MESSAGE_TYPE,
+			content,
+			display: false,
+			details: { version: TODO_CONTEXT_VERSION },
+			timestamp: 0,
+		},
+	];
+}
+
 export function sanitizeTodoText(value: string): string {
 	let text = "";
 	for (const character of stripTerminalSequences(value).replace(BIDI_CONTROLS, "")) {
@@ -175,6 +215,21 @@ export function sanitizeTodoText(value: string): string {
 		text += isControl ? " " : character;
 	}
 	return text.replace(/\s+/gu, " ").trim();
+}
+
+function todoContextContent(items: readonly TodoItem[]): string {
+	return `[PI TODO STATUS v${TODO_CONTEXT_VERSION}]
+An active todo list follows as JSON data.
+Keep it synchronized with actual work: call todo_widget immediately after a task status changes and before beginning a different task.
+Before a progress report or final response, reconcile every item; do not report completion while the list is stale.
+Active todo list:
+${JSON.stringify(items)}`;
+}
+
+function isTodoContextMessage(
+	message: ContextEvent["messages"][number],
+): message is ContextEvent["messages"][number] & { content: string } {
+	return message.role === "custom" && message.customType === TODO_CONTEXT_MESSAGE_TYPE;
 }
 
 function validateItems(items: readonly TodoItem[]): void {

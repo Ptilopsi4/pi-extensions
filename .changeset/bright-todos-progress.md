@@ -2,4 +2,4 @@
 "@narumitw/pi-todo": minor
 ---
 
-Add the Todo Widget extension for branch-aware coding task lists shown above Pi's editor.
+Add the Todo Widget extension with branch-aware task lists, proactive progress reminders, and an above-editor display.
