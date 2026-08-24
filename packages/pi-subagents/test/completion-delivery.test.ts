@@ -243,6 +243,23 @@ test("auto-resume batches simultaneous completions into one root synthesis turn"
 	broker.close();
 });
 
+test("batched completions preserve model-visible payload for every acknowledged identity", () => {
+	const harness = deliveryHarness();
+	const broker = new CompletionDeliveryBroker(harness.pi as never, harness.ctx, "auto-resume");
+	broker.enqueue(completion("sa_large_one", `VISIBLE_ONE\n${"a".repeat(50 * 1024)}`));
+	broker.enqueue(completion("sa_large_two", `VISIBLE_TWO\n${"b".repeat(50 * 1024)}`));
+	broker.flush();
+
+	assert.equal(harness.sent.length, 1);
+	const content = String(harness.sent[0]?.message.content);
+	assert.ok(Buffer.byteLength(content, "utf8") <= 50 * 1024);
+	assert.match(content, /Completion ID: completion:sa_large_one:1/);
+	assert.match(content, /VISIBLE_ONE/);
+	assert.match(content, /Completion ID: completion:sa_large_two:1/);
+	assert.match(content, /VISIBLE_TWO/);
+	broker.close();
+});
+
 test("completion delivery deduplicates the same completion identity", () => {
 	const harness = deliveryHarness();
 	const broker = new CompletionDeliveryBroker(harness.pi as never, harness.ctx, "next-turn");
@@ -256,6 +273,16 @@ test("completion delivery deduplicates the same completion identity", () => {
 		String(harness.sent[0]?.message.content),
 		/Completion ID: completion:sa_duplicate:1/,
 	);
+	broker.onParentContext([
+		{
+			role: "custom",
+			customType: "pi-subagent-completion",
+			details: harness.sent[0]?.message.details,
+		},
+	]);
+	broker.enqueue(value);
+	broker.flush();
+	assert.equal(harness.sent.length, 1, "acknowledgement retains same-session deduplication");
 	broker.close();
 });
 

@@ -9,6 +9,7 @@ import { PI_SUBAGENTS_RPC_PROTOCOL } from "./transport-types.js";
 
 const MAX_COMPLETION_ERROR_BYTES = 512;
 const MAX_COMPLETIONS_PER_MESSAGE = 16;
+const MAX_ACKNOWLEDGED_COMPLETION_IDS = 2_048;
 const COMPLETION_BATCH_DELAY_MS = 10;
 
 interface CompletionMetadata {
@@ -61,6 +62,7 @@ export interface CompletionDeliveryBrokerOptions {
 export class CompletionDeliveryBroker {
 	private pending: AgentTurnCompletion[] = [];
 	private readonly knownCompletionIds = new Set<string>();
+	private readonly acknowledgedCompletionIds = new Set<string>();
 	private awaitingParentAck: AgentTurnCompletion[] = [];
 	private flushTimer?: NodeJS.Timeout;
 	private wakeInFlight = false;
@@ -74,7 +76,13 @@ export class CompletionDeliveryBroker {
 	) {}
 
 	enqueue(completion: AgentTurnCompletion): void {
-		if (this.closed || this.knownCompletionIds.has(completion.completionId)) return;
+		if (
+			this.closed ||
+			this.knownCompletionIds.has(completion.completionId) ||
+			this.acknowledgedCompletionIds.has(completion.completionId)
+		) {
+			return;
+		}
 		this.knownCompletionIds.add(completion.completionId);
 		this.pending.push(completion);
 		this.scheduleFlush();
@@ -176,6 +184,7 @@ export class CompletionDeliveryBroker {
 		this.pending = [];
 		this.awaitingParentAck = [];
 		this.knownCompletionIds.clear();
+		this.acknowledgedCompletionIds.clear();
 	}
 
 	private scheduleFlush(): void {
@@ -199,11 +208,23 @@ export class CompletionDeliveryBroker {
 		this.pending = this.pending.filter(
 			(completion) => !acknowledgedIds.has(completion.completionId),
 		);
-		for (const completion of completions) this.knownCompletionIds.delete(completion.completionId);
+		for (const completion of completions) {
+			this.knownCompletionIds.delete(completion.completionId);
+			this.rememberAcknowledged(completion.completionId);
+		}
 		try {
 			this.options.onAcknowledged?.(completions, (this.options.now ?? Date.now)());
 		} catch {
 			// Context assembly already observed the message, so observer failures cannot retract it.
+		}
+	}
+
+	private rememberAcknowledged(completionId: string): void {
+		this.acknowledgedCompletionIds.add(completionId);
+		while (this.acknowledgedCompletionIds.size > MAX_ACKNOWLEDGED_COMPLETION_IDS) {
+			const oldest = this.acknowledgedCompletionIds.values().next().value;
+			if (typeof oldest !== "string") return;
+			this.acknowledgedCompletionIds.delete(oldest);
 		}
 	}
 

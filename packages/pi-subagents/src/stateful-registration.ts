@@ -225,14 +225,16 @@ const StatefulTurnLimitFields = {
 		Type.Integer({
 			minimum: 1,
 			maximum: MAX_SUBAGENT_TURNS,
-			description: "Maximum unfinished assistant turns; retained as the agent default.",
+			description:
+				"Maximum unfinished assistant turns; retained as the agent default. Omit rather than guessing a tight bound.",
 		}),
 	),
 	maxToolCalls: Type.Optional(
 		Type.Integer({
 			minimum: 1,
 			maximum: MAX_SUBAGENT_TOOL_CALLS,
-			description: "Maximum tool calls; retained as the agent default.",
+			description:
+				"Maximum tool calls; retained as the agent default. Omit rather than guessing a tight bound.",
 		}),
 	),
 };
@@ -917,7 +919,7 @@ export function registerStatefulSubagents(
 				resolvePending?.(agent);
 				const deliveryNote =
 					completionDelivery === "auto-resume"
-						? "Auto-resume steers completions into active parent work or requests synthesis when idle. Treat this response as progress, not final synthesis, until every final-answer-required completion message is visible; do not redo a running child's assigned work."
+						? "Auto-resume steers completions into active parent work or requests synthesis when idle. Treat this response as progress, not final synthesis, until every final-answer-required completion message is visible. If local work is exhausted while required children remain active, emit at most one brief progress sentence and end the turn; do not repeat waiting updates or use the requested final format, verdict, or conclusion. Do not redo a running child's assigned work."
 						: "The current response must not depend on the result because next-turn delivery will not wake an idle root.";
 				return result(
 					agent,

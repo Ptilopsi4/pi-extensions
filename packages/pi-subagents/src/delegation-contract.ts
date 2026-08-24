@@ -39,14 +39,51 @@ export const DelegationContractSchema = Type.Object(
 		requestedAuthority: Type.Optional(
 			Type.Object(
 				{
-					capabilities: Type.Optional(BoundedItems),
-					tools: Type.Optional(BoundedItems),
-					readPaths: Type.Optional(BoundedItems),
-					writePaths: Type.Optional(BoundedItems),
-					network: Type.Optional(StringEnum(AUTHORITY_REQUIREMENTS)),
-					secrets: Type.Optional(StringEnum(AUTHORITY_REQUIREMENTS)),
+					capabilities: Type.Optional(
+						Type.Array(BoundedItem, {
+							maxItems: MAX_ITEMS,
+							description: "Capabilities requested from the selected agent manifest.",
+						}),
+					),
+					tools: Type.Optional(
+						Type.Array(BoundedItem, {
+							maxItems: MAX_ITEMS,
+							description:
+								"Tools that enforcement may narrow to the selected agent's available set.",
+						}),
+					),
+					readPaths: Type.Optional(
+						Type.Array(BoundedItem, {
+							maxItems: MAX_ITEMS,
+							description:
+								'Audit metadata only; enforcement "enforce" rejects non-empty readPaths because path scope is unsupported.',
+						}),
+					),
+					writePaths: Type.Optional(
+						Type.Array(BoundedItem, {
+							maxItems: MAX_ITEMS,
+							description:
+								'Audit metadata only; enforcement "enforce" rejects non-empty writePaths because path scope is unsupported.',
+						}),
+					),
+					network: Type.Optional(
+						StringEnum(AUTHORITY_REQUIREMENTS, {
+							description:
+								'Audit metadata only; enforcement "enforce" rejects denied or required network guarantees as unsupported.',
+						}),
+					),
+					secrets: Type.Optional(
+						StringEnum(AUTHORITY_REQUIREMENTS, {
+							description:
+								'Audit metadata only; enforcement "enforce" rejects denied or required secret guarantees as unsupported.',
+						}),
+					),
 				},
-				{ additionalProperties: false },
+				{
+					additionalProperties: false,
+					description:
+						"Only capabilities and tools have executor enforcement; readPaths, writePaths, network, and secrets are unsupported guarantees.",
+				},
 			),
 		),
 		acceptanceCriteria: Type.Optional(BoundedItems),
@@ -76,9 +113,18 @@ export const DelegationContractSchema = Type.Object(
 			),
 		),
 		sideEffectPolicy: Type.Optional(StringEnum(DELEGATION_SIDE_EFFECT_POLICIES)),
-		enforcement: Type.Optional(StringEnum(DELEGATION_ENFORCEMENT_MODES)),
+		enforcement: Type.Optional(
+			StringEnum(DELEGATION_ENFORCEMENT_MODES, {
+				description:
+					"Defaults to audit; enforce rejects unsupported requestedAuthority guarantees before child launch.",
+			}),
+		),
 	},
-	{ additionalProperties: false },
+	{
+		additionalProperties: false,
+		description:
+			"Advanced delegation contract. For ordinary delegation omit this object; use it only for explicit acceptance, authority, evidence, or admission semantics.",
+	},
 );
 
 export interface DelegationDependency {

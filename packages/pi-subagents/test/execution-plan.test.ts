@@ -187,6 +187,48 @@ test("enforced execution plans narrow tools and reject unknown or unsupported gu
 	});
 	assert.equal(acknowledgeExecutionPlan(unknown).status, "rejected");
 	assert.ok(acknowledgeExecutionPlan(unknown).reasonCodes.includes("capabilities-unknown"));
+
+	const unsupportedContract = normalizeDelegationContract({
+		...contract,
+		requestedAuthority: {
+			...contract.requestedAuthority,
+			readPaths: ["packages/pi-subagents/src"],
+			network: "denied",
+		},
+	});
+	assert.ok(unsupportedContract);
+	const unsupported = createExecutionPlan({
+		contract: unsupportedContract,
+		agent: {
+			name: "explorer",
+			description: "explorer",
+			systemPrompt: "private",
+			source: "built-in",
+			filePath: "built-in:explorer",
+			tools: ["read", "grep"],
+			capabilityManifest: {
+				version: "pi-subagents:capabilities:v1",
+				capabilities: ["repository-search"],
+				modalities: ["text"],
+				resultFormats: ["structured-v2"],
+				verificationRoles: [],
+				limitations: [],
+			},
+		},
+		effectiveTools: ["read"],
+		target,
+		workspaceMode: "shared",
+		transport: "subprocess",
+		resultFormat: "structured-v2",
+	});
+	assert.deepEqual(acknowledgeExecutionPlan(unsupported), {
+		version: "pi-subagents:acknowledgement:v1",
+		status: "rejected",
+		reasonCodes: ["unsupported-guarantee"],
+		recoveryActions: ["repair-contract", "stop"],
+	});
+	assert.equal(unsupported.mode, "enforce");
+	assert.deepEqual(unsupported.unsupportedGuarantees, ["read-path-scope", "network-denial"]);
 });
 
 test("execution plan treats absent manifest as unknown rather than unrestricted", () => {
