@@ -81,7 +81,6 @@ The deprecated combined `pi-workflow` package has no atomic Plan-to-Goal replace
 | [`pi-stamp`](./packages/pi-stamp) | Show configurable timestamps with opt-in assistant metadata, response timing, and tool timing in the TUI transcript. | `pi install npm:@narumitw/pi-stamp` |
 | [`pi-starship`](./packages/pi-starship) | Use a native Starship-style TOML footer with Pi-specific modules and no Starship binary dependency. | `pi install npm:@narumitw/pi-starship` |
 | [`pi-statusline`](./packages/pi-statusline) | Show model, tools, Git state, context usage, tokens, cost, and time in a preset or JSON-configured footer. | `pi install npm:@narumitw/pi-statusline` |
-| [`pi-tool`](./packages/pi-tool) | Browse every configured tool and inspect its active state, source, parameter schema, and prompt guidelines with `/tool`. | `pi install npm:@narumitw/pi-tool` |
 
 Choose either `pi-starship` or `pi-statusline`; do not enable both footer extensions together.
 
@@ -239,6 +238,7 @@ The following packages remain available as source references but are excluded fr
 - `pi-retry` — replaced by Pi's built-in provider retry and timeout behavior
 - `pi-google-genai` — replaced by the `grounding-with-google-genai` agent skill
 - `pi-image-drop` — deprecated without a replacement
+- [`pi-tool`](./deprecated/pi-tool) — deprecated without a replacement
 - [`pi-workflow`](./deprecated/pi-workflow) — replaced by focused Plan and Goal products; atomic Plan-to-Goal handoff has [no replacement](./deprecated/pi-workflow/README.md#-migration-from-pi-workflow)
 - `pi-jupyter` — deprecated without a replacement
 - `pi-webui` — deprecated without a replacement

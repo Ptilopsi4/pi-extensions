@@ -1,7 +1,7 @@
 {
 	"name": "@narumitw/pi-tool",
 	"version": "0.2.3",
-	"description": "Browse configured Pi tools and inspect their exposed metadata.",
+	"description": "Deprecated Pi extension for browsing configured tools and inspecting their metadata.",
 	"type": "module",
 	"license": "MIT",
 	"private": false,
@@ -23,9 +23,6 @@
 		"extensions": [
 			"./dist/index.ts"
 		]
-	},
-	"piExtension": {
-		"lifecycle": "stable"
 	},
 	"scripts": {
 		"build": "node scripts/build-runtime.mjs",
@@ -50,6 +47,6 @@
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/narumiruna/pi-extensions",
-		"directory": "packages/pi-tool"
+		"directory": "deprecated/pi-tool"
 	}
 }

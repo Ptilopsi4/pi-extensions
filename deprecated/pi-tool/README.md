@@ -1,8 +1,16 @@
-# 🧰 pi-tool — Browse Pi Tools and Their Schemas
+# 🧰 pi-tool — Deprecated Pi Tool Browser
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-tool)](https://www.npmjs.com/package/@narumitw/pi-tool) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-Browse every tool configured in the current Pi session and inspect its active state, description, origin, schema, and prompt guidance through one read-only `/tool` command.
+> [!WARNING]
+> `@narumitw/pi-tool` is deprecated without a replacement, kept under `deprecated/` for reference, and excluded from active workspace checks, tests, releases, and maintenance.
+> Remove the deprecated package with:
+>
+> ```bash
+> pi uninstall npm:@narumitw/pi-tool
+> ```
+
+This archived extension browsed every tool configured in the current Pi session and inspected its active state, description, origin, schema, and prompt guidance through one read-only `/tool` command.
 
 ## ✨ Features
 
@@ -13,30 +21,19 @@ Browse every tool configured in the current Pi session and inspect its active st
 - Refreshes metadata every time the catalog opens.
 - Never changes tools, settings, files, or session data.
 
-## 📦 Install
+## 📦 Archived reference
 
-Install persistently from npm:
-
-```bash
-pi install npm:@narumitw/pi-tool
-```
-
-Try without installing permanently:
+Build and inspect the archived package only when maintaining historical behavior:
 
 ```bash
-pi -e npm:@narumitw/pi-tool
+cd deprecated/pi-tool
+npm run build
+pi -e .
 ```
 
-Try this package from a local checkout:
-
-```bash
-npm --workspace @narumitw/pi-tool run build
-pi -e ./packages/pi-tool
-```
-
-An unbuilt local checkout must be built before loading the package directory.
+The package declares `dist/index.ts`, so the build command must finish before Pi loads the archived package directory.
 Extensions run with the same permissions as Pi.
-Only install packages from sources you trust.
+Only load archived code from sources you trust.
 
 ## 🚀 Quick start
 
@@ -70,7 +67,7 @@ Pi does not expose a tool's implementation, runtime secrets, or label through th
 ## 🗂️ Package layout
 
 ```text
-packages/pi-tool/
+deprecated/pi-tool/
 ├── src/
 │   ├── index.ts         # Thin repository entrypoint
 │   ├── tool.ts          # Command and session lifecycle ownership
