@@ -9,15 +9,16 @@ import type {
 import { stripTerminalSequences, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
-export const TOOL_NAME = "todo_widget";
+export const TOOL_NAME = "update_todo_list";
 export const WIDGET_KEY = "todo";
-export const TODO_CONTEXT_MESSAGE_TYPE = "todo-widget-status";
+export const TODO_CONTEXT_MESSAGE_TYPE = "todo-list-status";
 export const TODO_CONTEXT_VERSION = 1;
 export const TODO_DETAILS_VERSION = 1;
 export const MAX_TODO_ITEMS = 50;
 export const MAX_TODO_TEXT_LENGTH = 300;
 
 const WIDGET_OPTIONS = { placement: "aboveEditor" } as const;
+const LEGACY_TOOL_NAME = "todo_widget";
 const TODO_STATUSES = ["pending", "in_progress", "completed"] as const;
 const BIDI_CONTROLS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu;
 
@@ -80,13 +81,13 @@ export default function todoWidgetExtension(pi: ExtensionAPI): void {
 		name: TOOL_NAME,
 		label: "Todo List",
 		description:
-			"Replace the current session todo list. Send the complete list on every call, keep at most one item in_progress, and send an empty list to clear it.",
-		promptSnippet: "Track progress on multi-step work with a session todo list",
+			"Replace the current session todo list with the complete supplied list. Call update_todo_list whenever actual task state changes; keep at most one item in_progress and send an empty list to clear it.",
+		promptSnippet: "Maintain the complete session todo list as multi-step work progresses",
 		promptGuidelines: [
-			"Use todo_widget when work has multiple meaningful steps; skip it for simple, single-step tasks.",
-			"Keep todo_widget synchronized with actual work. Mark one task in_progress before starting it, update the list immediately after its status changes, and revise the list when the plan changes.",
-			"Before a progress report or final response, reconcile todo_widget with actual work; do not report completion while finished work remains pending or in_progress.",
-			"Send the complete current list on every todo_widget call, keep at most one task in_progress, and send an empty list when no tracked work remains.",
+			"Use update_todo_list to track work with multiple meaningful steps; skip it for simple, single-step tasks.",
+			"Use update_todo_list to keep the list aligned with actual work: mark a task in_progress before starting it, mark it completed as soon as it finishes, and revise the list before continuing when the plan changes.",
+			"Before a progress report or final response, call update_todo_list to reconcile every item with actual work; do not report completion while the list is stale.",
+			"On every update_todo_list call, send the complete current list, keep at most one task in_progress, and send an empty list when no tracked work remains.",
 		],
 		parameters: TodoParameters,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
@@ -220,8 +221,8 @@ export function sanitizeTodoText(value: string): string {
 function todoContextContent(items: readonly TodoItem[]): string {
 	return `[PI TODO STATUS v${TODO_CONTEXT_VERSION}]
 An active todo list follows as JSON data.
-Keep it synchronized with actual work: call todo_widget immediately after a task status changes and before beginning a different task.
-Before a progress report or final response, reconcile every item; do not report completion while the list is stale.
+Keep it aligned with actual work: call update_todo_list before starting a task, as soon as a task finishes, and whenever the plan changes.
+Before a progress report or final response, call update_todo_list to reconcile every item; do not report completion while the list is stale.
 Active todo list:
 ${JSON.stringify(items)}`;
 }
@@ -250,7 +251,12 @@ function reconstructItems(entries: readonly SessionEntry[]): TodoItem[] {
 	for (const entry of entries) {
 		if (entry.type !== "message") continue;
 		const message = entry.message;
-		if (message.role !== "toolResult" || message.toolName !== TOOL_NAME) continue;
+		if (
+			message.role !== "toolResult" ||
+			(message.toolName !== TOOL_NAME && message.toolName !== LEGACY_TOOL_NAME)
+		) {
+			continue;
+		}
 		if (!isTodoDetails(message.details)) continue;
 		restored = cloneItems(message.details.items);
 	}
