@@ -8,9 +8,10 @@ import {
 } from "./peer-transport.js";
 import { resolvePiPromptResources } from "./prompt-resources.js";
 import type { ManagedAgent, TurnOutcome } from "./registry.js";
-import { getResultFinalOutput, runSingleAgent, type SubagentDetails } from "./runner.js";
+import { getResultFinalOutput, runSingleAgent } from "./runner.js";
 import { readSubagentSettings, resolveSubagentThinkingLevel } from "./settings.js";
 import { buildStatefulTurnPrompt, resolveStatefulTurnTimeout } from "./stateful-prompt.js";
+import type { SubagentDetails } from "./subagent-details.js";
 import type { SubagentTransport } from "./transport.js";
 import type { TransportProgressCallback, TransportTelemetry } from "./transport-types.js";
 

@@ -1,4 +1,4 @@
-import type { SingleResult } from "./runner.js";
+import type { SingleResult } from "./runner-types.js";
 
 export const PANEL_FAILURE_KINDS = [
 	"transient-launch",

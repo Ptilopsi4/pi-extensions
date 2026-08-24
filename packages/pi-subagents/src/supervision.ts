@@ -1,4 +1,5 @@
-import { isResultError, type SingleResult } from "./runner.js";
+import { isResultError } from "./runner-outcome.js";
+import type { SingleResult } from "./runner-types.js";
 
 const HEDGE_LOSER_GRACE_MS = 5_000;
 

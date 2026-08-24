@@ -1,9 +1,9 @@
-import type { SingleResult } from "./runner.js";
 import {
 	formatResultFailure as formatBaseResultFailure,
 	getResultFinalOutput as getBaseResultFinalOutput,
 	isResultError as isBaseResultError,
 } from "./runner-result.js";
+import type { SingleResult } from "./runner-types.js";
 
 export function getResultFinalOutput(result: SingleResult): string {
 	return getBaseResultFinalOutput(result);

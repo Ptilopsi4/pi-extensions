@@ -39,7 +39,6 @@ import {
 import { MAX_BLOCKING_PARALLEL_CONCURRENCY } from "./limits.js";
 import { SubagentParams } from "./params.js";
 import { renderSubagentCall, renderSubagentResult } from "./render.js";
-import type { SubagentDetails } from "./runner.js";
 import {
 	consumeSubagentSettingsNotice,
 	DEFAULT_CONSULT_RESOURCE_POLICY,
@@ -50,6 +49,7 @@ import {
 	resolveBlockingMaxParallelTasks,
 } from "./settings-reader.js";
 import { registerStatefulSubagents } from "./stateful-registration.js";
+import type { SubagentDetails } from "./subagent-details.js";
 import type { SubagentTransport } from "./transport.js";
 import {
 	registerUsageRecording,

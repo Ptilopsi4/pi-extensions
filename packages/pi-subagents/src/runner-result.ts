@@ -1,6 +1,6 @@
 import type { Message } from "@earendil-works/pi-ai";
 import { DEFAULT_MAX_CONTEXT_BYTES, truncateUtf8 } from "./limits.js";
-import type { SingleResult } from "./runner.js";
+import type { SingleResult } from "./runner-types.js";
 import { formatTimeoutCheckpoint } from "./timeout-checkpoint.js";
 
 export function getFinalOutput(messages: Message[]): string {

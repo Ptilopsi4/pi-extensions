@@ -1,7 +1,7 @@
 import type { ConsultResourcePolicy } from "./agents/types.js";
 import { DEFAULT_MAX_CONTEXT_BYTES, truncateUtf8 } from "./limits.js";
 import { resolvePiPromptResources } from "./prompt-resources.js";
-import type { ChildLaunchPolicy } from "./runner.js";
+import type { ChildLaunchPolicy } from "./runner-types.js";
 
 const MINIMAL_CONSULT_SYSTEM_PROMPT =
 	"You are a read-only consultation assistant. Analyze the delegated task using only executor-provided capabilities and return a grounded answer.";

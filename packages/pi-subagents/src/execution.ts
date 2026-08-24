@@ -65,17 +65,16 @@ import {
 	getResultFinalOutput,
 	isResultError,
 	mapWithConcurrencyLimit,
-	type OnUpdateCallback,
 	runSingleAgent,
-	type SingleResult,
-	type SubagentDetails,
 } from "./runner.js";
+import type { SingleResult } from "./runner-types.js";
 import { safeTerminalLine } from "./safe-text.js";
 import {
 	DEFAULT_DELEGATION_CWD_POLICY,
 	resolveBlockingMaxParallelTasks,
 } from "./settings/inspection.js";
 import { readSubagentSettings, resolveSubagentThinkingLevel } from "./settings.js";
+import type { OnUpdateCallback, SubagentDetails } from "./subagent-details.js";
 import { isRetryableResult, runHedgedAttempt, supervisionDelay } from "./supervision.js";
 import { TimeoutProgressJournal, TURN_TERMINATION_VERSION } from "./timeout-checkpoint.js";
 import type { TurnLimits } from "./turn-budget.js";

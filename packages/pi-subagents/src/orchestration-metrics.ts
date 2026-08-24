@@ -1,4 +1,4 @@
-import type { SingleResult } from "./runner.js";
+import type { SingleResult } from "./runner-types.js";
 import type { WorkItemLedgerSnapshot } from "./work-item-ledger.js";
 
 export interface OrchestrationMetrics {

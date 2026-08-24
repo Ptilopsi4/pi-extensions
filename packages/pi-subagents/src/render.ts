@@ -11,8 +11,9 @@ import type { AgentScope } from "./agents/types.js";
 import { renderPanelCall, renderPanelResult } from "./panel-render.js";
 import { hasUsableAggregator, type SubagentParams } from "./params.js";
 import { expansionHint, formatToolActivity, safeBlock, safeLine } from "./render-common.js";
-import type { SingleResult, SubagentDetails } from "./runner.js";
 import { getResultFinalOutput, isResultError } from "./runner-outcome.js";
+import type { SingleResult } from "./runner-types.js";
+import type { SubagentDetails } from "./subagent-details.js";
 import { formatUsageStats } from "./usage-format.js";
 
 const COLLAPSED_ITEM_COUNT = 5;

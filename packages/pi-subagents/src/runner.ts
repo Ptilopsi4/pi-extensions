@@ -2,20 +2,10 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
-import type { SchedulingDecision } from "./adaptive-scheduler.js";
-import type {
-	AgentConfig,
-	AgentScope,
-	AgentSource,
-	SubagentThinkingLevel,
-} from "./agents/types.js";
-import { type CapabilityGrant, revokeCapabilityGrant } from "./capability-grant.js";
-import type { TargetPolicyAudit } from "./cwd-policy.js";
-import type { DelegationContract } from "./delegation-contract.js";
-import type { ExecutionPlan } from "./execution-plan.js";
+import type { AgentConfig, SubagentThinkingLevel } from "./agents/types.js";
+import { revokeCapabilityGrant } from "./capability-grant.js";
 import {
 	appendBounded,
 	DEFAULT_MAX_CONTEXT_BYTES,
@@ -25,138 +15,50 @@ import {
 	MAX_SUBAGENT_TIMEOUT_MS,
 	truncateUtf8,
 } from "./limits.js";
-import type { OrchestrationMetrics } from "./orchestration-metrics.js";
-import { type ClassifiedSubagentOutcome, classifyStructuredOutcome } from "./outcome.js";
-import type { PanelSynthesis } from "./panel-contract.js";
-import type { PanelEvidenceArtifact } from "./panel-evidence.js";
-import type { PanelFailure } from "./panel-failure.js";
-import type { PanelPhaseBudgets, PanelPreset } from "./panel-planning.js";
+import { classifyStructuredOutcome } from "./outcome.js";
 import { buildPiArgs } from "./pi-args.js";
 import { resolvePiInvocation } from "./pi-invocation.js";
+import { KILL_GRACE_MS, terminateProcess } from "./process-control.js";
 import { JsonLineDecoder } from "./protocol.js";
-import {
-	type AnyStructuredSubagentResult,
-	parseAnyStructuredSubagentResult,
-	type SubagentResultFormat,
-} from "./result-contract.js";
+import { parseAnyStructuredSubagentResult } from "./result-contract.js";
 import { formatResultFailure, getResultFinalOutput, isResultError } from "./runner-outcome.js";
 import { getFinalOutput } from "./runner-result.js";
+import type { ChildLaunchPolicy, RecentActivityItem, SingleResult } from "./runner-types.js";
 import {
 	addUsageValue,
 	mergeUsageStats,
 	protocolUsageCost,
 	protocolUsageCount,
-	type UsageStats,
 } from "./runner-usage.js";
+import type { OnUpdateCallback, SubagentDetails } from "./subagent-details.js";
 import {
 	formatTimeoutCheckpoint,
 	formatTurnTerminationMessage,
 	journalMessages,
 	TimeoutProgressJournal,
 	TURN_TERMINATION_VERSION,
-	type TurnTerminationReport,
 } from "./timeout-checkpoint.js";
 import {
 	buildTimeoutFinalizationPrompt,
 	resolveTimeoutFinalizationMs,
 } from "./timeout-finalization.js";
-import { TurnBudgetMonitor, type TurnBudgetStop, type TurnLimits } from "./turn-budget.js";
-import type { WorkItemLedgerSnapshot } from "./work-item-ledger.js";
-
-export const KILL_GRACE_MS = 5000;
+import { TurnBudgetMonitor, type TurnBudgetStop } from "./turn-budget.js";
 
 export type { PiArgsOptions } from "./pi-args.js";
 export { buildPiArgs } from "./pi-args.js";
+export { KILL_GRACE_MS, terminateProcess } from "./process-control.js";
 export {
 	formatResultFailure,
 	getResultFinalOutput,
 	isResultError,
 } from "./runner-outcome.js";
+export type { ChildLaunchPolicy, RecentActivityItem, SingleResult } from "./runner-types.js";
 export type { UsageStats } from "./runner-usage.js";
-export type RecentActivityItem =
-	| { type: "text"; text: string }
-	| { type: "toolCall"; name: string; args: Record<string, unknown> };
+export type { OnUpdateCallback, PanelDetails, SubagentDetails } from "./subagent-details.js";
 
 const MAX_RECENT_ACTIVITY_ITEMS = 10;
 const MAX_RECENT_ACTIVITY_BYTES = 8 * 1024;
 const MAX_RECENT_ACTIVITY_ARGUMENT_BYTES = 1024;
-
-export interface SingleResult {
-	agent: string;
-	agentSource: AgentSource | "unknown";
-	task: string;
-	exitCode: number;
-	messages: Message[];
-	stderr: string;
-	usage: UsageStats;
-	model?: string;
-	actualProvider?: string;
-	actualModel?: string;
-	recentActivity?: RecentActivityItem[];
-	recentActivityTotal?: number;
-	thinkingLevel?: SubagentThinkingLevel;
-	stopReason?: string;
-	errorMessage?: string;
-	step?: number;
-	finalOutput?: string;
-	partialOutput?: string;
-	timeoutSummary?: string;
-	timeoutSummaryError?: string;
-	termination?: TurnTerminationReport;
-	timedOut?: boolean;
-	timeoutMs?: number;
-	aborted?: boolean;
-	truncated?: boolean;
-	malformedEvents?: number;
-	launchFailed?: boolean;
-	processStarted?: boolean;
-	target?: TargetPolicyAudit;
-	policy?: {
-		inherited: string[];
-		overridden: string[];
-		unsupported: string[];
-	};
-	contract?: DelegationContract;
-	resultFormat?: SubagentResultFormat;
-	structuredResult?: AnyStructuredSubagentResult;
-	resultContractInvalid?: boolean;
-	outcome?: ClassifiedSubagentOutcome;
-	attemptCount?: number;
-	hedged?: boolean;
-	executionPlan?: ExecutionPlan;
-	capabilityGrant?: CapabilityGrant;
-}
-
-export interface PanelDetails {
-	id: string;
-	preset: PanelPreset;
-	sharedTaskPreview: string;
-	state: "running" | "completed" | "degraded" | "insufficient-panel" | "failed" | "cancelled";
-	reviewerIds: string[];
-	validReviewCount: number;
-	failedReviewCount: number;
-	blockingObjectionCount: number;
-	dissentCount: number;
-	budgets: PanelPhaseBudgets;
-	evidence: PanelEvidenceArtifact[];
-	failures: PanelFailure[];
-	synthesis?: PanelSynthesis;
-	synthesizerResult?: SingleResult;
-	cleanupComplete: boolean;
-}
-
-export interface SubagentDetails {
-	mode: "single" | "parallel" | "chain" | "workflow" | "panel";
-	agentScope: AgentScope;
-	projectAgentsDir: string | null;
-	results: SingleResult[];
-	aggregator?: SingleResult;
-	workflow?: WorkItemLedgerSnapshot;
-	schedulerDecisions?: SchedulingDecision[];
-	metrics?: OrchestrationMetrics;
-	panel?: PanelDetails;
-	isError?: boolean;
-}
 
 function boundMessageText(
 	message: Message,
@@ -336,89 +238,6 @@ async function writePromptToTempFile(
 		await fs.promises.writeFile(filePath, prompt, { encoding: "utf-8", mode: 0o600 });
 	});
 	return { dir: tmpDir, filePath };
-}
-
-function signalProcess(proc: ReturnType<typeof spawn>, signal: NodeJS.Signals): void {
-	if (process.platform !== "win32" && proc.pid) {
-		try {
-			process.kill(-proc.pid, signal);
-			return;
-		} catch {
-			// Fall back to signaling the immediate child when process-group signaling is unavailable.
-		}
-	}
-	try {
-		proc.kill(signal);
-	} catch {
-		// The process may already have exited.
-	}
-}
-
-export function terminateProcess(
-	proc: ReturnType<typeof spawn>,
-	graceMs = KILL_GRACE_MS,
-): () => void {
-	const leaderExited = proc.exitCode !== null || proc.signalCode !== null;
-	const capturedOutputClosed = [proc.stdout, proc.stderr].every(
-		(stream) => !stream || stream.readableEnded || stream.destroyed,
-	);
-	let closed = leaderExited && capturedOutputClosed;
-	const onClose = () => {
-		closed = true;
-	};
-	proc.once("close", onClose);
-	if (!closed) signalProcess(proc, "SIGTERM");
-	const escalation = setTimeout(() => {
-		if (!closed) signalProcess(proc, "SIGKILL");
-	}, graceMs);
-	escalation.unref();
-	return () => {
-		clearTimeout(escalation);
-		proc.off("close", onClose);
-	};
-}
-
-export type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
-
-export interface ChildLaunchPolicy {
-	tools?: string[];
-	disableExtensions?: boolean;
-	disableSkills?: boolean;
-	disablePromptTemplates?: boolean;
-	disableContextFiles?: boolean;
-	projectTrust?: boolean;
-	baseSystemPrompt?: string;
-	appendSystemPromptPaths?: string[];
-	/** Package-owned explicit child extensions loaded even when unrelated extensions are disabled. */
-	extensionPaths?: string[];
-	/** Package-owned tools added to the child allowlist without changing delegated execution tools. */
-	additionalTools?: string[];
-	/** Ephemeral child-process environment consumed and cleared by a package-owned bridge. */
-	env?: NodeJS.ProcessEnv;
-	/** Internal timeout recovery control; omitted means enabled. */
-	finalizeOnTimeout?: boolean;
-	/** Internal hard deadline for the summary attempt. */
-	timeoutFinalizationMs?: number;
-	/** Optional stateful result contract retained during timeout finalization. */
-	timeoutResultFormat?: SubagentResultFormat;
-	/** Optional non-wall-clock limits for this turn. */
-	turnLimits?: TurnLimits;
-	/** Override the timeout reason when an orchestration deadline caps this child. */
-	workTimeoutReason?: "work_timeout" | "orchestration_timeout";
-	/** Public limit value reported when the effective child timeout is only the remaining budget. */
-	workTimeoutReportLimit?: number;
-	/** Absolute blocking-workflow deadline that also caps model finalization. */
-	orchestrationDeadlineAt?: number;
-	/** Completion contract requested for this turn. */
-	resultFormat?: SubagentResultFormat;
-	/** Normalized request contract retained in result details. */
-	contract?: DelegationContract;
-	/** Original task summary shown in result details when the executed prompt has contract metadata. */
-	displayTask?: string;
-	/** Immutable audit or enforcement decision made before launch. */
-	executionPlan?: ExecutionPlan;
-	/** Executor-owned authority lifetime bound to the accepted plan generation. */
-	capabilityGrant?: CapabilityGrant;
 }
 
 export async function runSingleAgent(
