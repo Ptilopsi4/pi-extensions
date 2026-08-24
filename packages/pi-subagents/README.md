@@ -85,7 +85,7 @@ Concurrent Pi processes use separate opaque writer files and never append to one
 Validated writer files older than 30 days are removed after recording starts.
 Disabling recording stops new events immediately; existing files remain until the retention window expires or the user removes the directory while Pi is stopped.
 
-Stored fields are limited to extension-generated runtime, session, turn, tool, child, run, and completion ordinals; the effective delegation surface; lifecycle states; completion-delivery transitions; bounded usage numbers; errors as booleans; and monotonic timing or durations.
+Stored fields are limited to extension-generated runtime, session, turn, tool, child, run, and completion ordinals; the effective delegation surface; lifecycle and typed outcome states; bounded executor-owned termination reasons; runtime-versus-explicit budget-source labels; completion-delivery transitions; bounded usage numbers; errors as booleans; and monotonic timing or durations.
 The recorder does not store prompts, delegated tasks, responses, thinking, tool arguments or results, code, paths, commands, mailbox or steering content, raw errors, provider/model identity, credentials, Pi session identifiers, or a persistent device identifier.
 Raw child, run, completion, and provider tool-call identifiers are replaced with runtime-local ordinals before publication.
 
@@ -192,6 +192,7 @@ Common controls:
 - `thinkingLevel` — request `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` thinking for the spawned Pi process or retained child.
 - `idempotencyKey` — make an exact `subagent_spawn` retry return the existing retained `agentId`; reuse with different parameters fails before confirmation, worktree creation, or child launch.
 - `resultFormat` — keep bounded text by default, request legacy `structured-v1`, or request `structured-v2` with explicit outcome status, reason code, claims, artifacts, verification, limitations, and unresolved dependencies.
+- `completionRequirement` — mark one detached spawn or follow-up as `background` (default) or `required` for the parent final answer; required mode tracks the accepted run ID and generation until its exact completion is visible or terminal.
 - `totalTimeoutMs` — bound a whole explicit blocking workflow; no new task starts after the budget is exhausted.
 
 For `subagent_spawn`, the root agent selects the lowest thinking level and shortest realistic work deadline sufficient for the delegated task.
@@ -251,7 +252,7 @@ Delegation guidance:
 - A single worker without concurrent main-agent work remains available when the user explicitly requests a specialist model, tool profile, or isolation boundary.
 - With default `completionDelivery: "next-turn"`, use detached work only when the current response does not depend on its result because an idle root is not awakened.
 - With `completionDelivery: "auto-resume"`, detached work may affect the final answer because completion steers into active work or requests a later synthesis turn from idle.
-- Track every final-answer-dependent spawn by its returned ID or path, treat interim output as progress, and synthesize only after every corresponding completion message is visible.
+- Mark every final-answer-dependent spawn with `completionRequirement: "required"`, retain its returned ID or path, treat interim output as progress, and synthesize only after every corresponding completion is visible or terminal.
 - After `subagent_spawn` returns, immediately continue the identified local task instead of merely announcing the spawn, waiting, polling, duplicating the child task, or ending while useful local work remains.
 - Do not duplicate a running child's assigned work; use a bounded parent fallback only after completion reports failure or insufficient evidence.
 - Use multiple workers only for truly independent slices with disjoint write ownership and safe workspace concurrency, and keep integration in the main agent.
@@ -276,7 +277,8 @@ The main agent owns `src/parser.ts`, immediately continues that work after spawn
 ```json
 {
   "agent": "worker",
-  "task": "Implement the approved formatter slice only in src/formatter.ts and test/formatter.test.ts. Do not edit src/parser.ts. Report changed paths, checks, and remaining risks."
+  "task": "Implement the approved formatter slice only in src/formatter.ts and test/formatter.test.ts. Do not edit src/parser.ts. Report changed paths, checks, and remaining risks.",
+  "completionRequirement": "required"
 }
 ```
 
@@ -637,6 +639,11 @@ Legacy v1 and v2 records without acceptance fields retain their prior completed 
 Stateful lifecycle tools are available by default.
 `subagent_spawn` is detached: it schedules work, returns immediately with an opaque `agentId` plus canonical `taskPath`, and later delivers a bounded completion to its intended parent.
 Every turn receives an executor-owned `runId`, monotonically increasing agent-local generation, and unique `completionId`.
+A caller can set `completionRequirement: "required"` on a spawn or follow-up to bind final-answer dependency state to that exact run and generation.
+Required state moves from `pending` to `available` after durable terminal completion and to `visible` only after the intended parent context observes the exact completion ID.
+Interruption, close, stale restore, and shutdown terminalize unfinished requirements explicitly instead of silently dropping them.
+Tool-result details preserve fork-sensitive requirement evidence, inspection projects bounded requirement state, and one canonical hidden context block replaces older copies.
+The runtime rejects a sixty-fifth unresolved required run before acceptance so every unresolved exact identity fits in the bounded parent context.
 The terminal completion and recipient are persisted before delivery, simultaneous root completions are batched, and the root broker allows at most one in-flight wake until that parent turn starts.
 In TUI mode, completion messages show a compact task and payload summary while collapsed; use the configured tool-output expansion action (`Ctrl+O` by default) to show or hide the complete message globally.
 
@@ -644,7 +651,7 @@ Detached work follows a non-polling policy.
 Before one ordinary `subagent_spawn`, identify useful non-overlapping main-agent work that starts immediately and a supported completion integration path.
 With default `next-turn` delivery, the current response must not depend on the result because an idle root is not awakened.
 With opt-in `auto-resume`, detached work may affect the final answer because completion steers into an active parent before its next model call or requests a synthesis turn from idle.
-Track every final-answer-dependent spawn by its returned ID or path, treat interim output as progress, and synthesize only after every corresponding completion message is visible.
+Mark every final-answer-dependent spawn with `completionRequirement: "required"`, retain its returned ID or path, treat interim output as progress, and synthesize only after every corresponding completion is visible or terminal.
 When local work finishes before required children, emit at most one brief progress sentence and end the turn rather than repeating waiting updates or using the requested final format, verdict, or conclusion.
 After spawning, immediately continue the identified local task instead of merely announcing the spawn, waiting, polling `subagent_inspect` or `subagent_mailbox`, duplicating the child task, or ending while useful local work remains.
 Do not duplicate a running child's assigned work; use a bounded parent fallback only after completion reports failure or insufficient evidence.
@@ -667,7 +674,11 @@ Simple and immediate critical-path work should stay in the main agent.
 - `"auto-resume"` sends completion to an active root with `deliverAs: "steer"` and no turn trigger, so Pi places it after the current assistant turn and before the next model call.
   An idle root with no pending user or extension input receives at most one in-flight synthesis wake; pending input suppresses that wake, and simultaneous idle completions share one turn.
 
-Completion delivery makes results visible in model context but does not enforce model obedience, rewrite premature assistant output, or provide a hard final-answer barrier.
+Completion delivery and required-run context make dependencies visible to the model but do not enforce model obedience, rewrite premature assistant output, or provide a hard final-answer barrier.
+The supported Pi extension API exposes no hook for buffering assistant deltas before display and no replay-safe steering activity for a cross-mode interruptible join.
+`message_end` replacement can repair finalized persistence but cannot retract already displayed streaming output.
+The package therefore keeps `subagent_await` as the accurately documented blocking fallback and does not claim an extension-only hard barrier.
+The repository protocol note at `docs/async-runtime-protocol.md` records the exact state machine and unavailable core guarantees; this work does not modify or publish Pi core packages.
 The bounded persisted completion outbox provides ordered at-least-once delivery across process restart without replaying the child turn.
 A top-level completion targets `/root`; a nested completion enters the direct retained parent's mailbox and is not duplicated into the root transcript.
 If the direct parent cannot own delivery, routing walks toward the nearest live retained ancestor and uses `/root` only as the final fallback.
@@ -1144,6 +1155,10 @@ Fresh subprocess summaries run with no tools or project resources.
 Retained RPC and in-process summaries reuse their child context and are explicitly instructed not to call tools; the current child APIs do not support replacing an existing session's tool set for one turn, so their separate deadline and abort path remain the enforcement boundary.
 Before a retained RPC summary starts, validated in-flight usage from the interrupted work attempt is committed so the summary adds to it exactly once.
 The deterministic checkpoint remains available when finalization or the provider fails, and results retain exit `124` plus a structured termination reason and finalization status.
+When bounded finalization succeeds with non-empty usable output, detached registry state reports a typed `partial` outcome with the exact budget reason instead of collapsing that evidence into an undifferentiated failure.
+Malformed required structured output, empty or failed finalization, and transport failure remain non-success.
+Partial evidence never satisfies mutating acceptance, required evidence, or independent verification.
+Inspection and opt-in content-free telemetry distinguish runtime-owned omitted limits from explicit per-turn limits.
 Explicit parent or user abort stops immediately, never starts finalization, and is not mislabeled as a budget stop.
 
 This release does not claim a cooperative soft-wrap-up phase because print-mode subprocess children cannot receive steering while they are running.
@@ -1173,6 +1188,24 @@ Queue time starts when the registry accepts work, transport startup starts when 
 Subprocess and in-process timing fields use the nearest public lifecycle boundary and may be coarser than RPC.
 Timing and progress are current-session diagnostics and are not persisted.
 The benchmark measures transport overhead rather than model latency or output quality.
+
+Preview the paired quality benchmark without making provider requests:
+
+```bash
+just benchmark-async-subagents --model provider/model
+```
+
+Run three paired trials with isolated sync-only and async-only tool surfaces, fixed model and thinking settings, redacted raw records, and a hard per-trial deadline:
+
+```bash
+just benchmark-async-subagents --run --mode quick --model provider/model --output /tmp/subagent-quick.json
+```
+
+Use `--mode extended` for ten paired trials before any further sync deprecation decision.
+The runner alternates arm order, starts work deadlines only after RPC readiness, runs at most three pairs concurrently, and reports completion coverage, evidence score, premature finals, terminal outcomes, median and P95 latency, and cost when available.
+Quick mode targets completion within five minutes under normal provider capacity but reports external timeouts and entitlement failures rather than silently reducing the sample.
+Live results remain provider- and model-dependent evidence rather than deterministic CI or proof of causality.
+The synchronous `subagent` tool remains available whenever a quality gate fails or detached chain, fan-in, panel, or workflow compatibility is unmatched.
 
 While the `subagent` tool is running, `pi-subagents` publishes compact activity status with `ctx.ui.setStatus("subagents", "...")`.
 Any statusline extension that reads Pi's generic extension status API can display it; no package-to-package dependency is required.
@@ -1213,6 +1246,8 @@ Downgrading is safe: older extension versions ignore this separate state directo
 ```txt
 packages/pi-subagents/
 ├── dist/                         # Generated split TypeScript runtime loaded through Pi's Jiti loader
+├── docs/
+│   └── async-runtime-protocol.md # Required-run state machine and unavailable core guarantees
 ├── scripts/
 │   └── build-runtime.mjs         # Deterministic bundler and eager-boundary validator
 ├── src/
@@ -1241,6 +1276,7 @@ packages/pi-subagents/
 │   ├── usage-recording.ts        # Opt-in content-free event collection and local identities
 │   ├── usage-recording-store.ts  # Private per-runtime JSONL writers and retention pruning
 │   ├── completion-delivery.ts    # Top-level completion batching and optional idle-root wake
+│   ├── completion-requirement.ts # Exact required-run tracking and canonical context contract
 │   ├── completion-routing.ts     # Direct-parent and live-ancestor recipient selection
 │   ├── task-path.ts              # Canonical retained-agent task identity and resolution
 │   ├── peer-communication.ts     # Session peer routing and authenticated loopback broker
@@ -1258,6 +1294,7 @@ packages/pi-subagents/
 │   ├── verification-harness.ts   # Disposable deterministic check execution
 │   ├── verification-receipt.ts   # Strict executor-owned managed receipts
 │   ├── verified-execution-benchmark.ts # Matched offline acceptance/cost fixture
+│   ├── async-subagent-benchmark.ts # Paired live-quality planning, scoring, and summaries
 │   ├── workflow-tree-identity.ts # Bounded exact Git-visible tree identities
 │   ├── integration-controller.ts # Fail-closed canonical integration admission
 │   ├── adaptive-scheduler.ts     # Dependency, capacity, budget, and conflict scheduling
