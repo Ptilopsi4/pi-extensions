@@ -917,7 +917,7 @@ export function registerStatefulSubagents(
 				resolvePending?.(agent);
 				const deliveryNote =
 					completionDelivery === "auto-resume"
-						? "Auto-resume will request synthesis after completion."
+						? "Auto-resume steers completions into active parent work or requests synthesis when idle. Treat this response as progress, not final synthesis, until every final-answer-required completion message is visible; do not redo a running child's assigned work."
 						: "The current response must not depend on the result because next-turn delivery will not wake an idle root.";
 				return result(
 					agent,

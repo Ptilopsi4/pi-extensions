@@ -807,7 +807,7 @@ function subagentBehaviorSettingsScreen(runtime: SubagentSettingsRuntime) {
 						id: "completionDelivery",
 						label: "When background work finishes",
 						description:
-							"Wait for your next message, or let Pi continue automatically so it can use the result.",
+							"Wait for your next message, or steer results into active work and continue automatically from idle.",
 						currentValue: completionLabel(runtime.getCompletionDelivery()),
 						values: ["Wait for my next message", "Continue automatically when work finishes"],
 						action: "set-completion" as const,

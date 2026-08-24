@@ -308,33 +308,49 @@ test("auto-resume allows only one in-flight wake until the parent starts", () =>
 	broker.close();
 });
 
-test("auto-resume holds active-turn completions until settlement", () => {
+test("auto-resume steers staggered active-turn completions without a duplicate idle wake", () => {
 	const options = { idle: false, pending: false };
 	const harness = deliveryHarness(options);
-	const broker = new CompletionDeliveryBroker(harness.pi as never, harness.ctx, "auto-resume");
-	broker.enqueue(completion("sa_active"));
+	const acknowledged: string[] = [];
+	const broker = new CompletionDeliveryBroker(harness.pi as never, harness.ctx, "auto-resume", {
+		onAcknowledged: (completions) => {
+			acknowledged.push(...completions.map((value) => value.completionId));
+		},
+	});
+	broker.enqueue(completion("sa_active_one"));
 	broker.flush();
-	assert.equal(harness.sent.length, 0);
+	broker.enqueue(completion("sa_active_two"));
+	broker.flush();
+
+	assert.deepEqual(
+		harness.sent.map((entry) => entry.options),
+		[{ deliverAs: "steer" }, { deliverAs: "steer" }],
+	);
+	broker.onParentContext(
+		harness.sent.map((entry) => ({
+			role: "custom",
+			customType: "pi-subagent-completion",
+			details: entry.message.details,
+		})),
+	);
+	assert.deepEqual(acknowledged, ["completion:sa_active_one:1", "completion:sa_active_two:1"]);
 
 	options.idle = true;
 	broker.onParentSettled();
 	broker.flush();
-	assert.deepEqual(harness.sent[0]?.options, { deliverAs: "steer", triggerTurn: true });
-	broker.onParentSettled();
-	broker.flush();
-	assert.equal(harness.sent.length, 1);
+	assert.equal(harness.sent.length, 2);
 	broker.close();
 });
 
-test("changing delivery policy flushes an active-root batch without waiting for settlement", () => {
+test("changing delivery policy after active steering does not duplicate the batch", () => {
 	const harness = deliveryHarness({ idle: false });
 	const broker = new CompletionDeliveryBroker(harness.pi as never, harness.ctx, "auto-resume");
 	broker.enqueue(completion("sa_policy"));
 	broker.flush();
-	assert.equal(harness.sent.length, 0);
+	assert.deepEqual(harness.sent[0]?.options, { deliverAs: "steer" });
 	broker.setDelivery("next-turn");
 	broker.flush();
-	assert.deepEqual(harness.sent[0]?.options, { deliverAs: "steer" });
+	assert.equal(harness.sent.length, 1);
 	broker.close();
 });
 

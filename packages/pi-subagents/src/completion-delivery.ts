@@ -107,7 +107,6 @@ export class CompletionDeliveryBroker {
 		if (this.closed || this.pending.length === 0) return;
 		if (this.flushTimer) clearTimeout(this.flushTimer);
 		this.flushTimer = undefined;
-		if (this.delivery === "auto-resume" && !this.isRootIdle()) return;
 
 		const completions = this.pending.splice(0);
 		const batches = chunkCompletions(completions);
@@ -239,7 +238,7 @@ export class CompletionDeliveryBroker {
 	}
 
 	private shouldWakeRoot(): boolean {
-		if (this.delivery !== "auto-resume" || this.wakeInFlight) return false;
+		if (this.delivery !== "auto-resume" || this.wakeInFlight || !this.isRootIdle()) return false;
 		try {
 			return !this.ctx.hasPendingMessages();
 		} catch {

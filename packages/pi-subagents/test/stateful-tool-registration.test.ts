@@ -73,6 +73,9 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 			.at(-1) as typeof spawn | undefined;
 		assert.match(autoResumeRegistration?.description ?? "", /api-reviewer/);
 		assert.match(autoResumeRegistration?.promptGuidelines?.join("\n") ?? "", /auto-resume/);
+		for (const guideline of autoResumeRegistration?.promptGuidelines ?? []) {
+			assert.match(guideline, /subagent_spawn/);
+		}
 		controller.setAgentCatalog("Available agent definitions\n- worker [source: built-in]");
 		const refreshedRegistration = mock.tools
 			.filter((tool) => tool.name === "subagent_spawn")
@@ -502,6 +505,18 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 		const autoResumeGuidance = autoResumeSpawn.promptGuidelines.join("\n");
 		assert.match(autoResumeGuidance, /auto-resume/i);
 		assert.match(autoResumeGuidance, /even when.*final answer.*depends/i);
+		assert.match(
+			autoResumeGuidance,
+			/every final-answer-dependent subagent_spawn.*completion message.*visible/i,
+		);
+		assert.match(
+			autoResumeGuidance,
+			/do not duplicate.*assigned work.*running.*fallback.*failure.*insufficient evidence/i,
+		);
+		assert.match(
+			autoResumeGuidance,
+			/smallest named files or questions.*maxTurns.*maxToolCalls.*sufficient/i,
+		);
 		assert.match(
 			autoResumeGuidance,
 			/ordinary review.*main agent.*review skill.*deterministic checks/i,

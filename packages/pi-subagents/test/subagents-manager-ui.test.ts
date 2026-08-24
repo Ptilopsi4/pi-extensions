@@ -246,6 +246,8 @@ test("settings groups keep agent and runtime capabilities reachable", async () =
 				} else {
 					assert.match(frame, /Completion and Privacy/);
 					assert.match(frame, /When background work finishes/);
+					assert.match(frame, /steer results into active work/i);
+					assert.match(frame, /continue automatically from idle/i);
 					assert.match(frame, /Local usage recording/);
 					harness.handleInput("\u0003");
 				}
