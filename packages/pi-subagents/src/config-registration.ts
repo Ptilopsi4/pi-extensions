@@ -3,9 +3,9 @@ import { cachedModuleLoader } from "./cached-module-loader.js";
 import type { SubagentMenuOwner, SubagentSettingsRuntime } from "./config-ui.js";
 
 const SUBCOMMANDS = [
-	{ value: "settings", label: "settings", description: "Configure subagent user settings" },
-	{ value: "status", label: "status", description: "Show effective subagent settings" },
-	{ value: "help", label: "help", description: "Show subagent settings help" },
+	{ value: "settings", label: "settings", description: "Open grouped subagent settings" },
+	{ value: "status", label: "status", description: "Show detailed subagent diagnostics" },
+	{ value: "help", label: "help", description: "Show subagent first steps and safety help" },
 ];
 
 type ConfigUiModule = Pick<
@@ -50,7 +50,7 @@ export function registerSubagentConfigCommand(
 		dependencies.loadConfigStatus ?? (() => import("./config-status.js")),
 	);
 	pi.registerCommand("subagents", {
-		description: "Manage current-session subagents and user settings",
+		description: "Manage subagents, settings, diagnostics, and help",
 		getArgumentCompletions(prefix: string) {
 			const normalized = prefix.trim().toLowerCase();
 			const matches = SUBCOMMANDS.filter((item) => item.value.startsWith(normalized));
@@ -103,7 +103,7 @@ export function registerSubagentConfigCommand(
 				}
 				if (!isCurrent()) return;
 				if (!subcommand) await configUi.showSubagentManager(pi, ctx, runtime, owner);
-				else await configUi.showSubagentSettings(ctx, runtime, owner);
+				else await configUi.showSubagentSettings(pi, ctx, runtime, owner);
 				return;
 			}
 			if (ctx.mode === "tui" || ctx.hasUI) {

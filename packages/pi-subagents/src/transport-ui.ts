@@ -11,25 +11,26 @@ const TRANSPORT_OPTIONS: Array<{
 }> = [
 	{
 		value: "subprocess",
-		label: "Fresh subprocess",
-		description: "Compatibility path with a fresh isolated Pi process for every turn.",
+		label: "Fresh process",
+		description:
+			"Start a separate Pi process for every turn. Most compatible, but slower for follow-ups.",
 	},
 	{
 		value: "in-process",
-		label: "In process",
+		label: "Inside Pi",
 		description:
-			"Lowest follow-up overhead for built-in tools, with shared memory and crash boundary.",
+			"Run built-in tools inside Pi for faster follow-ups. Shares Pi's memory and crash boundary.",
 	},
 	{
 		value: "rpc",
-		label: "Persistent RPC process",
-		description: "Retain native history in one isolated Pi process per active retained agent.",
+		label: "Persistent process (RPC)",
+		description:
+			"Keep one separate Pi process per background subagent so follow-ups preserve history.",
 	},
 	{
 		value: "auto",
-		label: "Automatic",
-		description:
-			"Read-only built-ins use in-process, write-capable built-ins use RPC, and custom tools use subprocess.",
+		label: "Automatic · Recommended",
+		description: "Let Pi choose a compatible method for each subagent and its tools.",
 	},
 ];
 
@@ -42,12 +43,15 @@ export function transportSettingsScreen(runtime: TransportUiRuntime) {
 	const current = runtime.getRuntimeStatus();
 	return {
 		kind: "actions" as const,
-		title: configured.error ? "Detached Transport · Read only" : "Detached Transport",
+		title: configured.error
+			? "Background Agent Transport · Read only"
+			: "Background Agent Transport",
 		lines: [
+			"Advanced: choose how Pi hosts background subagents.",
 			`Current session: ${transportLabel(current.transport)}`,
 			`Configured after reload: ${transportLabel(configured.value)} (${configured.source})`,
-			"Transport isolation is not a filesystem or network sandbox.",
-			"RPC v1 disables child extensions and supports built-in Pi tools only.",
+			"Separate processes do not restrict filesystem or network access.",
+			"Persistent process (RPC) supports built-in Pi tools and does not load child extensions.",
 			...(configured.error
 				? [
 						`Settings cannot be edited: ${safeTerminalText(configured.error)}`,
@@ -84,7 +88,7 @@ export async function applyTransportSetting(
 	const status = runtime.getRuntimeStatus();
 	if (status.retainedAgents > 0) {
 		ctx.ui.notify(
-			`Cannot change transport while ${status.retainedAgents} detached agent${status.retainedAgents === 1 ? " is" : "s are"} retained. Clear Current agents first.`,
+			`Cannot change transport while ${status.retainedAgents} subagent${status.retainedAgents === 1 ? " is" : "s are"} saved for follow-up. Clear Current subagents first.`,
 			"warning",
 		);
 		return { kind: "rejected" as const };
@@ -104,7 +108,7 @@ export async function applyTransportSetting(
 	}
 	if (runtime.getRuntimeStatus().retainedAgents > 0) {
 		ctx.ui.notify(
-			"Detached agents appeared while confirming; clear them before changing transport.",
+			"New subagents were saved for follow-up while confirming. Clear them before changing transport.",
 			"warning",
 		);
 		return { kind: "rejected" as const };
@@ -120,38 +124,6 @@ export async function applyTransportSetting(
 		);
 		return { kind: "rejected" as const };
 	}
-}
-
-export function responsivenessSetupScreen(runtime: TransportUiRuntime) {
-	const current = runtime.getRuntimeStatus();
-	const configured = inspectStatefulTransportSettings();
-	return {
-		kind: "actions" as const,
-		title: "Responsiveness Setup",
-		lines: [
-			`Current transport: ${transportLabel(current.transport)}`,
-			`Configured transport: ${transportLabel(configured.value)}`,
-			"Transport, completion delivery, and thinking defaults are separate explicit choices.",
-			"Use Automatic to reduce retained follow-up startup while keeping custom-tool compatibility.",
-		],
-		items: [
-			{
-				id: "auto",
-				label: "Preview Automatic transport",
-				description: "Choose a deterministic transport before each retained agent starts",
-				action: "set-transport" as const,
-			},
-			{ id: "transport", label: "Compare all transports", to: "transport" as const },
-			{
-				id: "completion",
-				label: "Completion delivery",
-				description: "Choose separately whether an idle root resumes for synthesis",
-				to: "settings" as const,
-			},
-			{ id: "back", label: "Back", action: "back" as const },
-		],
-		hint: "back" as const,
-	};
 }
 
 export function transportLabel(value: SubagentTransportKind): string {

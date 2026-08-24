@@ -152,10 +152,11 @@ test("disabled stateful settings do not advertise unavailable lifecycle tools", 
 			},
 		});
 		await command.handler("", context.ctx);
-		assert.match(renders.flat().join("\n"), /Delegation: Blocking only/);
+		assert.match(renders.flat().join("\n"), /How subagents run: Wait for every subagent/);
 		await command.handler("help", context.ctx);
-		assert.match(context.notifications.at(-1)?.message ?? "", /configure agent tools/);
-		assert.doesNotMatch(context.notifications.at(-1)?.message ?? "", /subagents:/);
+		assert.match(context.notifications.at(-1)?.message ?? "", /Start here/);
+		assert.match(context.notifications.at(-1)?.message ?? "", /Keep Pi available/);
+		assert.doesNotMatch(context.notifications.at(-1)?.message ?? "", /Usage path:/);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -163,7 +164,7 @@ test("disabled stateful settings do not advertise unavailable lifecycle tools", 
 	}
 });
 
-test("advanced settings validates, saves, and immediately applies the blocking parallel limit", async () => {
+test("runtime settings validate, save, and immediately apply the blocking worker limit", async () => {
 	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-parallel-limit-ui-"));
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = directory;
@@ -188,21 +189,24 @@ test("advanced settings validates, saves, and immediately applies the blocking p
 				const frame = stripVTControlCharacters(harness.render().join("\n"));
 				applyFrames.push(frame);
 				if (applyCall === 0) {
-					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (applyCall === 1) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.down");
+					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (applyCall === 2) {
-					assert.match(frame, /Maximum Parallel Workers/);
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else if (applyCall === 3) {
+					assert.match(frame, /Blocking Worker Limit/);
 					assert.match(frame, /Current: 8/);
 					harness.setFocused(true);
 					harness.handleInput("3");
 					harness.handleInput("tui.input.submit");
 					await harness.waitForPending();
 				} else {
-					assert.match(frame, /Maximum parallel workers.*Current: 3/s);
+					assert.match(frame, /Blocking worker limit/);
 					harness.handleInput("\u0003");
 				}
 				applyCall++;
@@ -210,7 +214,7 @@ test("advanced settings validates, saves, and immediately applies the blocking p
 			},
 		});
 		await command.handler("", context.ctx);
-		assert.equal(applyCall, 4, applyFrames.join("\n---\n"));
+		assert.equal(applyCall, 5, applyFrames.join("\n---\n"));
 		assert.ok(
 			applyFrames.flatMap((frame) => frame.split("\n")).every((line) => visibleWidth(line) <= 60),
 		);
@@ -231,7 +235,7 @@ test("advanced settings validates, saves, and immediately applies the blocking p
 			/configured max 3/i,
 		);
 		await command.handler("status", context.ctx);
-		assert.match(context.notifications.at(-1)?.message ?? "", /maximum parallel workers: 3/i);
+		assert.match(context.notifications.at(-1)?.message ?? "", /blocking worker limit: 3/i);
 
 		writeFileSync(
 			settingsPath,
@@ -244,13 +248,16 @@ test("advanced settings validates, saves, and immediately applies the blocking p
 			custom: async (factory: unknown) => {
 				const harness = createCustomSelectorHarness(factory, 60);
 				if (staleCall === 0) {
-					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (staleCall === 1) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.down");
+					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (staleCall === 2) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else if (staleCall === 3) {
 					harness.setFocused(true);
 					harness.handleInput("3");
 					harness.handleInput("tui.input.submit");
@@ -263,7 +270,7 @@ test("advanced settings validates, saves, and immediately applies the blocking p
 			},
 		});
 		await command.handler("", staleContext.ctx);
-		assert.equal(staleCall, 4);
+		assert.equal(staleCall, 5);
 		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
 			future: true,
 			blocking: { futureBlocking: "keep", maxParallelTasks: 3 },
@@ -277,13 +284,16 @@ test("advanced settings validates, saves, and immediately applies the blocking p
 			custom: async (factory: unknown) => {
 				const harness = createCustomSelectorHarness(factory, 60);
 				if (invalidCall === 0) {
-					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (invalidCall === 1) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.down");
+					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (invalidCall === 2) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else if (invalidCall === 3) {
 					harness.setFocused(true);
 					harness.handleInput("0");
 					harness.handleInput("tui.input.submit");
@@ -299,8 +309,11 @@ test("advanced settings validates, saves, and immediately applies the blocking p
 			},
 		});
 		await command.handler("", invalidContext.ctx);
-		assert.equal(invalidCall, 4);
-		assert.match(invalidContext.notifications.at(-1)?.message ?? "", /whole number from 1 to 64/i);
+		assert.equal(invalidCall, 5);
+		assert.match(
+			invalidContext.notifications.at(-1)?.message ?? "",
+			/blocking worker limit.*whole number from 1 to 64/i,
+		);
 		assert.equal(readFileSync(settingsPath, "utf8"), savedDocument);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -332,46 +345,59 @@ test("detached-limit UI saves several startup limits without mutating the curren
 				const harness = createCustomSelectorHarness(factory, 64);
 				const frame = stripVTControlCharacters(harness.render().join("\n"));
 				frames.push(frame);
-				if (call === 0 || call === 1) {
+				if (call === 0) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else if (call === 1) {
 					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (call === 2) {
-					assert.match(frame, /Detached Agent Limits/);
-					assert.match(frame, /Retained agents.*Current 16.*configured 16/s);
+					for (let index = 0; index < 2; index++) harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else if (call === 3) {
+					assert.match(frame, /Background Agent Limits/);
+					assert.match(frame, /Subagents saved for follow-up/);
 					for (const label of [
-						"Active turns",
-						"Children per agent",
-						"Agent tree depth",
-						"Stored agents",
+						"Subagents working at once",
+						"Direct children per subagent",
+						"Nested subagent levels",
+						"Stored subagent records",
 					]) {
 						assert.match(frame, new RegExp(label));
 					}
 					harness.handleInput("tui.select.confirm");
-				} else if (call === 3) {
+				} else if (call === 4) {
 					assert.match(frame, /Current session: 16/);
 					harness.setFocused(true);
 					harness.handleInput("20");
 					harness.handleInput("tui.input.submit");
 					await harness.waitForPending();
-				} else if (call === 4) {
-					assert.match(frame, /Retained agents.*Current 16.*configured 20/s);
+				} else if (call === 5) {
+					assert.match(frame, /Subagents saved for follow-up/);
 					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
-				} else if (call === 5) {
+				} else if (call === 6) {
 					assert.match(frame, /Current session: 4/);
 					harness.setFocused(true);
 					harness.handleInput("6");
 					harness.handleInput("tui.input.submit");
 					await harness.waitForPending();
-				} else if (call === 6) {
-					assert.match(frame, /Retained agents.*Current 16.*configured 20/s);
-					assert.match(frame, /Active turns.*Current 4.*configured 6/s);
-					harness.handleInput("tui.select.cancel");
 				} else if (call === 7) {
-					assert.match(frame, /Advanced Subagent Settings/);
+					assert.match(frame, /Subagents saved for follow-up/);
+					assert.match(frame, /Subagents working at once/);
+					harness.handleInput("tui.select.cancel");
+				} else if (call === 8) {
+					assert.match(frame, /Advanced Runtime Settings/);
+					harness.handleInput("tui.select.cancel");
+				} else if (call === 9) {
+					assert.match(frame, /Subagent Settings/);
 					harness.handleInput("tui.select.cancel");
 				} else {
-					assert.match(frame, /Configured after reload: retained agents 20.*active turns 6/s);
+					assert.match(
+						frame,
+						/After \/reload: subagents saved for follow-up 20.*subagents\s+working at once 6/s,
+					);
 					harness.handleInput("\u0003");
 				}
 				call++;
@@ -379,7 +405,7 @@ test("detached-limit UI saves several startup limits without mutating the curren
 			},
 		});
 		await command.handler("", context.ctx);
-		assert.equal(call, 9, frames.join("\n---\n"));
+		assert.equal(call, 11, frames.join("\n---\n"));
 		assert.ok(
 			frames.flatMap((frame) => frame.split("\n")).every((line) => visibleWidth(line) <= 64),
 		);
@@ -390,8 +416,11 @@ test("detached-limit UI saves several startup limits without mutating the curren
 		assert.match(context.notifications.at(-1)?.message ?? "", /applies after \/reload/i);
 
 		await command.handler("status", context.ctx);
-		assert.match(context.notifications.at(-1)?.message ?? "", /detached limits: 16 retained/i);
-		assert.match(context.notifications.at(-1)?.message ?? "", /configured retained agents: 20/i);
+		assert.match(context.notifications.at(-1)?.message ?? "", /background-agent limits: 16 saved/i);
+		assert.match(
+			context.notifications.at(-1)?.message ?? "",
+			/configured subagents saved for follow-up: 20/i,
+		);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -472,7 +501,7 @@ test("detached-limit lowering cancellation and stale previews leave settings unc
 			}),
 			{ kind: "rejected" },
 		);
-		assert.match(preview, /omit 1 currently retained agent record/i);
+		assert.match(preview, /exclude 1 saved subagent record/i);
 		assert.equal(existsSync(path.join(directory, "pi-subagents.json")), false);
 
 		const stale = createMockContext({
@@ -585,7 +614,7 @@ test("detached-limit previews depth and stored-record reductions", async () => {
 				}),
 				{ kind: "rejected" },
 			);
-			assert.match(preview, /omit 1 currently retained agent record/i);
+			assert.match(preview, /exclude 1 saved subagent record/i);
 			assert.equal(existsSync(path.join(directory, "pi-subagents.json")), false);
 		}
 	} finally {
@@ -666,13 +695,16 @@ test("parallel-limit UI keeps the runtime unchanged after a settings save failur
 			custom: async (factory: unknown) => {
 				const harness = createCustomSelectorHarness(factory, 60);
 				if (call === 0) {
-					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (call === 1) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.down");
+					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (call === 2) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else if (call === 3) {
 					harness.setFocused(true);
 					harness.handleInput("4");
 					harness.handleInput("tui.input.submit");
@@ -688,7 +720,7 @@ test("parallel-limit UI keeps the runtime unchanged after a settings save failur
 			},
 		});
 		await command.handler("", context.ctx);
-		assert.equal(call, 3);
+		assert.equal(call, 4);
 		assert.match(context.notifications.at(-1)?.message ?? "", /were not saved/i);
 		const blocking = mock.tools.filter((tool) => tool.name === "subagent").at(-1);
 		assert.match(String(blocking?.description), /maximum parallel worker tasks per call: 8/i);
@@ -726,10 +758,13 @@ test("parallel-limit UI leaves settings and runtime unchanged after registration
 			custom: async (factory: unknown) => {
 				const harness = createCustomSelectorHarness(factory, 60);
 				if (call === 0) {
-					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (call === 1) {
-					harness.handleInput("tui.select.down");
+					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else if (call === 2) {
 					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else {
@@ -745,7 +780,7 @@ test("parallel-limit UI leaves settings and runtime unchanged after registration
 			},
 		});
 		await command.handler("", context.ctx);
-		assert.equal(call, 3);
+		assert.equal(call, 4);
 		assert.equal(readFileSync(settingsPath, "utf8"), "{}\n");
 		assert.match(context.notifications.at(-1)?.message ?? "", /not applied.*unchanged/i);
 		await assert.rejects(
@@ -796,16 +831,31 @@ test("subagent settings UI preserves unknown JSON and applies completion deliver
 			mode: "tui",
 			hasUI: true,
 			custom: async (factory: unknown) => {
+				const harness = createCustomSelectorHarness(factory, 80);
+				if (customCalls === 0) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else if (customCalls === 1) {
+					harness.handleInput("tui.select.confirm");
+					await harness.waitForPending();
+					harness.handleInput("tui.select.cancel");
+				} else if (customCalls === 3) {
+					harness.handleInput("tui.select.confirm");
+				} else if (customCalls === 4) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+					await harness.waitForPending();
+					harness.handleInput("tui.select.cancel");
+				} else {
+					harness.handleInput("\u0003");
+				}
 				customCalls++;
-				const inputs =
-					customCalls === 1
-						? ["\u001b[B", "\u001b[B", "\u001b[B", "\r", "\u001b"]
-						: ["\u001b[B", "\u001b[B", "\r", "\u001b"];
-				return driveCustomSelector(factory, inputs).result;
+				return harness.result;
 			},
 		});
 		await command.handler("settings", context.ctx);
-		assert.equal(customCalls, 1);
+		assert.equal(customCalls, 3);
 		const updatedSpawnGuidance = mock.tools
 			.filter((tool) => tool.name === "subagent_spawn")
 			.at(-1)?.promptGuidelines;
@@ -832,12 +882,12 @@ test("subagent settings UI preserves unknown JSON and applies completion deliver
 		await command.handler("status", context.ctx);
 		assert.match(
 			context.notifications.at(-1)?.message ?? "",
-			/Completion: Resume automatically when finished/,
+			/When work finishes: Continue automatically when work finishes/,
 		);
-		assert.match(context.notifications.at(-1)?.message ?? "", /User settings/);
+		assert.match(context.notifications.at(-1)?.message ?? "", /User Settings/);
 
 		await command.handler("settings", context.ctx);
-		assert.equal(customCalls, 2);
+		assert.equal(customCalls, 6);
 		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
 			futureOption: true,
 			stateful: {
@@ -848,7 +898,7 @@ test("subagent settings UI preserves unknown JSON and applies completion deliver
 			consult: { resources: "none" },
 		});
 		await command.handler("status", context.ctx);
-		assert.match(context.notifications.at(-1)?.message ?? "", /No inherited resources/);
+		assert.match(context.notifications.at(-1)?.message ?? "", /No project resources/);
 		const refreshedConsultDescription = mock.tools
 			.filter((tool) => tool.name === "subagent_consult")
 			.at(-1)?.description;
@@ -888,14 +938,19 @@ test("subagent settings UI explicitly enables local-only usage recording", async
 			hasUI: true,
 			custom: async (factory: unknown) => {
 				const harness = createCustomSelectorHarness(factory, 90);
-				rendered = stripVTControlCharacters(harness.render().join("\n"));
-				if (customCalls++ === 0) {
-					for (let index = 0; index < 4; index++) harness.handleInput("tui.select.down");
+				rendered += stripVTControlCharacters(harness.render().join("\n"));
+				if (customCalls === 0) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else if (customCalls === 1) {
+					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 					await harness.waitForPending();
+					harness.handleInput("tui.select.cancel");
 				} else {
 					harness.handleInput("\u0003");
 				}
+				customCalls++;
 				return harness.result;
 			},
 		});
@@ -935,18 +990,27 @@ test("subagent settings UI exposes and immediately applies both cwd policies", a
 			custom: async (factory: unknown) => {
 				const harness = createCustomSelectorHarness(factory, 90);
 				rendered += stripVTControlCharacters(harness.render().join("\n"));
-				const inputs = call++ === 0 ? ["\r", "\u001b"] : ["\u001b[B", "\r", "\u001b"];
-				for (const input of inputs) harness.handleInput(input);
+				if (call === 0 || call === 3) {
+					harness.handleInput("tui.select.confirm");
+				} else if (call === 1 || call === 4) {
+					if (call === 4) harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+					await harness.waitForPending();
+					harness.handleInput("tui.select.cancel");
+				} else {
+					harness.handleInput("\u0003");
+				}
+				call++;
 				return harness.result;
 			},
 		});
 		await command.handler("settings", context.ctx);
 		await command.handler("settings", context.ctx);
-		assert.match(rendered, /Read-only consultation target/);
-		assert.match(rendered, /General delegation target/);
-		assert.match(rendered, /Consultation resources for trusted targets/);
-		assert.match(rendered, /When async work finishes/);
-		assert.match(rendered, /not filesystem access or sandboxing/i);
+		assert.match(rendered, /Where read-only consultations can start/);
+		assert.match(rendered, /Where subagents can start/);
+		assert.match(rendered, /Resources for trusted read-only consultations/);
+		assert.doesNotMatch(rendered, /When background work finishes/);
+		assert.match(rendered, /do not restrict files.*shell commands.*network access/i);
 		assert.match(rendered, /Pi \/trust/);
 		assert.deepEqual(JSON.parse(readFileSync(path.join(directory, "pi-subagents.json"), "utf8")), {
 			cwdPolicy: {
@@ -984,13 +1048,24 @@ test("subagent settings UI rolls back after an atomic save failure", async () =>
 		subagents(mock.pi);
 		const command = mock.commands.get("subagents");
 		assert.ok(command);
+		let call = 0;
 		const context = createMockContext({
 			mode: "tui",
 			hasUI: true,
 			custom: async (factory: unknown) => {
-				rmSync(settingsPath);
-				mkdirSync(settingsPath);
-				return driveCustomSelector(factory, ["\r", "\u001b"]).result;
+				const harness = createCustomSelectorHarness(factory, 80);
+				if (call === 0) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else {
+					rmSync(settingsPath);
+					mkdirSync(settingsPath);
+					harness.handleInput("tui.select.confirm");
+					await harness.waitForPending();
+					harness.handleInput("\u0003");
+				}
+				call++;
+				return harness.result;
 			},
 		});
 		await command.handler("settings", context.ctx);
@@ -998,7 +1073,7 @@ test("subagent settings UI rolls back after an atomic save failure", async () =>
 		await command.handler("status", context.ctx);
 		assert.match(
 			context.notifications.at(-1)?.message ?? "",
-			/Completion: Wait until my next turn/,
+			/When work finishes: Wait for my next message/,
 		);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

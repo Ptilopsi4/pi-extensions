@@ -64,19 +64,15 @@ import {
 	statefulLimitListScreen,
 } from "./stateful-limit-ui.js";
 import { isStatefulLimitField, type StatefulLimitField } from "./stateful-limits.js";
-import {
-	applyTransportSetting,
-	responsivenessSetupScreen,
-	transportSettingsScreen,
-} from "./transport-ui.js";
+import { applyTransportSetting, transportLabel, transportSettingsScreen } from "./transport-ui.js";
 import type { UsageRecordingStatus } from "./usage-recording.js";
 import { USAGE_RECORDING_RETENTION_DAYS } from "./usage-recording-config.js";
 import { showWorkflowPreview, workflowLabel } from "./workflow-ui.js";
 
 const SUBCOMMANDS = [
-	{ value: "settings", label: "settings", description: "Configure subagent user settings" },
-	{ value: "status", label: "status", description: "Show effective subagent settings" },
-	{ value: "help", label: "help", description: "Show subagent settings help" },
+	{ value: "settings", label: "settings", description: "Open grouped subagent settings" },
+	{ value: "status", label: "status", description: "Show detailed subagent diagnostics" },
+	{ value: "help", label: "help", description: "Show subagent first steps and safety help" },
 ];
 const TOOL_VIEWPORT_SIZE = 10;
 
@@ -142,7 +138,7 @@ function registerSubagentPrimaryCommand(
 	owner: SubagentMenuOwner,
 ) {
 	pi.registerCommand("subagents", {
-		description: "Manage current-session subagents and user settings",
+		description: "Manage subagents, settings, diagnostics, and help",
 		getArgumentCompletions(prefix: string) {
 			const normalized = prefix.trim().toLowerCase();
 			const matches = SUBCOMMANDS.filter((item) => item.value.startsWith(normalized));
@@ -156,7 +152,7 @@ function registerSubagentPrimaryCommand(
 			}
 			switch (subcommand) {
 				case "settings":
-					await showSubagentSettings(ctx, runtime, owner);
+					await showSubagentSettings(pi, ctx, runtime, owner);
 					return;
 				case "status":
 					showSubagentStatus(ctx, runtime);
@@ -178,6 +174,7 @@ export async function showSubagentManager(
 	ctx: ExtensionCommandContext,
 	runtime: SubagentSettingsRuntime,
 	owner: SubagentMenuOwner,
+	start: "main" | "settings-hub" = "main",
 ) {
 	if (ctx.mode !== "tui") {
 		showSubagentStatus(ctx, runtime);
@@ -195,10 +192,11 @@ export async function showSubagentManager(
 		| "main"
 		| "workflow"
 		| "agents"
-		| "settings"
-		| "advanced"
-		| "performance"
-		| "responsiveness"
+		| "settings-hub"
+		| "access-settings"
+		| "behavior-settings"
+		| "agent-settings"
+		| "runtime-settings"
 		| "transport"
 		| "execution-agent-picker"
 		| "execution-agent"
@@ -237,7 +235,7 @@ export async function showSubagentManager(
 		| "discard-tools"
 		| "back";
 	const menu = defineMenu<undefined, Screen, Action, ExtensionCommandContext>({
-		start: "main",
+		start,
 		screens: {
 			main: () => {
 				const status = runtime.getRuntimeStatus();
@@ -249,29 +247,34 @@ export async function showSubagentManager(
 					items: [
 						{
 							id: "workflow",
-							label: "Change delegation",
-							description: "Choose async only (recommended) or a compatibility workflow",
+							label: "How subagents run",
+							description: "Choose whether Pi stays available while subagents work",
 							to: "workflow",
 						},
 						{
 							id: "agents",
-							label: "Current agents",
-							description: `${status.activeAgents} active · ${status.retainedAgents} retained`,
+							label: "Current subagents",
+							description: `${status.activeAgents} working · ${status.retainedAgents} saved for follow-up`,
 							to: "agents",
 						},
 						{
 							id: "settings",
 							label: "Settings",
-							description: "Configure targets, trusted resources, and async completion",
-							to: "settings",
+							description: "Folders, completion, privacy, agent defaults, and advanced options",
+							to: "settings-hub",
 						},
 						{
-							id: "advanced",
-							label: "Advanced settings",
-							description: "Agent permissions, parallel limit, runtime details, and settings path",
-							to: "advanced",
+							id: "status",
+							label: "Diagnostics",
+							description: "Detailed runtime values, setting sources, and file paths",
+							to: "status",
 						},
-						{ id: "help", label: "Help", to: "help" },
+						{
+							id: "help",
+							label: "Help",
+							description: "First steps, settings behavior, commands, and safety",
+							to: "help",
+						},
 					],
 					hint: "close",
 				};
@@ -281,11 +284,12 @@ export async function showSubagentManager(
 				const active = currentWorkflow(runtime, runtime.getRuntimeStatus());
 				return {
 					kind: "actions",
-					title: "Change Delegation",
+					title: "How Subagents Run",
 					lines: [
 						`Current: ${workflowLabel(active)}`,
-						"Recommended: Async only keeps the main agent responsive and omits blocking delegation and consultation.",
-						"Final-answer-dependent detached work needs automatic resume.",
+						"Recommended: Keep Pi available while subagents work in the background.",
+						"Methods that make Pi wait are available for compatibility.",
+						"For results needed in the current answer, enable automatic continuation in Settings.",
 						...(snapshot.value !== active
 							? [`Configured after reload: ${workflowLabel(snapshot.value)}`]
 							: []),
@@ -301,20 +305,20 @@ export async function showSubagentManager(
 						: [
 								{
 									id: "async-only",
-									label: "Async only · Recommended",
-									description: "Detached lifecycle plus inspection; omit blocking and consultation",
+									label: "Keep Pi available · Recommended",
+									description: "Subagents work in the background while you continue using Pi",
 									action: "set-workflow" as const,
 								},
 								{
 									id: "all",
-									label: "All delegation methods",
-									description: "Compatibility: async, blocking, inspection, and consultation",
+									label: "Background and blocking methods",
+									description: "Also allow delegated work that makes Pi wait for a result",
 									action: "set-workflow" as const,
 								},
 								{
 									id: "blocking-only",
-									label: "Blocking only",
-									description: "Compatibility: blocking and consultation without async lifecycle",
+									label: "Wait for every subagent",
+									description: "Disable background agents and make Pi wait for delegated work",
 									action: "set-workflow" as const,
 								},
 							],
@@ -326,17 +330,20 @@ export async function showSubagentManager(
 				const status = runtime.getRuntimeStatus();
 				return {
 					kind: "actions",
-					title: "Current-session Subagents",
+					title: "Current Subagents",
 					lines: agents.length
-						? agents.map(formatStatefulAgentLine)
+						? [
+								"Working subagents and subagents saved for follow-up in this session.",
+								...agents.map(formatStatefulAgentLine),
+							]
 						: [formatEmptyStatefulRuntime(status)],
 					items: [
 						...(agents.length > 0
 							? [
 									{
 										id: "clear",
-										label: "Clear current-session agents",
-										description: "Close and delete retained agents for this session",
+										label: "Clear current subagents",
+										description: "Stop running work and remove subagents saved for follow-up",
 										action: "clear-agents" as const,
 									},
 								]
@@ -346,29 +353,82 @@ export async function showSubagentManager(
 					hint: "back",
 				};
 			},
-			settings: () => subagentSettingsScreen(runtime),
-			advanced: () => {
+			"settings-hub": () => ({
+				kind: "actions",
+				title: "Subagent Settings",
+				lines: [
+					"Changes are saved immediately.",
+					"Transport and background-agent limits take effect after /reload.",
+				],
+				items: [
+					{
+						id: "access",
+						label: "Folders and trusted resources",
+						description: "Where subagents can start and what trusted consultations can load",
+						to: "access-settings",
+					},
+					{
+						id: "behavior",
+						label: "Completion and privacy",
+						description: "What Pi does when work finishes and optional local recording",
+						to: "behavior-settings",
+					},
+					{
+						id: "agents",
+						label: "Agent defaults",
+						description: "Tools, model, thinking effort, and time limit for each subagent",
+						to: "agent-settings",
+					},
+					{
+						id: "runtime",
+						label: "Advanced runtime settings",
+						description: "Transport and capacity controls that most users can leave unchanged",
+						to: "runtime-settings",
+					},
+					{ id: "back", label: "Back", action: "back" },
+				],
+				hint: "back",
+			}),
+			"access-settings": () => subagentAccessSettingsScreen(runtime),
+			"behavior-settings": () => subagentBehaviorSettingsScreen(runtime),
+			"agent-settings": () => ({
+				kind: "actions",
+				title: "Agent Defaults",
+				lines: ["Choose the starting settings for each subagent."],
+				items: [
+					{
+						id: "agent-tools",
+						label: "Tool permissions",
+						description: "Choose which tools each subagent may use",
+						action: "load-agent-picker",
+					},
+					{
+						id: "execution",
+						label: "Model, thinking, and time limit",
+						description: "Choose how each subagent starts unless a request overrides it",
+						to: "execution-agent-picker",
+					},
+					{ id: "back", label: "Back", action: "back" },
+				],
+				hint: "back",
+			}),
+			"runtime-settings": () => {
 				const limit = inspectBlockingParallelLimitSettings();
 				return {
 					kind: "actions",
-					title: "Advanced Subagent Settings",
+					title: "Advanced Runtime Settings",
+					lines: ["Most users can leave these settings unchanged."],
 					items: [
 						{
-							id: "agent-tools",
-							label: "Agent tool permissions",
-							description: "Customize persistent per-agent tool allow-lists",
-							action: "load-agent-picker",
-						},
-						{
-							id: "status",
-							label: "Runtime details",
-							description: "Show transport, configured source, and settings path",
-							to: "status",
+							id: "transport",
+							label: "Transport",
+							description: `How Pi hosts background subagents · Current: ${transportLabel(runtime.getRuntimeStatus().transport)}`,
+							to: "transport",
 						},
 						{
 							id: "parallel-limit",
-							label: "Maximum parallel workers",
-							description: `Current: ${runtime.getMaxParallelTasks()} per blocking call`,
+							label: "Blocking worker limit",
+							description: `Maximum subagents per blocking request · Current: ${runtime.getMaxParallelTasks()}`,
 							to: "parallel-limit",
 							disabled: limit.error !== undefined,
 							disabledReason: limit.error
@@ -377,43 +437,15 @@ export async function showSubagentManager(
 						},
 						{
 							id: "stateful-limits",
-							label: "Detached agent limits",
+							label: "Background agent limits",
 							description: formatDetachedLimitSummary(runtime.getRuntimeStatus()),
 							to: "stateful-limits",
-						},
-						{
-							id: "performance",
-							label: "Performance and execution",
-							description: "Transport, responsiveness, and agent defaults",
-							to: "performance",
 						},
 						{ id: "back", label: "Back", action: "back" },
 					],
 					hint: "back",
 				};
 			},
-			performance: () => ({
-				kind: "actions",
-				title: "Performance and Execution",
-				items: [
-					{
-						id: "responsiveness",
-						label: "Responsiveness setup",
-						description: "Preview automatic retained transport and completion guidance",
-						to: "responsiveness",
-					},
-					{ id: "transport", label: "Detached transport", to: "transport" },
-					{
-						id: "agents",
-						label: "Agent execution defaults",
-						description: "Model, thinking level, and timeout",
-						to: "execution-agent-picker",
-					},
-					{ id: "back", label: "Back", action: "back" },
-				],
-				hint: "back",
-			}),
-			responsiveness: () => responsivenessSetupScreen(runtime),
 			transport: () => transportSettingsScreen(runtime),
 			"execution-agent-picker": () => executionAgentPickerScreen(availableAgents),
 			"execution-agent": () => executionAgentScreen(selectedExecutionAgent),
@@ -426,13 +458,13 @@ export async function showSubagentManager(
 			"stateful-limit-input": () => statefulLimitInputScreen(selectedStatefulLimit, runtime),
 			status: () => ({
 				kind: "detail",
-				title: "Subagent runtime details",
+				title: "Subagent Diagnostics",
 				lines: statusLines(runtime),
 				hint: "back",
 			}),
 			help: () => ({
 				kind: "detail",
-				title: "Subagents help",
+				title: "Subagents Help",
 				lines: helpLines(runtime),
 				hint: "back",
 			}),
@@ -441,8 +473,8 @@ export async function showSubagentManager(
 				const configured = settings.agents ?? {};
 				return {
 					kind: "actions",
-					title: "Subagent Tool Configuration",
-					lines: ["Select an agent to configure its allowed tools."],
+					title: "Tool Permissions",
+					lines: ["Choose a subagent to change which tools it may use."],
 					items: availableAgents.map((agent) => {
 						const override = configured[agent.name];
 						const hasOverride = override ? hasOwn(override, "tools") : false;
@@ -503,7 +535,7 @@ export async function showSubagentManager(
 				if (snapshot.error) return { kind: "rejected" };
 				const active = currentWorkflow(runtime, runtime.getRuntimeStatus());
 				if (itemId === active && itemId === snapshot.value) {
-					ctx.ui.notify(`Delegation already uses ${workflowLabel(itemId)}.`, "info");
+					ctx.ui.notify(`Subagents already use ${workflowLabel(itemId)}.`, "info");
 					return { kind: "stay" };
 				}
 				const requiresReload = itemId !== active;
@@ -521,7 +553,7 @@ export async function showSubagentManager(
 					updateDelegationWorkflowSetting(itemId);
 				} catch (error) {
 					ctx.ui.notify(
-						`Delegation settings were not saved: ${formatError(error)}. The current workflow is unchanged.`,
+						`How subagents run was not saved: ${formatError(error)}. The current choice is unchanged.`,
 						"error",
 					);
 					return { kind: "rejected" };
@@ -544,8 +576,8 @@ export async function showSubagentManager(
 				const agents = runtime.listAgents();
 				if (agents.length === 0) return { kind: "stay" };
 				const confirmed = await ctx.ui.confirm(
-					"Clear current-session subagents?",
-					`Close and delete ${agents.length} retained agent${agents.length === 1 ? "" : "s"}?`,
+					"Clear current subagents?",
+					`Stop work and remove ${agents.length} subagent${agents.length === 1 ? "" : "s"} saved for follow-up?`,
 					{ signal },
 				);
 				if (signal.aborted || !isCurrent()) return { kind: "close" };
@@ -557,17 +589,14 @@ export async function showSubagentManager(
 						.join("\0") !== agents.map((agent) => agent.id).join("\0")
 				) {
 					ctx.ui.notify(
-						"Detached agents changed while confirming; review the list again.",
+						"Current subagents changed while confirming; review the list again.",
 						"warning",
 					);
 					return { kind: "rejected" };
 				}
 				const cleared = await runtime.clearAgents();
 				if (signal.aborted || !isCurrent()) return { kind: "close" };
-				ctx.ui.notify(
-					`Cleared ${cleared} current-session subagent${cleared === 1 ? "" : "s"}.`,
-					"info",
-				);
+				ctx.ui.notify(`Cleared ${cleared} current subagent${cleared === 1 ? "" : "s"}.`, "info");
 				return { kind: "stay" };
 			},
 			"set-transport": async ({ itemId, signal }) =>
@@ -686,6 +715,7 @@ export async function showSubagentManager(
 }
 
 export async function showSubagentSettings(
+	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
 	runtime: SubagentSettingsRuntime,
 	owner: SubagentMenuOwner,
@@ -700,49 +730,20 @@ export async function showSubagentSettings(
 		}
 		return;
 	}
-	const generation = owner.generation;
-	const isCurrent = () => generation === owner.generation && !owner.controller.signal.aborted;
-	const { defineMenu, runMenu } = await import("@narumitw/pi-tui-kit");
-	if (!isCurrent()) return;
-	type SettingsAction =
-		| "set-completion"
-		| "set-consult-resources"
-		| "set-consultation-cwd"
-		| "set-delegation-cwd"
-		| "set-usage-recording";
-	const menu = defineMenu<undefined, "settings", SettingsAction, ExtensionCommandContext>({
-		start: "settings",
-		screens: { settings: () => subagentSettingsScreen(runtime) },
-		actions: {
-			"set-completion": async ({ value }) => applyCompletionSetting(value, ctx, runtime),
-			"set-consult-resources": async ({ value }) =>
-				applyConsultResourceSetting(value, ctx, runtime),
-			"set-consultation-cwd": async ({ value }) => applyConsultationCwdSetting(value, ctx, runtime),
-			"set-delegation-cwd": async ({ value }) => applyDelegationCwdSetting(value, ctx, runtime),
-			"set-usage-recording": async ({ value, signal }) =>
-				applyUsageRecordingSetting(value, ctx, runtime, { signal, isCurrent }),
-		},
-	});
-	await runMenu(ctx, menu, {
-		getState: () => undefined,
-		signal: owner.controller.signal,
-		isCurrent,
-	});
+	await showSubagentManager(pi, ctx, runtime, owner, "settings-hub");
 }
 
-function subagentSettingsScreen(runtime: SubagentSettingsRuntime) {
-	const completion = inspectCompletionDeliverySettings();
+function subagentAccessSettingsScreen(runtime: SubagentSettingsRuntime) {
 	const consult = inspectConsultResourceSettings();
 	const cwdPolicy = inspectCwdPolicySettings();
-	const usageRecording = inspectUsageRecordingSettings();
-	const error = completion.error ?? consult.error ?? cwdPolicy.error ?? usageRecording.error;
+	const error = consult.error ?? cwdPolicy.error;
 	return {
 		kind: "settings" as const,
-		title: error ? "Subagent User Settings · Read only" : "Subagent User Settings",
+		title: error ? "Folders and Trusted Resources · Read only" : "Folders and Trusted Resources",
 		lines: [
-			"Applies now and to future sessions",
-			"Target and trust settings control startup resources, not filesystem access or sandboxing.",
-			"Manage folder trust with Pi /trust; restart Pi after changing it.",
+			"Choose where subagents may start and what read-only consultations may load.",
+			"These settings do not restrict files, shell commands, network access, or OS permissions.",
+			"Manage saved folder trust with Pi /trust, then restart Pi.",
 			safeTerminalText(consult.path),
 			...(error ? [`Settings cannot be edited: ${safeTerminalText(error)}`] : []),
 		],
@@ -751,48 +752,67 @@ function subagentSettingsScreen(runtime: SubagentSettingsRuntime) {
 			: [
 					{
 						id: "consultationCwd",
-						label: "Read-only consultation target",
+						label: "Where read-only consultations can start",
 						description:
-							"Untrusted external targets inherit no target/project resources; agent and package read-only prompts remain.",
+							"Use only this workspace, or allow other folders without loading untrusted project resources.",
 						currentValue: consultationCwdLabel(runtime.getConsultationCwdPolicy()),
-						values: ["Anywhere · untrusted targets inherit nothing", "Current workspace only"],
+						values: ["Any folder · no project resources when untrusted", "This workspace only"],
 						action: "set-consultation-cwd" as const,
 					},
 					{
 						id: "delegationCwd",
-						label: "General delegation target",
+						label: "Where subagents can start",
 						description:
-							"Controls starting directories, not absolute paths, shell commands, or OS permissions.",
+							"Limit subagents to this workspace, saved-trusted folders, or any folder Pi can access.",
 						currentValue: delegationCwdLabel(runtime.getDelegationCwdPolicy()),
 						values: [
-							"Current or saved-trusted folders",
-							"Current workspace only",
-							"Anywhere · normal Pi permissions",
+							"This workspace or saved-trusted folders",
+							"This workspace only",
+							"Any folder Pi can access",
 						],
 						action: "set-delegation-cwd" as const,
 					},
 					{
 						id: "consultResources",
-						label: "Consultation resources for trusted targets",
+						label: "Resources for trusted read-only consultations",
 						description:
-							"Choose which trusted context, system, skill, and prompt resources a consultation inherits.",
+							"Choose how much project context, skills, and prompt guidance a trusted consultation may load.",
 						currentValue: consultResourceLabel(runtime.getConsultResourcePolicy()),
-						values: ["Project context only", "No inherited resources", "All trusted resources"],
+						values: ["Project context only", "No project resources", "All trusted resources"],
 						action: "set-consult-resources" as const,
 					},
+				],
+	};
+}
+
+function subagentBehaviorSettingsScreen(runtime: SubagentSettingsRuntime) {
+	const completion = inspectCompletionDeliverySettings();
+	const usageRecording = inspectUsageRecordingSettings();
+	const error = completion.error ?? usageRecording.error;
+	return {
+		kind: "settings" as const,
+		title: error ? "Completion and Privacy · Read only" : "Completion and Privacy",
+		lines: [
+			"These changes apply immediately and to future sessions.",
+			safeTerminalText(completion.path),
+			...(error ? [`Settings cannot be edited: ${safeTerminalText(error)}`] : []),
+		],
+		items: error
+			? []
+			: [
 					{
 						id: "completionDelivery",
-						label: "When async work finishes",
+						label: "When background work finishes",
 						description:
-							"Wait for your next turn, or request one synthesis turn after the root settles.",
+							"Wait for your next message, or let Pi continue automatically so it can use the result.",
 						currentValue: completionLabel(runtime.getCompletionDelivery()),
-						values: ["Wait until my next turn", "Resume automatically when finished"],
+						values: ["Wait for my next message", "Continue automatically when work finishes"],
 						action: "set-completion" as const,
 					},
 					{
 						id: "usageRecording",
 						label: "Local usage recording",
-						description: `Opt in to content-free lifecycle and timing events kept locally for ${USAGE_RECORDING_RETENTION_DAYS} days.`,
+						description: `Optionally keep content-free timing and lifecycle events on this device for ${USAGE_RECORDING_RETENTION_DAYS} days.`,
 						currentValue: runtime.getUsageRecordingEnabled?.() ? "On · local only" : "Off",
 						values: ["Off", "On · local only"],
 						action: "set-usage-recording" as const,
@@ -857,7 +877,7 @@ function applyCompletionSetting(
 ) {
 	const previous = runtime.getCompletionDelivery();
 	const next: CompletionDelivery =
-		value === "Resume automatically when finished" ? "auto-resume" : "next-turn";
+		value === "Continue automatically when work finishes" ? "auto-resume" : "next-turn";
 	if (next === previous) return { kind: "stay" as const };
 	try {
 		updateCompletionDeliverySetting(next);
@@ -877,7 +897,7 @@ function applyConsultResourceSetting(
 ) {
 	const previous = runtime.getConsultResourcePolicy();
 	const next: ConsultResourcePolicy =
-		value === "No inherited resources"
+		value === "No project resources"
 			? "none"
 			: value === "All trusted resources"
 				? "all"
@@ -901,7 +921,7 @@ function applyConsultationCwdSetting(
 ) {
 	const previous = runtime.getConsultationCwdPolicy();
 	const next: ConsultationCwdPolicy =
-		value === "Current workspace only" ? "current-workspace" : "anywhere";
+		value === "This workspace only" ? "current-workspace" : "anywhere";
 	if (next === previous) return { kind: "stay" as const };
 	try {
 		updateCwdPolicySetting("consultation", next);
@@ -921,9 +941,9 @@ function applyDelegationCwdSetting(
 ) {
 	const previous = runtime.getDelegationCwdPolicy();
 	const next: DelegationCwdPolicy =
-		value === "Current workspace only"
+		value === "This workspace only"
 			? "current-workspace"
-			: value === "Anywhere · normal Pi permissions"
+			: value === "Any folder Pi can access"
 				? "anywhere"
 				: "trusted-targets";
 	if (next === previous) return { kind: "stay" as const };
@@ -945,7 +965,7 @@ function blockReloadWithRetainedAgents(
 	const status = runtime.getRuntimeStatus();
 	if (status.retainedAgents === 0) return false;
 	ctx.ui.notify(
-		`Cannot reload while ${status.retainedAgents} detached subagent${status.retainedAgents === 1 ? " is" : "s are"} retained (${status.activeAgents} active). Open Current agents and clear them after their work is safe to discard, then change delegation.`,
+		`Cannot reload while ${status.retainedAgents} subagent${status.retainedAgents === 1 ? " is" : "s are"} saved for follow-up (${status.activeAgents} working). Open Current subagents and clear them after their work is safe to discard, then change how subagents run.`,
 		"warning",
 	);
 	return true;

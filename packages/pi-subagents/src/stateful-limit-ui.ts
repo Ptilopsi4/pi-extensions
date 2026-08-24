@@ -28,10 +28,10 @@ export function statefulLimitListScreen(runtime: StatefulLimitRuntime) {
 	const current = runtime.getRuntimeStatus().limits;
 	return {
 		kind: "actions" as const,
-		title: "Detached Agent Limits",
+		title: "Background Agent Limits",
 		lines: [
-			"These limits apply after /reload or the next Pi session.",
-			"Reloading can interrupt retained detached work.",
+			"These advanced limits apply after /reload or the next Pi session.",
+			"Reloading can interrupt subagents saved for follow-up.",
 			...(inspected.error
 				? [
 						`Settings cannot be edited: ${safeTerminalText(inspected.error)}`,
@@ -46,7 +46,7 @@ export function statefulLimitListScreen(runtime: StatefulLimitRuntime) {
 						return {
 							id: definition.field,
 							label: definition.label,
-							description: `Current ${current[definition.field]} · configured ${configured?.value ?? "unavailable"} (${configured?.source ?? "unknown"})`,
+							description: `Current: ${current[definition.field]} · after reload: ${configured?.value ?? "unavailable"} (${configured?.source ?? "unknown"})`,
 							action: "pick-stateful-limit" as const,
 						};
 					})
@@ -67,7 +67,7 @@ export function statefulLimitInputScreen(field: StatefulLimitField, runtime: Sta
 		lines: [
 			definition.description,
 			`Current session: ${runtime.getRuntimeStatus().limits[field]}`,
-			`Configured after reload: ${configured?.value ?? "unavailable"} (${configured?.source ?? "unknown"})`,
+			`After reload: ${configured?.value ?? "unavailable"} (${configured?.source ?? "unknown"})`,
 			`Allowed: whole numbers ${definition.minimum === 0 ? "0 or greater" : "1 or greater"}`,
 			`Read from: ${safeTerminalText(inspected.path)}`,
 			...(inspected.writePath !== inspected.path
@@ -114,9 +114,9 @@ export async function applyStatefulLimitSetting(
 		const confirmed = await ctx.ui.confirm(
 			`Lower ${statefulLimitDefinition(field).label}?`,
 			[
-				`This configured value would omit ${affectedBefore.length} currently retained agent record${affectedBefore.length === 1 ? "" : "s"} from projected recovery after reload.`,
-				"No agent is closed now, and this menu will not reload Pi.",
-				"A later state rewrite can make omitted records unavailable for recovery.",
+				`After reload, this value could exclude ${affectedBefore.length} saved subagent record${affectedBefore.length === 1 ? "" : "s"} from recovery.`,
+				"No subagent is removed now, and this menu will not reload Pi.",
+				"A later state save can make excluded records unavailable for recovery.",
 			].join("\n\n"),
 			{ signal: options.signal },
 		);
@@ -127,7 +127,10 @@ export async function applyStatefulLimitSetting(
 			[field]: next,
 		});
 		if (!sameIds(affectedBefore, affectedAfter)) {
-			ctx.ui.notify("Detached agents changed while confirming; review the limit again.", "warning");
+			ctx.ui.notify(
+				"Current subagents changed while confirming; review the limit again.",
+				"warning",
+			);
 			return { kind: "rejected" as const };
 		}
 	}
@@ -138,7 +141,7 @@ export async function applyStatefulLimitSetting(
 	} catch (error) {
 		if (options.isCurrent() && !options.signal.aborted) {
 			ctx.ui.notify(
-				`Detached limit was not saved; the previous setting is unchanged: ${formatError(error)}`,
+				`Background-agent limit was not saved; the previous setting is unchanged: ${formatError(error)}`,
 				"error",
 			);
 		}
@@ -146,7 +149,7 @@ export async function applyStatefulLimitSetting(
 	}
 	if (options.signal.aborted || !options.isCurrent()) return { kind: "close" as const };
 	ctx.ui.notify(
-		`Saved ${statefulLimitDefinition(field).label.toLowerCase()}: ${next}. Applies after /reload; clear retained agents before reloading if their work must not be interrupted.`,
+		`Saved ${statefulLimitDefinition(field).label.toLowerCase()}: ${next}. Applies after /reload; clear current subagents first if their work must not be interrupted.`,
 		"info",
 	);
 	return { kind: "back" as const };
@@ -154,11 +157,11 @@ export async function applyStatefulLimitSetting(
 
 export function formatDetachedLimitSummary(status: StatefulSubagentRuntimeStatus): string {
 	return [
-		`${status.limits.maxAgents} retained`,
-		`${status.limits.maxActiveTurns} active turns`,
-		`${status.limits.maxChildrenPerAgent} children`,
-		`depth ${status.limits.maxDepth}`,
-		`${status.limits.maxStoredAgents} stored`,
+		`${status.limits.maxAgents} saved`,
+		`${status.limits.maxActiveTurns} working at once`,
+		`${status.limits.maxChildrenPerAgent} children each`,
+		`${status.limits.maxDepth} nested levels`,
+		`${status.limits.maxStoredAgents} stored records`,
 	].join(" · ");
 }
 
@@ -172,7 +175,7 @@ export function formatConfiguredDetachedLimitDivergence(
 			? []
 			: [`${definition.label.toLowerCase()} ${configured}`];
 	});
-	return changed.length > 0 ? `Configured after reload: ${changed.join(" · ")}` : undefined;
+	return changed.length > 0 ? `After /reload: ${changed.join(" · ")}` : undefined;
 }
 
 export function formatConfiguredDetachedLimits(
@@ -185,9 +188,9 @@ export function formatConfiguredDetachedLimits(
 }
 
 export function formatEmptyStatefulRuntime(status: StatefulSubagentRuntimeStatus): string {
-	if (!status.enabled) return "Stateful subagents are disabled in user settings.";
-	if (!status.initialized) return "Stateful subagents are not initialized for this session.";
-	return "No current-session subagents.";
+	if (!status.enabled) return "Background subagents are disabled in How subagents run.";
+	if (!status.initialized) return "Background subagents have not started in this session.";
+	return "No subagents are working or saved for follow-up in this session.";
 }
 
 function parseStatefulLimit(

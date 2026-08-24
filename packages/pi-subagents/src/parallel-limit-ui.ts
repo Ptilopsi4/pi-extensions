@@ -14,11 +14,12 @@ export function blockingParallelLimitScreen(runtime: BlockingParallelLimitRuntim
 	const limit = inspectBlockingParallelLimitSettings();
 	return {
 		kind: "input" as const,
-		title: "Maximum Parallel Workers",
+		title: "Blocking Worker Limit",
 		lines: [
-			`Current: ${runtime.getMaxParallelTasks()} worker tasks per blocking call`,
+			"This applies only to requests that make Pi wait for delegated work.",
+			`Current: ${runtime.getMaxParallelTasks()} subagents per blocking request`,
 			`Allowed: 1-${MAX_CONFIGURABLE_PARALLEL_TASKS}`,
-			`Parallel execution still starts at most ${MAX_BLOCKING_PARALLEL_CONCURRENCY} workers at once.`,
+			`Pi still starts at most ${MAX_BLOCKING_PARALLEL_CONCURRENCY} of them at once.`,
 			safeTerminalText(limit.path),
 		],
 		placeholder: "Enter a whole number",
@@ -89,7 +90,7 @@ export function applyBlockingParallelLimitSetting(
 		}
 	}
 	ctx.ui.notify(
-		`${settingsChanged ? "Saved and " : ""}applied: maximum ${next} parallel workers per blocking call.`,
+		`${settingsChanged ? "Saved and " : ""}applied: maximum ${next} subagents per blocking request.`,
 		"info",
 	);
 	return { kind: "back" as const };
@@ -97,7 +98,7 @@ export function applyBlockingParallelLimitSetting(
 
 function notifyValidationError(ctx: ExtensionCommandContext): void {
 	ctx.ui.notify(
-		`Maximum parallel workers must be a whole number from 1 to ${MAX_CONFIGURABLE_PARALLEL_TASKS}.`,
+		`Blocking worker limit must be a whole number from 1 to ${MAX_CONFIGURABLE_PARALLEL_TASKS}.`,
 		"warning",
 	);
 }

@@ -6,7 +6,7 @@ Delegate bounded research or implementation work to isolated specialist agents w
 
 Use the built-in `explorer` for read-only evidence and `worker` for a clearly owned implementation slice.
 
-The compatibility default exposes every delegation method, while **Async only** is the recommended smaller surface for normal parallel work.
+The compatibility default exposes background and blocking methods, while **Keep Pi available** is the recommended smaller surface for normal parallel work.
 
 ## ✨ Features
 
@@ -46,28 +46,28 @@ An unbuilt checkout intentionally has no declared generated entrypoint.
 
 ## 🚀 Quick start
 
-For normal async-first use, run `/subagents`, choose **Change delegation**, select **Async only · Recommended**, confirm the exact tool changes, and reload.
+For normal background use, run `/subagents`, choose **How subagents run**, select **Keep Pi available · Recommended**, confirm the exact tool changes, and reload.
 
 This registers `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect` while keeping the main agent responsive.
 
 Default `next-turn` delivery is for work the current response does not require.
-When the final answer depends on detached work, use `/subagents settings` to select **Resume automatically when finished**.
+When the final answer depends on background work, use `/subagents settings` → **Completion and privacy** to select **Continue automatically when work finishes**.
 
-Keep **All delegation methods** when an explicit blocking workflow or synchronous read-only `subagent_consult` is still required.
+Keep **Background and blocking methods** when an explicit blocking workflow or synchronous read-only `subagent_consult` is still required.
 
 Async-first delegation still requires useful parallel main-agent work, clear worker ownership, and a supported completion path.
 
 ## 💬 Commands
 
 - `/subagents` opens the current-session manager in TUI mode and reports bounded status in RPC mode.
-- `/subagents settings` configures target locations, trusted resources, async completion delivery, and local usage recording.
-- `/subagents status` shows current-session and configured values with their sources.
-- `/subagents help` summarizes the command surface and isolation limits.
+- `/subagents settings` opens the same grouped settings hub used by the main menu.
+- `/subagents status` shows detailed current-session and configured diagnostics with their sources.
+- `/subagents help` explains first steps, settings behavior, commands, and safety limits.
 
 ## ⚙️ Settings
 
-Use `/subagents settings` for target location, trust, consultation resource, detached-completion preferences, and local usage recording.
-Use `/subagents` → **Advanced settings** for delegation workflow, agent tool permissions, and runtime limits.
+Use `/subagents settings` for **Folders and trusted resources**, **Completion and privacy**, **Agent defaults**, and **Advanced runtime settings**.
+Use `/subagents` → **How subagents run** to change the registered delegation tools.
 Settings are stored in `~/.pi/agent/pi-subagents.json`; the detailed sections below document precedence, reload requirements, and safety behavior.
 
 ## 📊 Local usage recording
@@ -98,14 +98,14 @@ A failed write drops that event, reports one bounded warning, and retries on lat
 ## 🛠️ Tools
 
 `pi-subagents` registers seven tools by default.
-Run `/subagents`, choose **Change delegation**, review the concrete tool changes, then select **Save and reload** to apply one of these workflows:
+Run `/subagents`, choose **How subagents run**, review the concrete tool changes, then select **Save and reload** to apply one of these workflows:
 
 | Workflow | Registered tools |
 | --- | --- |
-| **All delegation methods** (compatibility default) | `subagent`, `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, `subagent_inspect`, and `subagent_consult` |
-| **Async only** (recommended) | `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect` |
-| **Blocking only** (compatibility) | `subagent`, `subagent_inspect`, and `subagent_consult` |
-| **Disabled** | `subagent_inspect` only; delegation is disabled |
+| **Background and blocking methods** (compatibility default) | `subagent`, `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, `subagent_inspect`, and `subagent_consult` |
+| **Keep Pi available** (recommended) | `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect` |
+| **Wait for every subagent** (compatibility) | `subagent`, `subagent_inspect`, and `subagent_consult` |
+| **Subagents disabled** | `subagent_inspect` only; delegation is disabled |
 
 `subagent` and `subagent_consult` remain explicit compatibility routes with no current deprecation deadline.
 The four async lifecycle tools stay separate because starting work, sending follow-ups, managing lifecycle, and queueing mailbox messages have different contracts.
@@ -114,7 +114,7 @@ Any default change, tool removal, or lifecycle consolidation requires a separate
 The preview compares the selection with the tools registered in the current session, even when a manual settings edit is pending, and remains read-only until confirmation.
 Escape or **Cancel** leaves settings unchanged.
 Tool removal requires an extension reload because Pi does not expose extension tool unregistration.
-To avoid aborting work or removing isolated worktrees during `session_shutdown`, workflow changes are blocked while detached agents are retained; finish or clear them through **Current agents** first.
+To avoid aborting work or removing isolated worktrees during `session_shutdown`, workflow changes are blocked while background agents are saved for follow-up; finish or clear them through **Current subagents** first.
 Pi owns reload-error reporting and does not return a success result to extensions, so the save notification also tells users to run `/reload` if the tool surface does not refresh.
 
 The available tools are:
@@ -669,18 +669,20 @@ Set it to `auto` for deterministic preflight selection: read-only built-in tools
 Automatic selection never falls back after child creation or prompt acceptance.
 
 Run `/subagents` in TUI mode to open the standard primary manager.
-It leads with the current delegation workflow, human-readable async completion behavior, consultation/delegation target policies, consultation-resource policy, parallel-worker limit, and active/retained counts.
-**Change delegation**, **Current agents**, and **Settings** cover the common workflows.
-Agent permissions, **Maximum parallel workers**, **Detached agent limits**, **Performance and execution**, transport/runtime details, source, and settings path remain under **Advanced settings**.
-**Performance and execution** provides responsiveness guidance, transport previews, and per-agent model/thinking/timeout defaults.
+It leads with how subagents run, what Pi does when work finishes, and counts of working subagents and subagents saved for follow-up.
+**How subagents run**, **Current subagents**, **Settings**, **Diagnostics**, and **Help** are the only top-level actions.
+**Settings** groups **Folders and trusted resources**, **Completion and privacy**, **Agent defaults**, and **Advanced runtime settings** by user task.
+**Diagnostics** shows detailed current-session values, configured values, sources, and the settings path.
+**Advanced runtime settings** provides optional transport and capacity controls that most users can leave unchanged.
+**Agent defaults** groups tool permissions with per-agent model, thinking, and time-limit defaults.
 Per-agent defaults preserve tool and context settings, and explicit tool-call values remain authoritative.
 The parallel-worker input rejects invalid values without discarding the draft and applies a successful save immediately.
-The detached-limit screen edits retained capacity, active-turn concurrency, direct children, tree depth, and stored-record capacity.
+The background-agent limit screen edits saved-subagent capacity, concurrent work, direct children, nested levels, and stored-record capacity.
 Detached-limit saves are durable immediately but apply to the runtime after `/reload` or the next Pi session.
 Escape returns from a nested screen to a newly refreshed manager, while Ctrl+C closes the full flow.
 Exact workflow/reload and project-agent safety confirmations remain extension-owned because they guard live agent and trust-boundary policy rather than ordinary navigation.
 
-The direct routes remain predictable: `/subagents settings` changes both target policies, consultation resources, and completion delivery and applies them immediately, including refreshing model-facing tool guidance; `/subagents status` reports current-session runtime values separately from configured values, per-field sources, and path; `/subagents help` summarizes the single-command interface and the non-sandbox limitation.
+The direct routes remain predictable: `/subagents settings` opens the same four settings groups as the manager; `/subagents status` reports detailed current-session runtime values separately from configured values, per-field sources, and path; `/subagents help` explains first steps, reload behavior, commands, and the non-sandbox limitation.
 In RPC mode, bare `/subagents` emits the same bounded status through Pi's notification protocol instead of opening a custom TUI.
 JSON and print modes do not emit ad hoc command output.
 Manual edits use `~/.pi/agent/pi-subagents.json` and take effect after reloading Pi:
@@ -722,14 +724,14 @@ The settings UI patches the raw JSON atomically and preserves unknown fields.
 It refuses to overwrite malformed or invalid settings.
 Supported Pi writers serialize the latest-document read and same-directory temporary-file rename through `pi-subagents.json.mutation-lock`.
 Editors and older extension versions do not participate in that lock, so avoid manual edits while a settings save is in progress.
-`blocking.enabled` defaults to `true`, so **All delegation methods** remains the compatibility default.
-Set it to `false` for the recommended async-only workflow.
+`blocking.enabled` defaults to `true`, so **Background and blocking methods** remains the compatibility default.
+Set it to `false` for the recommended **Keep Pi available** workflow.
 `blocking.maxParallelTasks` defaults to `8` and accepts positive integers from `1` through `64`.
 It limits worker tasks in one blocking parallel call, while execution still starts at most four workers at once and treats an optional aggregator separately.
 `stateful.enabled` also defaults to `true`; its existing `false` value remains the blocking-only workflow.
 The detached defaults are `maxAgents: 16`, `maxActiveTurns: 4`, `maxChildrenPerAgent: 8`, `maxDepth: 3`, and `maxStoredAgents: 50`.
 `maxDepth` accepts zero or a positive safe integer, while the other four detached limits accept positive safe integers.
-Use `/subagents` → **Advanced settings** → **Detached agent limits** to edit them without replacing unknown JSON fields.
+Use `/subagents settings` → **Advanced runtime settings** → **Background agent limits** to edit them without replacing unknown JSON fields.
 The screen shows current-session and configured values separately because changes apply after `/reload`.
 It never reloads automatically, because reload can interrupt retained detached work.
 Lowering retained, depth, or stored capacity shows a projected recovery warning when current records would be omitted.
@@ -766,7 +768,7 @@ For example:
 }
 ```
 
-Use the **Current agents** action in `/subagents` to inspect the indented agent tree, lifecycle state, unread count, and available actions, or to confirm clearing retained agents.
+Use **Current subagents** in `/subagents` to inspect the indented agent tree, lifecycle state, unread count, and current task summary, or to confirm clearing subagents saved for follow-up.
 Active turns are FIFO-limited by `maxActiveTurns`; excess retained work remains in `starting` state until a slot is available.
 `maxAgents` separately bounds running, queued, and idle records.
 `maxChildrenPerAgent` bounds direct children, while `maxDepth` counts nested levels below a depth-zero root.
@@ -968,8 +970,8 @@ Users who need shell-assisted read-mostly work can define a custom agent, but `b
 
 ## ⚙️ Configure agent tools
 
-Open `/subagents`, choose **Advanced settings**, then **Agent tool permissions** in an interactive Pi session to edit the tools each subagent may use.
-Choose **Performance and execution** → **Agent execution defaults** to edit provider-neutral inherited model patterns, thinking levels, and timeouts without changing tools.
+Open `/subagents settings`, choose **Agent defaults**, then **Tool permissions** in an interactive Pi session to edit the tools each subagent may use.
+Choose **Model, thinking, and time limit** to edit provider-neutral model patterns, thinking levels, and time limits without changing tools.
 The standard bounded multi-select keeps a one-save draft: toggles do not write until **Save changes**, Escape leaves the draft without writing, and unavailable configured tool names remain visible and preserved.
 In TUI mode, type to fuzzy-search tool names and availability metadata; Save and Discard remain pinned below the matches.
 These are user settings stored in `~/.pi/agent/pi-subagents.json` and affect future sessions.
@@ -1072,7 +1074,7 @@ Passing `confirmProjectAgents: false` as another top-level tool argument skips t
 
 Every turn can combine main-agent-selected wall-clock, idle, assistant-turn, and tool-call budgets with an extension-owned hard-bounded finalization deadline.
 
-- Set `blocking.maxParallelTasks` in `~/.pi/agent/pi-subagents.json`, or use `/subagents` → **Advanced settings** → **Maximum parallel workers**, to allow 1 through 64 worker tasks in one blocking parallel call.
+- Set `blocking.maxParallelTasks` in `~/.pi/agent/pi-subagents.json`, or use `/subagents settings` → **Advanced runtime settings** → **Blocking worker limit**, to allow 1 through 64 worker tasks in one blocking parallel call.
 - The worker-count limit defaults to 8 and does not change the fixed four-at-a-time execution concurrency.
 - Set `timeoutMs` on the top-level blocking call to apply a work deadline to all jobs.
 - Set `timeoutMs` on a task, chain step, or aggregator to override it locally.
@@ -1182,7 +1184,7 @@ Snapshots hash agent manifests, prompts, effective tools, model/thinking, transp
 A non-Git target has no stable repository generation proof, so each later follow-up requires explicit revalidation.
 Count projection keeps complete ancestor chains together when stored or restored limits omit older trees.
 Retention and count limits are configurable.
-Downgrading is safe: older extension versions ignore this separate state directory; clear **Current agents** from `/subagents` before downgrade if the histories should be removed.
+Downgrading is safe: older extension versions ignore this separate state directory; clear **Current subagents** from `/subagents` before downgrade if the histories should be removed.
 
 ## 🗂️ Package layout
 

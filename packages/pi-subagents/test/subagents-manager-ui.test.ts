@@ -62,14 +62,15 @@ test("bare subagents opens a current-session manager and keeps direct routes pre
 		assert.ok(managerRenders.flat().every((line) => visibleWidth(line) <= 52));
 		const managerText = managerRenders.flat().join("\n");
 		assert.match(managerText, /Subagents/);
-		assert.match(managerText, /Delegation: All delegation methods/);
-		assert.match(managerText, /Completion: Wait until my next turn/);
-		assert.match(managerText, /Agents: 0 active.*0 retained/);
-		assert.match(managerText, /Change delegation/);
-		assert.match(managerText, /Current agents/);
+		assert.match(managerText, /How subagents run: Background and blocking methods/);
+		assert.match(managerText, /When work finishes: Wait for my next message/);
+		assert.match(managerText, /Subagents: 0 working.*0 saved for follow-up/);
+		assert.match(managerText, /How subagents run/);
+		assert.match(managerText, /Current subagents/);
 		assert.match(managerText, /Settings/);
-		assert.match(managerText, /Consult resources: Project context only/);
-		assert.match(managerText, /Advanced settings/);
+		assert.match(managerText, /Diagnostics/);
+		assert.match(managerText, /Help/);
+		assert.doesNotMatch(managerText, /Consult resources:|Settings: \/|Transport:/);
 		assert.equal(managerContext.notifications.length, 0);
 
 		let nestedCall = 0;
@@ -85,9 +86,13 @@ test("bare subagents opens a current-session manager and keeps direct routes pre
 			},
 		});
 		await command.handler("", nestedContext.ctx);
-		assert.equal(nestedCall, 2, "settings uses the manager's integrated screen stack");
-		assert.match(nestedRenders[0]?.join("\n") ?? "", /Delegation:/);
-		assert.match(nestedRenders[1]?.join("\n") ?? "", /Subagent User Settings/);
+		assert.equal(nestedCall, 3, "settings uses the manager's integrated screen stack");
+		assert.match(nestedRenders[0]?.join("\n") ?? "", /How subagents run:/);
+		assert.match(nestedRenders[1]?.join("\n") ?? "", /Subagent Settings/);
+		assert.match(nestedRenders[1]?.join("\n") ?? "", /Folders and trusted resources/);
+		assert.match(nestedRenders[1]?.join("\n") ?? "", /Completion and privacy/);
+		assert.match(nestedRenders[1]?.join("\n") ?? "", /Agent defaults/);
+		assert.match(nestedRenders[1]?.join("\n") ?? "", /Advanced runtime settings/);
 
 		let agentRouteCall = 0;
 		const agentRouteRenders: string[][] = [];
@@ -103,8 +108,11 @@ test("bare subagents opens a current-session manager and keeps direct routes pre
 		});
 		await command.handler("", agentRouteContext.ctx);
 		assert.equal(agentRouteCall, 3);
-		assert.match(agentRouteRenders[1]?.join("\n") ?? "", /Current-session Subagents/);
-		assert.match(agentRouteRenders[1]?.join("\n") ?? "", /No current-session subagents/);
+		assert.match(agentRouteRenders[1]?.join("\n") ?? "", /Current Subagents/);
+		assert.match(
+			agentRouteRenders[1]?.join("\n") ?? "",
+			/No subagents are working or saved for follow-up/,
+		);
 
 		let directCalls = 0;
 		const directRenders: string[][] = [];
@@ -120,8 +128,8 @@ test("bare subagents opens a current-session manager and keeps direct routes pre
 		});
 		await command.handler("settings", directContext.ctx);
 		assert.equal(directCalls, 1);
-		assert.match(directRenders.flat().join("\n"), /Subagent User Settings/);
-		assert.doesNotMatch(directRenders.flat().join("\n"), /Current session/);
+		assert.match(directRenders.flat().join("\n"), /Subagent Settings/);
+		assert.doesNotMatch(directRenders.flat().join("\n"), /Current Session/);
 
 		const rpcContext = createMockContext({
 			mode: "rpc",
@@ -131,8 +139,8 @@ test("bare subagents opens a current-session manager and keeps direct routes pre
 			},
 		});
 		await command.handler("", rpcContext.ctx);
-		assert.match(rpcContext.notifications[0]?.message ?? "", /Current session/);
-		assert.match(rpcContext.notifications[0]?.message ?? "", /User settings/);
+		assert.match(rpcContext.notifications[0]?.message ?? "", /Current Session/);
+		assert.match(rpcContext.notifications[0]?.message ?? "", /User Settings/);
 
 		for (const mode of ["json", "print"]) {
 			const headlessContext = createMockContext({
@@ -147,11 +155,13 @@ test("bare subagents opens a current-session manager and keeps direct routes pre
 		}
 
 		await command.handler("status", managerContext.ctx);
-		assert.match(managerContext.notifications.at(-1)?.message ?? "", /Current session/);
-		assert.match(managerContext.notifications.at(-1)?.message ?? "", /User settings/);
+		assert.match(managerContext.notifications.at(-1)?.message ?? "", /Current Session/);
+		assert.match(managerContext.notifications.at(-1)?.message ?? "", /User Settings/);
 		await command.handler("help", managerContext.ctx);
-		assert.match(managerContext.notifications.at(-1)?.message ?? "", /configure agent tools/);
-		assert.doesNotMatch(managerContext.notifications.at(-1)?.message ?? "", /subagents:/);
+		assert.match(managerContext.notifications.at(-1)?.message ?? "", /Start here/);
+		assert.match(managerContext.notifications.at(-1)?.message ?? "", /Keep Pi available/);
+		assert.match(managerContext.notifications.at(-1)?.message ?? "", /detailed diagnostics/);
+		assert.doesNotMatch(managerContext.notifications.at(-1)?.message ?? "", /Usage path:/);
 		await command.handler("unknown", managerContext.ctx);
 		assert.match(
 			managerContext.notifications.at(-1)?.message ?? "",
@@ -165,6 +175,83 @@ test("bare subagents opens a current-session manager and keeps direct routes pre
 		for (const handler of mock.events.get("session_shutdown") ?? []) {
 			await handler({}, managerContext.ctx);
 		}
+	} finally {
+		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("settings groups keep agent and runtime capabilities reachable", async () => {
+	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-settings-structure-"));
+	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = directory;
+	try {
+		const mock = createMockPi();
+		subagents(mock.pi);
+		const command = mock.commands.get("subagents");
+		assert.ok(command);
+		let call = 0;
+		const frames: string[] = [];
+		const context = createMockContext({
+			mode: "tui",
+			hasUI: true,
+			custom: async (factory: unknown) => {
+				const harness = createCustomSelectorHarness(factory, 72);
+				const frame = stripVTControlCharacters(harness.render().join("\n"));
+				frames.push(frame);
+				if (call === 0) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else if (call === 1) {
+					assert.match(frame, /Agent Defaults/);
+					assert.match(frame, /Tool permissions/);
+					assert.match(frame, /Model, thinking, and time limit/);
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else if (call === 2) {
+					assert.match(frame, /Model, Thinking, and Time Limit/);
+					harness.handleInput("tui.select.cancel");
+				} else if (call === 3) {
+					harness.handleInput("tui.select.cancel");
+				} else if (call === 4) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.confirm");
+				} else if (call === 5) {
+					assert.match(frame, /Advanced Runtime Settings/);
+					assert.match(frame, /Transport/);
+					assert.match(frame, /Blocking worker limit/);
+					assert.match(frame, /Background agent limits/);
+					assert.doesNotMatch(frame, /Responsiveness setup/);
+					harness.handleInput("tui.select.confirm");
+				} else if (call === 6) {
+					assert.match(frame, /Background Agent Transport/);
+					assert.match(frame, /Automatic.*Recommended/);
+					assert.doesNotMatch(frame, /Preview Automatic/);
+					harness.handleInput("tui.select.cancel");
+				} else if (call === 7) {
+					harness.handleInput("tui.select.cancel");
+				} else if (call === 8) {
+					harness.handleInput("tui.select.up");
+					harness.handleInput("tui.select.up");
+					harness.handleInput("tui.select.confirm");
+				} else {
+					assert.match(frame, /Completion and Privacy/);
+					assert.match(frame, /When background work finishes/);
+					assert.match(frame, /Local usage recording/);
+					harness.handleInput("\u0003");
+				}
+				call++;
+				return harness.result;
+			},
+		});
+
+		await command.handler("settings", context.ctx);
+		assert.equal(call, 10, frames.join("\n---\n"));
+		assert.ok(
+			frames.flatMap((frame) => frame.split("\n")).every((line) => visibleWidth(line) <= 72),
+		);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -223,14 +310,13 @@ test("agent tool drafts preserve settings across searchable save, discard, and E
 			custom: async (factory: unknown) => {
 				const harness = createCustomSelectorHarness(factory, 70);
 				openedScreens.push(stripVTControlCharacters(harness.render().join("\n")));
-				if (call === 0) {
-					for (let index = 0; index < 3; index += 1) {
-						harness.handleInput("tui.select.down");
-					}
+				if (call === 0 || call === 1) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
-				} else if (call === 1 || call === 2) {
+				} else if (call === 2 || call === 3) {
 					harness.handleInput("tui.select.confirm");
-				} else if (call === 3) {
+				} else if (call === 4) {
 					assert.match(stripVTControlCharacters(harness.render().join("\n")), /missing-tool/);
 					for (const input of ["r", "e", "m", "o", "t", "e"]) harness.handleInput(input);
 					const filtered = stripVTControlCharacters(harness.render().join("\n"));
@@ -256,7 +342,7 @@ test("agent tool drafts preserve settings across searchable save, discard, and E
 		});
 
 		await command.handler("", context.ctx);
-		assert.equal(call, 5, openedScreens.join("\n---\n"));
+		assert.equal(call, 6, openedScreens.join("\n---\n"));
 		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
 			future: { kept: true },
 			agents: { explorer: { tools: ["read", "missing-tool", "remote-tool"] } },
@@ -269,14 +355,13 @@ test("agent tool drafts preserve settings across searchable save, discard, and E
 			hasUI: true,
 			custom: async (factory: unknown) => {
 				const harness = createCustomSelectorHarness(factory, 70);
-				if (discardCall === 0) {
-					for (let index = 0; index < 3; index += 1) {
-						harness.handleInput("tui.select.down");
-					}
+				if (discardCall === 0 || discardCall === 1) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
-				} else if (discardCall === 1 || discardCall === 2) {
+				} else if (discardCall === 2 || discardCall === 3) {
 					harness.handleInput("tui.select.confirm");
-				} else if (discardCall === 3) {
+				} else if (discardCall === 4) {
 					for (const input of ["b", "a", "s", "h"]) harness.handleInput(input);
 					harness.handleInput("tui.select.confirm");
 					harness.handleInput("tui.select.down");
@@ -293,7 +378,7 @@ test("agent tool drafts preserve settings across searchable save, discard, and E
 			},
 		});
 		await command.handler("", discardContext.ctx);
-		assert.equal(discardCall, 5);
+		assert.equal(discardCall, 6);
 		assert.equal(readFileSync(settingsPath, "utf8"), savedDocument);
 
 		let escapeCall = 0;
@@ -302,14 +387,13 @@ test("agent tool drafts preserve settings across searchable save, discard, and E
 			hasUI: true,
 			custom: async (factory: unknown) => {
 				const harness = createCustomSelectorHarness(factory, 70);
-				if (escapeCall === 0) {
-					for (let index = 0; index < 3; index += 1) {
-						harness.handleInput("tui.select.down");
-					}
+				if (escapeCall === 0 || escapeCall === 1) {
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
-				} else if (escapeCall === 1 || escapeCall === 2) {
+				} else if (escapeCall === 2 || escapeCall === 3) {
 					harness.handleInput("tui.select.confirm");
-				} else if (escapeCall === 3) {
+				} else if (escapeCall === 4) {
 					for (const input of ["b", "a", "s", "h"]) harness.handleInput(input);
 					harness.handleInput("tui.select.confirm");
 					harness.handleInput("tui.select.cancel");
@@ -323,7 +407,7 @@ test("agent tool drafts preserve settings across searchable save, discard, and E
 			},
 		});
 		await command.handler("", escapeContext.ctx);
-		assert.equal(escapeCall, 5);
+		assert.equal(escapeCall, 6);
 		assert.equal(readFileSync(settingsPath, "utf8"), savedDocument);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -354,12 +438,12 @@ test("workflow preview names every tool added or removed between compatibility s
 	);
 	assert.equal(previews.length, 2);
 	for (const preview of previews) {
-		assert.match(preview.title, /save delegation change and reload/i);
+		assert.match(preview.title, /save how subagents run and reload/i);
 		assert.match(preview.message, /subagent_spawn/);
 		assert.match(preview.message, /subagent_send/);
 		assert.match(preview.message, /subagent_manage/);
 		assert.match(preview.message, /subagent_mailbox/);
-		assert.match(preview.message, /blocking `subagent`/);
+		assert.match(preview.message, /make Pi wait: `subagent`/);
 		assert.match(preview.message, /read-only `subagent_consult`/);
 		assert.doesNotMatch(preview.message, /reusable async lifecycle tools/i);
 	}
@@ -396,15 +480,18 @@ test("delegation workflow preview applies async-only on confirmation and cancell
 		assert.equal(applyCall, 2);
 		assert.equal(reloads, 1);
 		assert.match(applyContext.notifications.at(-1)?.message ?? "", /run \/reload/i);
-		assert.match(applyRenders[0]?.join("\n") ?? "", /Delegation: All delegation methods/);
-		assert.match(applyRenders[1]?.join("\n") ?? "", /Async only.*Recommended/i);
+		assert.match(
+			applyRenders[0]?.join("\n") ?? "",
+			/How subagents run: Background and blocking methods/,
+		);
+		assert.match(applyRenders[1]?.join("\n") ?? "", /Keep Pi available.*Recommended/i);
 		assert.match(
 			applyRenders[1]?.join("\n") ?? "",
-			/recommended[\s\S]*main agent responsive[\s\S]*blocking delegation and consultation/i,
+			/recommended[\s\S]*Pi available[\s\S]*background/i,
 		);
 		assert.match(
 			applyRenders[1]?.join("\n") ?? "",
-			/final-answer-dependent detached work needs automatic[\s\S]*resume/i,
+			/results needed in the current answer[\s\S]*automatic\s+continuation[\s\S]*Settings/i,
 		);
 		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
 			future: true,
@@ -477,12 +564,17 @@ test("configured workflow differences reload from the active tool surface", asyn
 		await command.handler("", context.ctx);
 		assert.equal(call, 2);
 		assert.equal(reloads, 1);
-		assert.match(renders[0]?.join("\n") ?? "", /Configured after reload: Async only/);
-		assert.match(renders[1]?.join("\n") ?? "", /Current: All delegation methods/);
+		assert.match(renders[0]?.join("\n") ?? "", /Configured after reload: Keep Pi\s+available/);
+		assert.match(renders[1]?.join("\n") ?? "", /Current: Background and\s+blocking methods/);
 		assert.ok(renders.flat().every((line) => visibleWidth(line) <= 40));
 
 		reloads = 0;
-		const revertChoices = ["Change delegation", "All delegation methods", undefined, undefined];
+		const revertChoices = [
+			"How subagents run",
+			"Background and blocking methods",
+			undefined,
+			undefined,
+		];
 		const revertContext = createMockContext({
 			mode: "tui",
 			hasUI: true,
@@ -516,7 +608,7 @@ test("configured workflow differences reload from the active tool surface", asyn
 			});
 			await widthCommand.handler("", widthContext.ctx);
 			assert.ok(lines.every((line) => visibleWidth(line) <= width));
-			assert.match(lines.join("\n"), /Delegation: All delegation methods/);
+			assert.match(lines.join("\n"), /How subagents run: Background and\s+blocking methods/);
 		}
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -584,7 +676,7 @@ test("config lifecycle aborts pending confirmations before stateful session hand
 	}
 });
 
-test("delegation workflow blocks reload while detached agents are retained", async () => {
+test("workflow changes block reload while subagents are saved for follow-up", async () => {
 	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-workflow-retained-"));
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = directory;
@@ -639,7 +731,7 @@ test("delegation workflow blocks reload while detached agents are retained", asy
 		assert.equal(readFileSync(settingsPath, "utf8"), "{}\n");
 		assert.match(
 			context.notifications.at(-1)?.message ?? "",
-			/2 detached subagents.*retained.*1 active.*Current agents/i,
+			/2 subagents.*saved for follow-up.*1 working.*Current subagents/i,
 		);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -690,7 +782,7 @@ test("delegation workflow save failure does not reload or claim application", as
 	}
 });
 
-test("current-session manager excludes already closed agent records", async () => {
+test("current subagents excludes already closed agent records", async () => {
 	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-closed-manager-"));
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = directory;
@@ -755,7 +847,7 @@ test("current-session manager excludes already closed agent records", async () =
 		await command.handler("", context.ctx);
 		assert.equal(call, 3);
 		assert.deepEqual(includeClosedArguments, [false]);
-		assert.match(renders[1]?.join("\n") ?? "", /No current-session subagents/);
+		assert.match(renders[1]?.join("\n") ?? "", /No subagents are working or saved for follow-up/);
 		assert.doesNotMatch(renders[1]?.join("\n") ?? "", /sa_closed/);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

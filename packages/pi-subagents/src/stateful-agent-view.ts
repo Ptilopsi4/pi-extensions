@@ -3,28 +3,10 @@ import type { ManagedAgent } from "./registry.js";
 
 export function formatStatefulAgentLine(agent: ManagedAgent, now = Date.now()): string {
 	const elapsedSeconds = Math.max(0, Math.floor((now - agent.updatedAt) / 1000));
-	const actions =
-		agent.state === "running" || agent.state === "starting"
-			? "interrupt, close"
-			: agent.state === "closed"
-				? "inspect"
-				: "send, close";
 	const task = agent.currentTask ? ` — ${sanitizeStatusLine(agent.currentTask, 80)}` : "";
 	const unread = agent.mailbox.filter((message) => !message.readAt).length;
 	const indent = "  ".repeat(agent.depth);
-	const thinking = agent.thinkingLevel ? ` thinking:${agent.thinkingLevel}` : "";
-	const timeout = agent.currentTimeoutMs ?? agent.timeoutMs;
-	const timeoutText = timeout ? ` timeout:${timeout}ms` : "";
-	const idleTimeout = agent.currentIdleTimeoutMs ?? agent.idleTimeoutMs;
-	const idleText = idleTimeout ? ` idle:${idleTimeout}ms` : "";
-	const maxTurns = agent.currentMaxTurns ?? agent.maxTurns;
-	const turnsText = maxTurns ? ` turns:${maxTurns}` : "";
-	const maxToolCalls = agent.currentMaxToolCalls ?? agent.maxToolCalls;
-	const toolsText = maxToolCalls ? ` tools:${maxToolCalls}` : "";
-	const transport = agent.telemetry?.transport ? ` transport:${agent.telemetry.transport}` : "";
-	const phase = agent.telemetry?.phase ? ` phase:${agent.telemetry.phase}` : "";
-	const queued = agent.telemetry?.queuePosition ? ` queue:${agent.telemetry.queuePosition}` : "";
-	return `${indent}${sanitizeStatusLine(agent.taskPath ?? agent.id, 256)} (${sanitizeStatusLine(agent.id, 128)}) ${sanitizeStatusLine(agent.agent, 128)} ${agent.state} ${elapsedSeconds}s${thinking}${timeoutText}${idleText}${turnsText}${toolsText}${transport}${phase}${queued} unread:${unread} [${actions}]${task}`;
+	return `${indent}${sanitizeStatusLine(agent.taskPath ?? agent.id, 256)} · ${sanitizeStatusLine(agent.agent, 128)} · ${agentStateLabel(agent.state)} · updated ${elapsedSeconds}s ago · ${unread} unread${task}`;
 }
 
 export function summarizeStatefulAgent(agent: ManagedAgent) {
@@ -75,6 +57,17 @@ export function summarizeStatefulAgent(agent: ManagedAgent) {
 		target: agent.target,
 		policy: agent.policy,
 	};
+}
+
+function agentStateLabel(state: ManagedAgent["state"]): string {
+	switch (state) {
+		case "running":
+			return "working";
+		case "completed":
+			return "finished";
+		default:
+			return state;
+	}
 }
 
 function sanitizeStatusLine(value: string, maxLength: number): string {
