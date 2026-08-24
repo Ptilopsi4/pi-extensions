@@ -154,7 +154,10 @@ test("disabled stateful settings do not advertise unavailable lifecycle tools", 
 			},
 		});
 		await command.handler("", context.ctx);
-		assert.match(renders.flat().join("\n"), /How subagents run: Wait for every subagent/);
+		assert.match(
+			renders.flat().join("\n"),
+			/How subagents run: Compatibility blocking methods \(sync\)/,
+		);
 		await command.handler("help", context.ctx);
 		assert.match(context.notifications.at(-1)?.message ?? "", /Start here/);
 		assert.match(context.notifications.at(-1)?.message ?? "", /Keep Pi available/);

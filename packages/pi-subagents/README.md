@@ -6,7 +6,7 @@ Delegate bounded research or implementation work to isolated specialist agents w
 
 Use the built-in `explorer` for read-only evidence and `worker` for a clearly owned implementation slice.
 
-The compatibility default exposes background and blocking methods, while **Keep Pi available** is the recommended smaller surface for normal parallel work.
+The compatibility default exposes background and blocking methods, while **Keep Pi available (async)** is the recommended smaller surface for normal parallel work.
 
 ## ✨ Features
 
@@ -46,14 +46,15 @@ An unbuilt checkout intentionally has no declared generated entrypoint.
 
 ## 🚀 Quick start
 
-For normal background use, run `/subagents`, choose **How subagents run**, select **Keep Pi available · Recommended**, confirm the exact tool changes, and reload.
+For normal background use, run `/subagents`, choose **How subagents run**, select **Keep Pi available (async) · Recommended**, confirm the exact tool changes, and reload.
 
 This registers `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect` while keeping the main agent responsive.
 
 Default `next-turn` delivery is for work the current response does not require.
 When the final answer depends on background work, use `/subagents settings` → **Completion and privacy** to select **Continue automatically when work finishes**.
 
-Keep **Background and blocking methods** when an explicit blocking workflow or synchronous read-only `subagent_consult` is still required.
+Choose **Background plus compatibility methods (async + sync)** only when an existing blocking `subagent` caller, supported `subagent_await` join, or synchronous read-only `subagent_consult` is still required.
+The blocking `subagent` tool is deprecated for new work.
 
 Async-first delegation still requires useful parallel main-agent work, clear worker ownership, and a supported completion path.
 
@@ -102,14 +103,16 @@ Run `/subagents`, choose **How subagents run**, review the concrete tool changes
 
 | Workflow | Registered tools |
 | --- | --- |
-| **Background and blocking methods** (compatibility default) | `subagent`, `subagent_spawn`, `subagent_send`, `subagent_await`, `subagent_manage`, `subagent_mailbox`, `subagent_inspect`, and `subagent_consult` |
-| **Keep Pi available** (recommended) | `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect` |
-| **Wait for every subagent** (compatibility) | `subagent`, `subagent_inspect`, and `subagent_consult` |
+| **Background plus compatibility methods (async + sync)** (compatibility default) | `subagent`, `subagent_spawn`, `subagent_send`, `subagent_await`, `subagent_manage`, `subagent_mailbox`, `subagent_inspect`, and `subagent_consult` |
+| **Keep Pi available (async)** (recommended) | `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect` |
+| **Compatibility blocking methods (sync)** | `subagent`, `subagent_inspect`, and `subagent_consult` |
 | **Subagents disabled** | `subagent_inspect` only; delegation is disabled |
 
-`subagent` and `subagent_consult` remain explicit compatibility routes with no current deprecation deadline.
+`subagent` is deprecated for new work but remains registered in compatibility workflows with its existing schema and execution behavior.
+No removal release or date is currently set because chain, fan-in, panel, and explicit workflow callers do not yet have one-for-one detached replacements.
+`subagent_consult` and `subagent_await` remain supported and are not deprecated.
 The four async lifecycle tools stay separate because starting work, sending follow-ups, managing lifecycle, and queueing mailbox messages have different contracts.
-`subagent_await` is a separate blocking join and is omitted from **Keep Pi available**.
+`subagent_await` is a separate blocking join and is omitted from **Keep Pi available (async)**.
 Any default change, tool removal, or lifecycle consolidation requires a separately approved compatibility migration.
 
 The preview compares the selection with the tools registered in the current session, even when a manual settings edit is pending, and remains read-only until confirmation.
@@ -120,7 +123,8 @@ Pi owns reload-error reporting and does not return a success result to extension
 
 The available tools are:
 
-- `subagent` — delegate blocking single, parallel, fan-in, chained, panel-review, or explicit dependency-workflow tasks.
+- `subagent` — deprecated compatibility tool for blocking single, parallel, fan-in, chained, panel-review, or explicit dependency-workflow calls.
+  Existing callers remain supported, but new work should prefer the main agent, detached lifecycle tools, or `subagent_consult` according to the task.
   The main agent cannot process queued steering until the call returns.
 - `subagent_spawn` and related lifecycle tools — when enabled, start reusable detached work, return immediately, and receive bounded completion messages automatically.
 - `subagent_await` — intentionally block until one retained turn settles or its independent wait timeout expires; timeout and cancellation never interrupt the child.
@@ -163,7 +167,7 @@ Choose the API by lifecycle:
 | Broad read-only evidence that can run beside main-agent work | Use async `subagent_spawn` with `explorer` |
 | Final-answer-dependent detached work | Enable `completionDelivery: "auto-resume"` so completion requests a synthesis turn |
 | Bounded synchronous read-only evidence whose independent perspective justifies waiting | Use `subagent_consult` when blocking delegation is enabled |
-| Intentional synchronous workflow, panel, chain, or fan-in | Use blocking `subagent` when making the main agent unavailable is justified |
+| Existing synchronous workflow, panel, chain, or fan-in caller without a detached replacement | Keep deprecated `subagent` as a compatibility route |
 | Reusable history, follow-ups, or mailboxes | Use `subagent_spawn` and lifecycle tools when enabled |
 | One retained result is now required and useful overlapping parent work is complete | Use `subagent_await` when blocking delegation is enabled |
 | Side-effect-free agent/model/run diagnostics | Use `subagent_inspect` |
@@ -222,7 +226,7 @@ For real isolation, run Pi in a container, VM, micro-VM, or OS sandbox with only
 
 ## 🧭 Proactive use
 
-When registered, the blocking `subagent` tool advertises only blocking guidance.
+When registered, deprecated `subagent` advertises its migration paths and limits compatibility use to existing callers or explicit requests whose orchestration semantics lack a detached replacement.
 When stateful lifecycle tools are registered, `subagent_spawn` adds detached guidance for the active completion-delivery policy.
 Changing the policy through `/subagents settings` refreshes that guidance immediately.
 
@@ -250,7 +254,7 @@ Delegation guidance:
 - Use multiple workers only for truly independent slices with disjoint write ownership and safe workspace concurrency, and keep integration in the main agent.
 - Keep ordinary planning in the main agent or express a genuine dependency graph through an explicit caller-authored `workflow` payload.
 - Keep ordinary review in the main agent with a review skill and deterministic checks; reserve custom verifier agents or panels for consequential independent verification.
-- Use blocking `subagent` only when intentional synchronous output or isolation justifies making the main agent unavailable.
+- Do not choose deprecated `subagent` for new work; retain it only for an existing caller or an explicit request whose chain, fan-in, panel, or workflow semantics lack a detached replacement.
 - Do not use project-local agents unless the user explicitly opts into them with `agentScope: "project"` or `"both"`; keep confirmation enabled for untrusted repositories.
 
 Examples where the main agent chooses the topology:
@@ -729,8 +733,8 @@ The settings UI patches the raw JSON atomically and preserves unknown fields.
 It refuses to overwrite malformed or invalid settings.
 Supported Pi writers serialize the latest-document read and same-directory temporary-file rename through `pi-subagents.json.mutation-lock`.
 Editors and older extension versions do not participate in that lock, so avoid manual edits while a settings save is in progress.
-`blocking.enabled` defaults to `true`, so **Background and blocking methods** remains the compatibility default.
-Set it to `false` for the recommended **Keep Pi available** workflow.
+`blocking.enabled` defaults to `true`, so **Background plus compatibility methods (async + sync)** remains the compatibility default even though `subagent` is deprecated for new work.
+Set it to `false` for the recommended **Keep Pi available (async)** workflow.
 `blocking.maxParallelTasks` defaults to `8` and accepts positive integers from `1` through `64`.
 It limits worker tasks in one blocking parallel call, while execution still starts at most four workers at once and treats an optional aggregator separately.
 `stateful.enabled` also defaults to `true`; its existing `false` value remains the blocking-only workflow.
@@ -1048,7 +1052,7 @@ The scope selects which custom agent directories are loaded; built-in agents rem
 | `"project"` | Project-local agents only. |
 | `"both"` | User and project-local agents. Project definitions override same-named user definitions. |
 
-For example, invoke a project-local agent with the blocking `subagent` tool:
+For an existing compatibility caller, invoke a project-local agent with the deprecated blocking `subagent` tool:
 
 ```json
 {
@@ -1277,7 +1281,7 @@ packages/pi-subagents/
 The package build bundles that source graph into split `.ts` files under `dist` for Pi's Jiti loader.
 `subagents.ts` and `stateful.ts` preserve existing source-level utility imports without making those utility graphs part of Pi startup.
 Workflow settings remain backward compatible: older files without `blocking.enabled` receive the eight-tool default, and an absent `blocking.maxParallelTasks` keeps the previous eight-worker limit.
-Existing `stateful.enabled: false` files expose blocking delegation plus inspection/consultation.
+Existing `stateful.enabled: false` files expose deprecated blocking `subagent` plus supported inspection and consultation.
 Older package releases ignore and preserve the optional `blocking.maxParallelTasks`, `consult`, `cwdPolicy`, and `usageRecording` fields.
 The package exposes its Pi extension through `package.json`:
 

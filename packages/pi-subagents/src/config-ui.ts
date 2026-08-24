@@ -287,8 +287,9 @@ export async function showSubagentManager(
 					title: "How Subagents Run",
 					lines: [
 						`Current: ${workflowLabel(active)}`,
-						"Recommended: Keep Pi available while subagents work in the background.",
-						"Methods that make Pi wait are available for compatibility.",
+						"Recommended: Keep Pi available (async) while subagents work in the background.",
+						"The blocking subagent tool is deprecated and remains available only for compatibility.",
+						"subagent_consult and subagent_await remain supported blocking helpers.",
 						"For results needed in the current answer, enable automatic continuation in Settings.",
 						...(snapshot.value !== active
 							? [`Configured after reload: ${workflowLabel(snapshot.value)}`]
@@ -305,20 +306,22 @@ export async function showSubagentManager(
 						: [
 								{
 									id: "async-only",
-									label: "Keep Pi available · Recommended",
+									label: `${workflowLabel("async-only")} · Recommended`,
 									description: "Subagents work in the background while you continue using Pi",
 									action: "set-workflow" as const,
 								},
 								{
 									id: "all",
-									label: "Background and blocking methods",
-									description: "Also allow delegated work that makes Pi wait for a result",
+									label: workflowLabel("all"),
+									description:
+										"Background agents plus deprecated subagent and supported blocking helpers",
 									action: "set-workflow" as const,
 								},
 								{
 									id: "blocking-only",
-									label: "Wait for every subagent",
-									description: "Disable background agents and make Pi wait for delegated work",
+									label: workflowLabel("blocking-only"),
+									description:
+										"No background agents; deprecated subagent plus read-only consultation",
 									action: "set-workflow" as const,
 								},
 							],

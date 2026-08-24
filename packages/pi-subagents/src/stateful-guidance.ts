@@ -10,7 +10,7 @@ export function createSpawnPromptGuidelines(
 				? "With subagent_spawn completion delivery set to auto-resume, prefer one subagent_spawn for broad asynchronous research or consequential independent review that covers related branches even when the final answer depends on its result; do not choose blocking parallel fan-out merely to keep delegation in the same turn."
 				: "With subagent_spawn completion delivery set to auto-resume, prefer one subagent_spawn for broad asynchronous research or consequential independent review that covers related branches even when the final answer depends on its result."
 			: blockingEnabled
-				? "With subagent_spawn completion delivery set to next-turn (the default), prefer one subagent_spawn for broad asynchronous research or consequential independent review only when the current response does not depend on its result; use the blocking subagent when the final answer depends on the detached result."
+				? "With subagent_spawn completion delivery set to next-turn (the default), prefer one subagent_spawn for broad asynchronous research or consequential independent review only when the current response does not depend on its result; when it does, use subagent_spawn only with useful overlap and call subagent_await after that overlap is complete. Do not migrate new work to the deprecated subagent tool."
 				: "With subagent_spawn completion delivery set to next-turn (the default), use subagent_spawn only when the current response does not depend on its result; complete final-answer-dependent work directly because an idle root is not awakened.";
 	return [
 		"Do not use subagent_spawn for simple or critical-path work that the main agent can perform directly. The main agent retains overall planning, immediate critical-path work, integration, final verification, and the final answer.",
@@ -24,8 +24,8 @@ export function createSpawnPromptGuidelines(
 		"Use a single subagent_spawn without concurrent main-agent work only for an explicit user-requested specialist model, tool profile, or isolation boundary.",
 		...(blockingEnabled
 			? [
-					"Use the blocking subagent instead of subagent_spawn when synchronous output is required before the main agent can continue and waiting is intentional; queued steering cannot be processed until that blocking call returns.",
-					"When subagent_spawn fits the completion-delivery policy, do not choose a blocking parallel subagent merely to keep delegation in the same turn.",
+					"The subagent tool is deprecated; do not select it merely because synchronous output is required. Prefer subagent_spawn with supported completion delivery, and use subagent_await only after useful overlapping main-agent work is complete and an intentional join is required.",
+					"Use deprecated subagent instead of subagent_spawn only for an existing caller or an explicit user request whose blocking chain, fan-in, panel, or workflow semantics do not yet have a detached replacement; queued steering cannot be processed until it returns.",
 				]
 			: []),
 		"Add another subagent_spawn only for truly independent work with safe workspace concurrency and disjoint write ownership; shared workspaces permit concurrent writes by default, so use workspaceMode worktree when repository isolation is required. The main agent still owns integration.",

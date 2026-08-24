@@ -62,7 +62,10 @@ test("bare subagents opens a current-session manager and keeps direct routes pre
 		assert.ok(managerRenders.flat().every((line) => visibleWidth(line) <= 52));
 		const managerText = managerRenders.flat().join("\n");
 		assert.match(managerText, /Subagents/);
-		assert.match(managerText, /How subagents run: Background and blocking methods/);
+		assert.match(
+			managerText,
+			/How subagents run: Background plus compatibility\s+methods \(async \+ sync\)/,
+		);
 		assert.match(managerText, /When work finishes: Wait for my next message/);
 		assert.match(managerText, /Subagents: 0 working.*0 saved for follow-up/);
 		assert.match(managerText, /How subagents run/);
@@ -160,6 +163,10 @@ test("bare subagents opens a current-session manager and keeps direct routes pre
 		await command.handler("help", managerContext.ctx);
 		assert.match(managerContext.notifications.at(-1)?.message ?? "", /Start here/);
 		assert.match(managerContext.notifications.at(-1)?.message ?? "", /Keep Pi available/);
+		assert.match(
+			managerContext.notifications.at(-1)?.message ?? "",
+			/blocking subagent tool is deprecated/i,
+		);
 		assert.match(managerContext.notifications.at(-1)?.message ?? "", /detailed diagnostics/);
 		assert.doesNotMatch(managerContext.notifications.at(-1)?.message ?? "", /Usage path:/);
 		await command.handler("unknown", managerContext.ctx);
@@ -443,7 +450,7 @@ test("workflow preview names every tool added or removed between compatibility s
 		assert.match(preview.message, /subagent_send/);
 		assert.match(preview.message, /subagent_manage/);
 		assert.match(preview.message, /subagent_mailbox/);
-		assert.match(preview.message, /make Pi wait: `subagent`/);
+		assert.match(preview.message, /deprecated blocking `subagent`/);
 		assert.match(preview.message, /read-only `subagent_consult`/);
 		assert.doesNotMatch(preview.message, /reusable async lifecycle tools/i);
 	}
@@ -482,9 +489,12 @@ test("delegation workflow preview applies async-only on confirmation and cancell
 		assert.match(applyContext.notifications.at(-1)?.message ?? "", /run \/reload/i);
 		assert.match(
 			applyRenders[0]?.join("\n") ?? "",
-			/How subagents run: Background and blocking methods/,
+			/How subagents run: Background plus compatibility methods\s+\(async \+ sync\)/,
 		);
-		assert.match(applyRenders[1]?.join("\n") ?? "", /Keep Pi available.*Recommended/i);
+		const workflowText = applyRenders[1]?.join("\n") ?? "";
+		assert.match(workflowText, /Keep Pi available \(async\).*Recommended/i);
+		assert.match(workflowText, /Background plus compatibility methods\s+\(async \+ sync\)/i);
+		assert.match(workflowText, /Compatibility blocking methods \(sync\)/i);
 		assert.match(
 			applyRenders[1]?.join("\n") ?? "",
 			/recommended[\s\S]*Pi available[\s\S]*background/i,
@@ -564,14 +574,20 @@ test("configured workflow differences reload from the active tool surface", asyn
 		await command.handler("", context.ctx);
 		assert.equal(call, 2);
 		assert.equal(reloads, 1);
-		assert.match(renders[0]?.join("\n") ?? "", /Configured after reload: Keep Pi\s+available/);
-		assert.match(renders[1]?.join("\n") ?? "", /Current: Background and\s+blocking methods/);
+		assert.match(
+			renders[0]?.join("\n") ?? "",
+			/Configured after reload: Keep Pi\s+available \(async\)/,
+		);
+		assert.match(
+			renders[1]?.join("\n") ?? "",
+			/Current: Background plus compatibility\s+methods \(async \+ sync\)/,
+		);
 		assert.ok(renders.flat().every((line) => visibleWidth(line) <= 40));
 
 		reloads = 0;
 		const revertChoices = [
 			"How subagents run",
-			"Background and blocking methods",
+			"Background plus compatibility methods (async + sync)",
 			undefined,
 			undefined,
 		];
@@ -608,7 +624,10 @@ test("configured workflow differences reload from the active tool surface", asyn
 			});
 			await widthCommand.handler("", widthContext.ctx);
 			assert.ok(lines.every((line) => visibleWidth(line) <= width));
-			assert.match(lines.join("\n"), /How subagents run: Background and\s+blocking methods/);
+			assert.match(
+				lines.join("\n"),
+				/How subagents run: Background plus\s+compatibility methods\s+\(async \+ sync\)/,
+			);
 		}
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
