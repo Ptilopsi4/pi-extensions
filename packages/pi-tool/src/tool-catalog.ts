@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { MenuDefinition } from "@narumitw/pi-tui-kit";
 
 export interface ToolCatalogState {
@@ -76,10 +76,43 @@ export function createToolCatalog(
 	return { title: `Tools · ${activeCount}/${tools.length} active`, items };
 }
 
-export function createToolMenu(catalog: ToolCatalog): MenuDefinition<undefined, "tools", never> {
+type ToolMenuScreen = "main" | "tools" | "status" | "help";
+type ToolMenuAction = "toggleActiveToolStatus";
+
+export interface ToolMenuOptions {
+	settingsPath: string;
+	isActiveToolStatusEnabled(): boolean;
+	toggleActiveToolStatus(ctx: ExtensionCommandContext, enabled: boolean): Promise<boolean>;
+}
+
+export function createToolMenu(
+	catalog: ToolCatalog,
+	options: ToolMenuOptions,
+): MenuDefinition<undefined, ToolMenuScreen, ToolMenuAction> {
 	return {
-		start: "tools",
+		start: "main",
 		screens: {
+			main: () => ({
+				kind: "actions",
+				title: "Tools",
+				lines: [
+					catalog.title,
+					`Active tool status: ${options.isActiveToolStatusEnabled() ? "on" : "off"}`,
+				],
+				items: [
+					{ id: "tools", label: "Browse tools", to: "tools" },
+					{
+						id: "active-tool-status",
+						label: `Active tool status: ${options.isActiveToolStatusEnabled() ? "On" : "Off"}`,
+						description: "Show or hide active tools above the editor",
+						action: "toggleActiveToolStatus",
+					},
+					{ id: "status", label: "Status", to: "status" },
+					{ id: "help", label: "Help", to: "help" },
+					{ id: "close", label: "Close", close: true },
+				],
+				hint: "close",
+			}),
 			tools: () => ({
 				kind: "browse",
 				title: catalog.title,
@@ -95,9 +128,36 @@ export function createToolMenu(catalog: ToolCatalog): MenuDefinition<undefined, 
 					},
 				})),
 				viewportSize: "adaptive",
-				hint: "close",
+				hint: "back",
+			}),
+			status: () => ({
+				kind: "detail",
+				title: "Tool Status",
+				lines: [
+					catalog.title,
+					`Active tool status: ${options.isActiveToolStatusEnabled() ? "on" : "off"}`,
+					`Settings file: ${options.settingsPath}`,
+				],
+				hint: "back",
+			}),
+			help: () => ({
+				kind: "detail",
+				title: "Tool Help",
+				lines: [
+					"Browse tools to inspect their metadata and schemas.",
+					"Toggle Active tool status from the main /tool menu.",
+					"Manual pi-tool.json changes apply after /reload or the next session start.",
+				],
+				hint: "back",
 			}),
 		},
-		actions: {},
+		actions: {
+			toggleActiveToolStatus: async ({ ctx }) => {
+				const enabled = !options.isActiveToolStatusEnabled();
+				return (await options.toggleActiveToolStatus(ctx, enabled))
+					? { kind: "stay" }
+					: { kind: "rejected" };
+			},
+		},
 	};
 }

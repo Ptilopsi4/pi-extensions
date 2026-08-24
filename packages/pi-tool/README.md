@@ -1,8 +1,8 @@
-# 🧰 pi-tool — Browse Pi Tools and Their Schemas
+# 🧰 pi-tool — Browse Pi Tools and Track Active Tools
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-tool)](https://www.npmjs.com/package/@narumitw/pi-tool) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-Browse every tool configured in the current Pi session and inspect its active state, description, origin, schema, and prompt guidance through one read-only `/tool` command.
+Browse every tool configured in the current Pi session and optionally show the active tool set above the editor.
 
 ## ✨ Features
 
@@ -11,7 +11,10 @@ Browse every tool configured in the current Pi session and inspect its active st
 - Displays the complete JSON parameter schema and prompt guidelines exposed by Pi.
 - Shows the effective system-prompt snippet for each active tool.
 - Refreshes metadata every time the catalog opens.
-- Never changes tools, settings, files, or session data.
+- Optionally shows the current active tools above the editor.
+- Keeps the active-tool widget off by default.
+- Persists widget changes in the extension-owned `pi-tool.json` settings file.
+- Never enables, disables, or executes Pi tools.
 
 ## 📦 Install
 
@@ -46,8 +49,9 @@ Run:
 /tool
 ```
 
-Type to filter the list, move to a tool, and press Enter to open its details.
-Escape returns to the list and then closes the catalog.
+Choose **Browse tools** to search the catalog and inspect a tool.
+Choose **Active tool status** directly from the main menu to turn the widget on or off.
+The widget is off until you enable it.
 
 The command works in TUI and RPC modes.
 It rejects arguments and rejects print or JSON modes because Pi does not provide an observable interactive command surface there.
@@ -56,9 +60,36 @@ It rejects arguments and rejects print or JSON modes because Pi does not provide
 
 | Command | Description |
 | --- | --- |
-| `/tool` | Browse configured tools and inspect their exposed metadata. |
+| `/tool` | Browse configured tools and configure the active-tool widget. |
 
 `/tool` intentionally accepts no arguments and does not enable, disable, or execute tools.
+Its menu provides Browse tools, a direct active-tool status toggle, Status, and Help.
+
+## ⚙️ Settings
+
+The active user settings file is `<getAgentDir()>/pi-tool.json`, normally `~/.pi/agent/pi-tool.json`.
+The file is not created when the widget remains at its default.
+Use this document to enable the widget manually:
+
+```json
+{
+  "activeToolStatus": true
+}
+```
+
+`activeToolStatus` accepts `true` or `false` and defaults to `false` when absent.
+Manual edits apply after `/reload` or the next session start.
+The `/tool` menu toggle applies changes immediately and persists them with an atomic file replacement.
+Settings writes preserve unknown fields so newer configuration is not erased.
+Malformed JSON or an invalid value is ignored with a warning and is never overwritten by the menu.
+Writes are ordered within one Pi process, but separate Pi processes do not share a settings lock.
+
+## ℹ️ Active-tool widget
+
+When enabled, the widget shows every name returned by Pi's public `pi.getActiveTools()` API above the editor.
+It refreshes when relevant lifecycle events fire and polls for changes made by other extensions.
+It clears immediately when disabled and during session replacement, reload, or shutdown.
+Tool names are sanitized and bounded before terminal rendering.
 
 ## ℹ️ Metadata limits
 
@@ -72,9 +103,11 @@ Pi does not expose a tool's implementation, runtime secrets, or label through th
 ```text
 packages/pi-tool/
 ├── src/
-│   ├── index.ts         # Thin repository entrypoint
-│   ├── tool.ts          # Command and session lifecycle ownership
-│   └── tool-catalog.ts  # Lazy browse menu and exact detail projection
+│   ├── index.ts               # Thin repository entrypoint
+│   ├── tool.ts                # Command, settings, and session lifecycle ownership
+│   ├── tool-catalog.ts        # Lazy menu and exact catalog detail projection
+│   ├── active-tool-status.ts  # Widget formatting, refresh, and cleanup
+│   └── settings.ts            # pi-tool.json validation and atomic persistence
 ├── dist/                # Generated Jiti runtime and lazy catalog chunk
 ├── scripts/build-runtime.mjs
 ├── test/
@@ -86,7 +119,7 @@ packages/pi-tool/
 
 ## 🔎 Keywords
 
-Pi extension, Pi coding agent, tool browser, tool catalog, tool schema, prompt guidelines, TypeScript Pi package.
+Pi extension, Pi coding agent, tool browser, active tools, tool status, tool catalog, tool schema, TypeScript Pi package.
 
 ## 📄 License
 
