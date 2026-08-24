@@ -267,6 +267,20 @@ export function registerUsageRecording(
 				runId,
 				generation: completion.generation,
 				state: completion.agent.state,
+				...(completion.agent.outcome?.status
+					? { outcomeStatus: completion.agent.outcome.status }
+					: {}),
+				...(completion.agent.termination?.reason
+					? { terminationReason: completion.agent.termination.reason }
+					: {}),
+				...(completion.agent.telemetry?.budgetSource
+					? {
+							timeoutBudgetSource: completion.agent.telemetry.budgetSource.timeout,
+							idleTimeoutBudgetSource: completion.agent.telemetry.budgetSource.idleTimeout,
+							turnLimitBudgetSource: completion.agent.telemetry.budgetSource.turnLimit,
+							toolCallLimitBudgetSource: completion.agent.telemetry.budgetSource.toolCallLimit,
+						}
+					: {}),
 				...(timing?.startedAt !== undefined && timing.settledAt !== undefined
 					? { durationMs: Math.max(0, timing.settledAt - timing.startedAt) }
 					: {}),

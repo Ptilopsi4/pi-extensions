@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { CompletionDelivery } from "./agents/types.js";
 import { SUBAGENT_COMPLETION_MESSAGE_TYPE } from "./completion-render.js";
+import { requirementForCompletion } from "./completion-requirement.js";
 import { redactPrivateText } from "./context.js";
 import { DEFAULT_MAX_CONTEXT_BYTES, MAX_TOOL_MESSAGE_BYTES, truncateUtf8 } from "./limits.js";
 import type { AgentTurnCompletion, ManagedAgent } from "./registry.js";
@@ -27,6 +28,7 @@ interface CompletionMetadata {
 	structuredResult?: ManagedAgent["structuredResult"];
 	outcome?: ManagedAgent["outcome"];
 	capabilityGrant?: ManagedAgent["capabilityGrant"];
+	completionRequirement?: NonNullable<ManagedAgent["completionRequirements"]>[number];
 }
 
 interface CompletionMessage {
@@ -339,6 +341,7 @@ function buildCompletionMessage(completions: AgentTurnCompletion[]): CompletionM
 }
 
 function completionMetadata(completion: AgentTurnCompletion): CompletionMetadata {
+	const completionRequirement = requirementForCompletion(completion.agent, completion.completionId);
 	return {
 		protocol: PI_SUBAGENTS_RPC_PROTOCOL,
 		completionId: completion.completionId,
@@ -360,6 +363,7 @@ function completionMetadata(completion: AgentTurnCompletion): CompletionMetadata
 		...(completion.agent.capabilityGrant
 			? { capabilityGrant: completion.agent.capabilityGrant }
 			: {}),
+		...(completionRequirement ? { completionRequirement } : {}),
 	};
 }
 

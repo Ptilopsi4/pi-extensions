@@ -50,6 +50,12 @@ export interface TransportTelemetry {
 	model?: string;
 	thinkingLevel?: SubagentThinkingLevel;
 	usage?: TransportUsage;
+	budgetSource?: {
+		timeout: "runtime" | "explicit";
+		idleTimeout: "runtime" | "explicit";
+		turnLimit: "runtime" | "explicit";
+		toolCallLimit: "runtime" | "explicit";
+	};
 	failurePhase?: TransportProgressPhase;
 }
 

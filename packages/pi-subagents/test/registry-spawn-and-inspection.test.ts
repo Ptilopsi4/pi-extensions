@@ -23,6 +23,14 @@ test("spawn idempotency includes retained execution budgets", () => {
 	assert.notEqual(hashSpawnRequest(request), hashSpawnRequest({ ...request, maxToolCalls: 4 }));
 	assert.notEqual(
 		hashSpawnRequest(request),
+		hashSpawnRequest({ ...request, completionRequirement: "required" }),
+	);
+	assert.equal(
+		hashSpawnRequest(request),
+		hashSpawnRequest({ ...request, completionRequirement: "background" }),
+	);
+	assert.notEqual(
+		hashSpawnRequest(request),
 		hashSpawnRequest({ ...request, taskName: "research" }),
 	);
 	const { timeoutMs: _omitted, ...withoutTimeout } = request;
@@ -184,6 +192,7 @@ test("AgentRegistry exposes metadata-only inspection snapshots", async () => {
 		unreadMessages: 1,
 		turnGeneration: 1,
 		pendingCompletionCount: 0,
+		pendingRequiredCompletionCount: 0,
 	});
 	assert.doesNotMatch(JSON.stringify(listed), /private/);
 

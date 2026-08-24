@@ -1,5 +1,6 @@
 import type { SubagentThinkingLevel } from "./agents/types.js";
 import type { CapabilityGrant } from "./capability-grant.js";
+import type { CompletionRequirementRecord } from "./completion-requirement.js";
 import type { TargetPolicyAudit } from "./cwd-policy.js";
 import type { DelegationContract } from "./delegation-contract.js";
 import type { ExecutionPlan } from "./execution-plan.js";
@@ -14,6 +15,7 @@ export type AgentLifecycleState =
 	| "running"
 	| "idle"
 	| "completed"
+	| "partial"
 	| "blocked"
 	| "needs-input"
 	| "abstained"
@@ -85,6 +87,7 @@ export interface ManagedAgent {
 	currentRunId?: string;
 	currentTurnGeneration?: number;
 	pendingCompletions?: PersistedAgentCompletion[];
+	completionRequirements?: CompletionRequirementRecord[];
 	history: AgentTurn[];
 	error?: string;
 	context?: string;
@@ -123,6 +126,7 @@ export interface AgentRunInspectionSummary {
 	unreadMessages: number;
 	turnGeneration: number;
 	pendingCompletionCount: number;
+	pendingRequiredCompletionCount?: number;
 }
 
 export interface AgentRunInspectionDetail extends AgentRunInspectionSummary {
@@ -156,6 +160,7 @@ export interface AgentRunInspectionDetail extends AgentRunInspectionSummary {
 	semanticSnapshot?: SemanticSnapshot;
 	semanticCompatibility?: SemanticCompatibility;
 	termination?: TurnTerminationReport;
+	completionRequirements?: CompletionRequirementRecord[];
 	telemetry?: TransportTelemetry;
 }
 

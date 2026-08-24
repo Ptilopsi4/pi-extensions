@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AgentScope, SubagentThinkingLevel } from "./agents/types.js";
+import type { CompletionRequirementMode } from "./completion-requirement.js";
 import type { DelegationContract } from "./delegation-contract.js";
 import type { SubagentResultFormat } from "./result-contract.js";
 
@@ -23,6 +24,7 @@ export interface CanonicalSpawnRequest {
 	allowConcurrentWrites: boolean;
 	contract?: DelegationContract;
 	resultFormat: SubagentResultFormat;
+	completionRequirement?: CompletionRequirementMode;
 }
 
 export function hashSpawnRequest(request: CanonicalSpawnRequest): string {
@@ -48,6 +50,9 @@ export function hashSpawnRequest(request: CanonicalSpawnRequest): string {
 				allowConcurrentWrites: request.allowConcurrentWrites,
 				...(request.contract === undefined ? {} : { contract: request.contract }),
 				resultFormat: request.resultFormat,
+				...(request.completionRequirement === "required"
+					? { completionRequirement: "required" }
+					: {}),
 			}),
 		)
 		.digest("hex");

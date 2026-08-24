@@ -17,6 +17,11 @@ import {
 	THINKING_LEVELS,
 } from "./agents/types.js";
 import type { CompletionDeliveryBroker } from "./completion-delivery.js";
+import {
+	CompletionRequirementModeSchema,
+	completionRequirementsFromBranch,
+	reconcileRequiredCompletionContext,
+} from "./completion-requirement.js";
 import type { ContextMode } from "./context.js";
 import type { CreateStatefulTransportOptions } from "./create-stateful-transport.js";
 import { DelegationContractSchema } from "./delegation-contract.js";
@@ -381,7 +386,7 @@ export function registerStatefulSubagents(
 		if (!registry) throw new Error("Stateful subagents are not initialized for this session");
 		return registry;
 	};
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		const generation = ++runtimeGeneration;
 		completionBroker?.close();
 		completionBroker = undefined;
@@ -577,6 +582,26 @@ export function registerStatefulSubagents(
 				for (const message of agent.mailbox) seenMessageIds.add(message.id);
 			}
 			nextRegistry.restore(restored);
+			const branchRequirements = completionRequirementsFromBranch(ctx.sessionManager.getBranch());
+			const branchOwnsRequirementState =
+				branchRequirements.observedState || event.reason === "fork" || event.reason === "new";
+			nextRegistry.reconcileCompletionRequirements(
+				branchRequirements.records,
+				branchOwnsRequirementState,
+			);
+			if (branchOwnsRequirementState) {
+				try {
+					await sessionPersistence.save(nextRegistry.list(true));
+				} catch (error) {
+					if (generation === runtimeGeneration && ctx.hasUI) {
+						const reason = error instanceof Error ? error.message : String(error);
+						ctx.ui.notify(
+							`Subagent requirement reconciliation could not be persisted yet: ${reason}`,
+							"warning",
+						);
+					}
+				}
+			}
 			if (generation !== runtimeGeneration) {
 				sessionBroker.close();
 				await sessionPeerBroker.close();
@@ -616,6 +641,9 @@ export function registerStatefulSubagents(
 
 	pi.on("context", (event) => {
 		completionBroker?.onParentContext(event.messages);
+		const agents = registry?.list() ?? [];
+		const messages = reconcileRequiredCompletionContext(event.messages, agents);
+		if (messages !== event.messages) return { messages };
 	});
 
 	pi.on("agent_settled", () => {
@@ -716,6 +744,7 @@ export function registerStatefulSubagents(
 						"Use text (default), structured-v1, or the evidence-preserving structured-v2 completion contract.",
 				}),
 			),
+			completionRequirement: Type.Optional(CompletionRequirementModeSchema),
 		}),
 		...createStatefulToolRenderer("spawn"),
 		async execute(_id, params, signal, _update, ctx) {
@@ -807,6 +836,7 @@ export function registerStatefulSubagents(
 				allowConcurrentWrites: params.allowConcurrentWrites ?? false,
 				contract,
 				resultFormat,
+				completionRequirement: params.completionRequirement ?? "background",
 			});
 			if (!capturedRegistry) {
 				throw new Error("Stateful subagents are not initialized for this session");
@@ -900,6 +930,7 @@ export function registerStatefulSubagents(
 						spawnRequestHash: params.idempotencyKey ? requestHash : undefined,
 						contract,
 						resultFormat: resultFormat === "text" ? undefined : resultFormat,
+						completionRequirement: params.completionRequirement ?? "background",
 						executionPlan,
 						capabilityGrant,
 						semanticSnapshot,
@@ -921,9 +952,13 @@ export function registerStatefulSubagents(
 					completionDelivery === "auto-resume"
 						? "Auto-resume steers completions into active parent work or requests synthesis when idle. Treat this response as progress, not final synthesis, until every final-answer-required completion message is visible. If local work is exhausted while required children remain active, emit at most one brief progress sentence and end the turn; do not repeat waiting updates or use the requested final format, verdict, or conclusion. Do not redo a running child's assigned work."
 						: "The current response must not depend on the result because next-turn delivery will not wake an idle root.";
+				const requirementNote =
+					params.completionRequirement === "required"
+						? "This exact run is runtime-tracked as required until its completion becomes visible or reaches an explicit terminal state. Current Pi versions still cannot prevent already-streamed premature output."
+						: "This run is background work and does not block the parent final answer.";
 				return result(
 					agent,
-					`Spawned ${agent.agent} as ${agent.taskPath ?? agent.id} (${agent.id}). Continue the identified non-overlapping local work immediately; do not merely announce the spawn or end while useful local work remains. Only an explicit user-requested specialist model, tool-profile, or isolation exception may lack concurrent local work. ${deliveryNote} Do not poll for progress.`,
+					`Spawned ${agent.agent} as ${agent.taskPath ?? agent.id} (${agent.id}). ${requirementNote} Continue the identified non-overlapping local work immediately; do not merely announce the spawn or end while useful local work remains. Only an explicit user-requested specialist model, tool-profile, or isolation exception may lack concurrent local work. ${deliveryNote} Do not poll for progress.`,
 				);
 			} catch (error) {
 				rejectPending?.(error);
@@ -964,6 +999,7 @@ export function registerStatefulSubagents(
 				}),
 			),
 			...StatefulTurnLimitFields,
+			completionRequirement: Type.Optional(CompletionRequirementModeSchema),
 			revalidate: Type.Optional(
 				Type.Boolean({
 					description:
@@ -1082,6 +1118,7 @@ export function registerStatefulSubagents(
 				idleTimeoutMs: params.idleTimeoutMs,
 				maxTurns: params.maxTurns,
 				maxToolCalls: params.maxToolCalls,
+				completionRequirement: params.completionRequirement ?? "background",
 			});
 			assertCurrentSpawn(signal, generation, runtimeGeneration);
 			return result(agent, `Started follow-up for ${agent.id}.`);

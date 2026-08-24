@@ -58,7 +58,9 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 			name: string;
 			description: string;
 			promptGuidelines: string[];
-			parameters: { properties?: Record<string, { description?: string; maximum?: number }> };
+			parameters: {
+				properties?: Record<string, { description?: string; maximum?: number; enum?: string[] }>;
+			};
 		};
 		controller.setAgentCatalog(
 			'Available agent definitions\n- api-reviewer [source: user; agentScope: "user"] — Reviews APIs',
@@ -111,7 +113,9 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 		const send = mock.tools.find((tool) => tool.name === "subagent_send") as {
 			description: string;
 			promptSnippet?: string;
-			parameters: { properties?: Record<string, { description?: string; maximum?: number }> };
+			parameters: {
+				properties?: Record<string, { description?: string; maximum?: number; enum?: string[] }>;
+			};
 		};
 		assert.match(
 			send.parameters.properties?.timeoutMs?.description ?? "",
@@ -124,6 +128,10 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 			send.parameters.properties?.revalidate?.description ?? "",
 			/semantic resource snapshot/i,
 		);
+		assert.deepEqual(send.parameters.properties?.completionRequirement?.enum, [
+			"background",
+			"required",
+		]);
 		assert.match(
 			send.parameters.properties?.allowConcurrentWrites?.description ?? "",
 			/deprecated compatibility field.*allowed by default/i,
@@ -380,6 +388,14 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 			"structured-v1",
 			"structured-v2",
 		]);
+		assert.deepEqual(spawnTool.parameters.properties?.completionRequirement?.enum, [
+			"background",
+			"required",
+		]);
+		assert.match(
+			spawnTool.parameters.properties?.completionRequirement?.description ?? "",
+			/hard pre-display.*barrier/i,
+		);
 		assert.ok(spawnTool.parameters.properties?.contract);
 		const contractSchema = JSON.stringify(spawnTool.parameters.properties?.contract);
 		assert.match(contractSchema, /ordinary delegation.*omit/i);
@@ -541,7 +557,7 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 		assert.match(autoResumeGuidance, /even when.*final answer.*depends/i);
 		assert.match(
 			autoResumeGuidance,
-			/every final-answer-dependent subagent_spawn.*completion message.*visible/i,
+			/every final-answer-dependent subagent_spawn.*completionRequirement.*required.*visible.*terminal/i,
 		);
 		assert.match(
 			autoResumeGuidance,

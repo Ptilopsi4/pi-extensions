@@ -165,6 +165,33 @@ test("next-turn completion delivery never wakes an idle root", () => {
 	broker.close();
 });
 
+test("completion metadata carries the exact required run record", () => {
+	const harness = deliveryHarness();
+	const required = completion("sa_required");
+	required.agent.completionRequirements = [
+		{
+			version: "pi-subagents:completion-requirement:v1",
+			runId: required.runId,
+			generation: required.generation,
+			state: "available",
+			createdAt: 1,
+			updatedAt: 2,
+			completionId: required.completionId,
+			terminalState: "completed",
+		},
+	];
+	const broker = new CompletionDeliveryBroker(harness.pi as never, harness.ctx, "next-turn");
+	broker.enqueue(required);
+	broker.flush();
+	const sent = harness.sent[0];
+	assert.ok(sent);
+	assert.deepEqual(
+		(sent.message.details as Record<string, unknown>).completionRequirement,
+		required.agent.completionRequirements[0],
+	);
+	broker.close();
+});
+
 test("active-turn next-turn delivery queues once for context acknowledgement", () => {
 	const queuedSteering: Record<string, unknown>[] = [];
 	const insertedImmediately: Record<string, unknown>[] = [];

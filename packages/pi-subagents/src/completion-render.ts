@@ -139,6 +139,7 @@ function renderStatus(state: string): RenderStatus {
 			return "interrupted";
 		case "closed":
 			return "closed";
+		case "partial":
 		case "blocked":
 		case "needs-input":
 		case "abstained":

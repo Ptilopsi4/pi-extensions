@@ -201,8 +201,27 @@ test("usage recording stays dormant until opt-in and stores only bounded metadat
 		isError: false,
 		result: { content: [{ type: "text", text: "private result" }] },
 	});
-	recorder.observeAgents([managedAgent()]);
-	const agent = { ...managedAgent(), state: "completed" as const };
+	const baseAgent = managedAgent();
+	recorder.observeAgents([baseAgent]);
+	const agent: ManagedAgent = {
+		...baseAgent,
+		state: "partial" as const,
+		outcome: {
+			status: "partial" as const,
+			reasonCode: "tool_call_limit",
+			recoveryActions: [],
+			retryable: false,
+		},
+		telemetry: {
+			...(baseAgent.telemetry as NonNullable<ManagedAgent["telemetry"]>),
+			budgetSource: {
+				timeout: "runtime" as const,
+				idleTimeout: "runtime" as const,
+				turnLimit: "runtime" as const,
+				toolCallLimit: "explicit" as const,
+			},
+		},
+	};
 	const completion = {
 		completionId: "raw-completion-secret",
 		runId: "raw-run-secret",
@@ -252,6 +271,8 @@ test("usage recording stays dormant until opt-in and stores only bounded metadat
 	assert.match(serialized, /delivery_attempt/);
 	assert.match(serialized, /visible/);
 	assert.match(serialized, /"totalTokens":37/);
+	assert.match(serialized, /"outcomeStatus":"partial"/);
+	assert.match(serialized, /"toolCallLimitBudgetSource":"explicit"/);
 	assert.ok(
 		MemoryUsageStore.events.every((event) => {
 			const record = event as Record<string, unknown>;

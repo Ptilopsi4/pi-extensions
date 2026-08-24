@@ -24,7 +24,7 @@ export function createSpawnPromptGuidelines(
 		deliveryGuidance,
 		...(completionDelivery === "auto-resume"
 			? [
-					"Track every final-answer-dependent subagent_spawn by its returned agentId or taskPath, treat interim output as progress, and synthesize only after every corresponding completion message is visible.",
+					'Track every final-answer-dependent subagent_spawn by setting completionRequirement to "required" and retaining its returned agentId or taskPath; treat interim output as progress, and synthesize only after every corresponding completion message is visible or terminal.',
 				]
 			: []),
 		"Keep ordinary review in the main agent with a review skill and deterministic checks; use subagent_spawn for detached review only when consequential independent verification has concrete parallel value.",
@@ -38,7 +38,7 @@ export function createSpawnPromptGuidelines(
 			: []),
 		"Add another subagent_spawn only for truly independent work with safe workspace concurrency and disjoint write ownership; shared workspaces permit concurrent writes by default, so use workspaceMode worktree when repository isolation is required. The main agent still owns integration.",
 		"After subagent_spawn returns, immediately continue the identified local task; do not merely announce the spawn, wait, poll, or end the response while useful local work remains.",
-		"When final-answer-dependent subagent_spawn work remains active after local work is exhausted, emit at most one brief progress sentence and end the turn; do not repeat waiting updates or use the requested final format, verdict, or conclusion until every required completion is visible.",
+		"When completionRequirement required subagent_spawn work remains active after local work is exhausted, emit at most one brief progress sentence and end the turn; do not repeat waiting updates or use the requested final format, verdict, or conclusion until every required completion is visible or terminal. Current Pi versions do not enforce a hard pre-display barrier.",
 		"Do not duplicate assigned work from subagent_spawn while its retained agent is running; use a bounded parent fallback only after its completion reports failure or insufficient evidence.",
 		'Consume and synthesize available subagent_spawn completion messages; use subagent_manage with action "interrupt" or "close" for agents that are no longer needed.',
 		'Completion from subagent_spawn is delivered automatically. Do not poll with subagent_inspect or subagent_mailbox action "read", repeatedly check progress, or duplicate the delegated work.',
