@@ -645,8 +645,12 @@ Before one ordinary `subagent_spawn`, identify useful non-overlapping main-agent
 With default `next-turn` delivery, the current response must not depend on the result because an idle root is not awakened.
 With opt-in `auto-resume`, detached work may affect the final answer because completion steers into an active parent before its next model call or requests a synthesis turn from idle.
 Track every final-answer-dependent spawn by its returned ID or path, treat interim output as progress, and synthesize only after every corresponding completion message is visible.
+When local work finishes before required children, emit at most one brief progress sentence and end the turn rather than repeating waiting updates or using the requested final format, verdict, or conclusion.
 After spawning, immediately continue the identified local task instead of merely announcing the spawn, waiting, polling `subagent_inspect` or `subagent_mailbox`, duplicating the child task, or ending while useful local work remains.
 Do not duplicate a running child's assigned work; use a bounded parent fallback only after completion reports failure or insufficient evidence.
+Omit `contract` for ordinary `subagent_spawn` calls and use it only when explicit acceptance, authority, evidence, or admission semantics are required.
+Enforced `requestedAuthority.capabilities` and `requestedAuthority.tools` can be checked and narrowed, but enforced `readPaths`, `writePaths`, network, and secret guarantees reject before child launch because the executor cannot provide those boundaries.
+After that rejection, retry once without the unsupported fields or with audit enforcement only when they were advisory; stop when they represented a required security boundary.
 Add another detached agent only for truly independent work with safe workspace concurrency and disjoint write ownership.
 When both blocking and stateful delegation are enabled, `subagent_await` may intentionally join one retained turn after useful overlapping parent work is complete.
 Its `timeoutMs` defaults to 30 seconds and limits only the wait; timeout or caller cancellation does not interrupt or close the child.
@@ -670,6 +674,7 @@ If the direct parent cannot own delivery, routing walks toward the nearest live 
 An idle parent remains asleep, and inspection exposes its unread and pending-completion counts until a later turn consumes the envelope.
 When state must be reduced to its storage bound, persistence drops roots without pending completions first and trims old history rather than discarding an outbox-owned root.
 A completion is acknowledged only after the intended recipient context observes its exact `completionId`; an injection that returns synchronously but never reaches context remains pending for retry.
+The broker retains a bounded set of recently acknowledged IDs to suppress same-session re-enqueue while keeping memory bounded.
 If the process exits after context assembly but before acknowledgement is persisted, the same ID can be delivered again and consumers must deduplicate it.
 Auto-resume applies only to `/root`; nested delivery never silently starts the parent.
 Transient terminal-persistence failures retry with bounded exponential backoff and keep the run pending; shutdown cancels retry waits and reports a final persistence failure instead of silently resolving unsaved work.
@@ -1045,6 +1050,7 @@ Explicit workflow routing can match declared capabilities, configured tools, fil
 A missing or malformed manifest remains unknown and cannot satisfy a capability-routed task.
 The parent-facing catalog exposes contract-relevant declarations before the first delegation decision.
 Use those identifiers exactly; enforced `readPaths`, `writePaths`, network, and secret guarantees are currently unsupported and require an external enforcement boundary.
+A rejected enforced contract reports both contract repair and stop as recovery choices, but repair is safe only when the unsupported fields were descriptive rather than required protection.
 
 `agentScope` is a top-level tool argument supplied per invocation.
 It is not a setting in `~/.pi/agent/pi-subagents.json` and does not belong in agent frontmatter.
@@ -1097,6 +1103,7 @@ Every turn can combine main-agent-selected wall-clock, idle, assistant-turn, and
   Bounded process-cleanup grace may follow the deadline.
 - Set `idleTimeoutMs` to stop a turn that has produced no completed assistant turn or tool result within that interval.
 - Set `maxTurns` or `maxToolCalls` to stop unfinished repeated work; a terminal answer at the exact turn limit remains successful.
+- Give evidence tasks enough turn and tool-call headroom for discovery, reads, and final synthesis, or omit those optional limits instead of guessing tight values.
 - Set spawn budgets as retained defaults, or the same fields on `subagent_send` to override one follow-up turn.
 - Top-level blocking turn budgets apply to every job, while a task, chain step, or aggregator can override them locally.
 - Choose the shortest realistic budgets for the task difficulty; split an oversized task instead of extending limits merely to compensate for broad scope.

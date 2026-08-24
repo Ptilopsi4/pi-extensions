@@ -865,6 +865,10 @@ test("registered detached spawn auto-resumes while exposing the explicit await t
 			spawned.content[0]?.text ?? "",
 			/progress.*final synthesis.*every final-answer-required completion message.*visible/i,
 		);
+		assert.match(
+			spawned.content[0]?.text ?? "",
+			/local work.*exhausted.*at most one brief progress sentence.*end the turn.*do not repeat.*requested final format.*verdict/i,
+		);
 		assert.match(spawned.content[0]?.text ?? "", /do not redo a running child/i);
 		assert.doesNotMatch(spawned.content[0]?.text ?? "", /end the response/i);
 		assert.match(spawned.content[0]?.text ?? "", /do not merely announce.*end/i);

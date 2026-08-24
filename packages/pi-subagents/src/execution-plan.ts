@@ -201,7 +201,7 @@ export function acknowledgeExecutionPlan(plan: ExecutionPlan): ExecutionAcknowle
 	}
 	if (plan.unsupportedGuarantees.length > 0) {
 		reasonCodes.push("unsupported-guarantee");
-		recoveryActions.push("stop");
+		recoveryActions.push("repair-contract", "stop");
 	}
 	return {
 		version: EXECUTION_ACKNOWLEDGEMENT_VERSION,
