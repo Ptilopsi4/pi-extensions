@@ -167,7 +167,7 @@ test("Ctrl+C in the nested tool workflow closes the whole manager", async () => 
 				const harness = createCustomSelectorHarness(factory, 80);
 				if (!harness.isPiTuiKitScreen) return harness.resultPromise;
 				const rendered = harness.render().join("\n");
-				if (rendered.startsWith("Chrome DevTools\n")) {
+				if (hasScreenTitle(rendered, "Chrome DevTools")) {
 					mainScreens += 1;
 					if (mainScreens === 1) harness.handleInput("tui.select.confirm");
 					else harness.handleInput("\u0003");
@@ -229,9 +229,9 @@ test("bulk preview and nested detail navigation return without side effects", as
 					return harness.result;
 				}
 				if (
-					rendered.startsWith("Browser status") ||
+					hasScreenTitle(rendered, "Browser status") ||
 					(rendered.includes("DevTools endpoint") && rendered.includes("Auto-launch")) ||
-					rendered.startsWith("Chrome DevTools help")
+					hasScreenTitle(rendered, "Chrome DevTools help")
 				) {
 					details.push(rendered);
 					harness.setTerminalRows(8);
@@ -468,7 +468,7 @@ test("successful apply keeps unresolved settings warnings visible in the parent 
 				const harness = createCustomSelectorHarness(factory, 80);
 				if (!harness.isPiTuiKitScreen) return harness.resultPromise;
 				const rendered = harness.render().join("\n");
-				if (rendered.startsWith("Chrome DevTools\n")) {
+				if (hasScreenTitle(rendered, "Chrome DevTools")) {
 					mainScreen += 1;
 					if (mainScreen === 1) harness.handleInput("tui.select.confirm");
 					else {
@@ -601,6 +601,10 @@ test("review previews the exact tool effect and one confirmed apply persists it"
 		);
 	});
 });
+
+function hasScreenTitle(rendered: string, title: string) {
+	return rendered.split("\n").includes(title);
+}
 
 async function withTempAgentDir(run: () => Promise<void>) {
 	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-cdp-menu-test-"));
