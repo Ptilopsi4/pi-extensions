@@ -10,7 +10,7 @@ The list follows the active session branch and disappears cleanly when no tracke
 
 ## ✨ Features
 
-- Registers one `todo_widget` tool with clear guidance for meaningful multi-step work.
+- Registers one `update_todo_list` tool with clear guidance for meaningful multi-step work.
 - Keeps task text concise and action-oriented, with at most one task in progress.
 - Shows a compact themed task list and completion count above the editor in TUI mode.
 - Restores the latest valid list when Pi starts a session or navigates between branches.
@@ -44,7 +44,7 @@ Pi extensions run with the user's permissions, so install only trusted code.
 
 Ask Pi to perform work with multiple meaningful steps.
 
-The agent can create a concise list through `todo_widget`, mark one task `in_progress`, and revise the list when the plan changes.
+The agent can create a concise list through `update_todo_list`, mark one task `in_progress`, and revise the list when the plan changes.
 
 While a list is active, the extension reminds the agent to update it immediately after task status changes and to reconcile it before progress reports or the final response.
 
@@ -52,7 +52,7 @@ The agent sends the complete current list with every update and sends an empty l
 
 ## 🛠️ Tools
 
-### `todo_widget`
+### `update_todo_list`
 
 Replace the complete current todo list for the active session.
 
@@ -70,6 +70,8 @@ Accepted statuses are `pending`, `in_progress`, and `completed`.
 A list may contain up to 50 items, each item may contain up to 300 characters, and at most one item may be `in_progress`.
 
 The tool result stores a versioned snapshot in the session branch so branch navigation can reconstruct the latest valid list.
+
+Branch reconstruction also accepts valid results stored under the previous `todo_widget` name, but the extension only registers `update_todo_list` for new calls.
 
 Before each model call, the extension appends one hidden, non-persistent context reminder containing the current list as JSON data.
 
@@ -94,7 +96,7 @@ Terminal escape sequences, control characters, and bidirectional display control
 - The visual widget uses a fixed position above the editor and is available only in TUI mode.
 - The extension provides a model tool rather than a slash command or manual task editor.
 - The extension reminds the model to update statuses but cannot infer task completion or force a tool call.
-- Branch reconstruction uses only valid versioned `todo_widget` tool results on the active branch.
+- Branch reconstruction uses only valid versioned `update_todo_list` or legacy `todo_widget` tool results on the active branch.
 - Long task text is shown on one bounded terminal line and may be truncated to the available width.
 
 ## 🗂️ Package layout

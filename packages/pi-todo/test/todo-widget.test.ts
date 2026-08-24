@@ -25,6 +25,7 @@ type Handler = (event: never, ctx: ExtensionContext) => unknown;
 type WidgetFactory = (_tui: never, theme: Theme) => Component;
 
 interface RegisteredTool {
+	name: string;
 	label: string;
 	description: string;
 	promptSnippet: string;
@@ -118,7 +119,7 @@ function identityTheme() {
 	return { calls, theme };
 }
 
-function toolResultEntry(details: TodoDetails): SessionEntry {
+function toolResultEntry(details: TodoDetails, toolName = TOOL_NAME): SessionEntry {
 	return {
 		type: "message",
 		id: "tool-result",
@@ -127,7 +128,7 @@ function toolResultEntry(details: TodoDetails): SessionEntry {
 		message: {
 			role: "toolResult",
 			toolCallId: "todo-call",
-			toolName: TOOL_NAME,
+			toolName,
 			content: [{ type: "text", text: "updated" }],
 			details,
 			isError: false,
@@ -147,14 +148,15 @@ async function setTodos(
 test("registers concise guidance for using and maintaining the todo list", () => {
 	const { tool } = createHarness();
 
+	assert.equal(tool.name, "update_todo_list");
 	assert.equal(tool.label, "Todo List");
-	assert.match(tool.description, /complete list on every call/u);
-	assert.match(tool.promptSnippet, /multi-step work/u);
+	assert.match(tool.description, /whenever actual task state changes/u);
+	assert.match(tool.promptSnippet, /multi-step work progresses/u);
 	assert.deepEqual(tool.promptGuidelines, [
-		"Use todo_widget when work has multiple meaningful steps; skip it for simple, single-step tasks.",
-		"Keep todo_widget synchronized with actual work. Mark one task in_progress before starting it, update the list immediately after its status changes, and revise the list when the plan changes.",
-		"Before a progress report or final response, reconcile todo_widget with actual work; do not report completion while finished work remains pending or in_progress.",
-		"Send the complete current list on every todo_widget call, keep at most one task in_progress, and send an empty list when no tracked work remains.",
+		"Use update_todo_list to track work with multiple meaningful steps; skip it for simple, single-step tasks.",
+		"Use update_todo_list to keep the list aligned with actual work: mark a task in_progress before starting it, mark it completed as soon as it finishes, and revise the list before continuing when the plan changes.",
+		"Before a progress report or final response, call update_todo_list to reconcile every item with actual work; do not report completion while the list is stale.",
+		"On every update_todo_list call, send the complete current list, keep at most one task in_progress, and send an empty list when no tracked work remains.",
 	]);
 });
 
@@ -183,7 +185,7 @@ test("keeps one current todo reminder at the end of model context", async () => 
 	assert.equal(reminder.customType, TODO_CONTEXT_MESSAGE_TYPE);
 	assert.equal(reminder.display, false);
 	assert.deepEqual(reminder.details, { version: TODO_CONTEXT_VERSION });
-	assert.match(reminder.content as string, /call todo_widget immediately/u);
+	assert.match(reminder.content as string, /call update_todo_list before starting/u);
 	assert.match(reminder.content as string, /Before a progress report or final response/u);
 	assert.ok(
 		(reminder.content as string).includes(
@@ -318,13 +320,13 @@ test("tool replaces the complete list, updates the widget, clears it, and reject
 	});
 });
 
-test("restores branch-local state on startup and tree navigation", async () => {
+test("restores current and legacy branch-local state on startup and tree navigation", async () => {
 	const initial: TodoDetails = {
 		version: TODO_DETAILS_VERSION,
 		items: [{ text: "restored", status: "in_progress" }],
 	};
 	const harness = createHarness();
-	const current = createContext({ branch: [toolResultEntry(initial)] });
+	const current = createContext({ branch: [toolResultEntry(initial, "todo_widget")] });
 	await harness.emit("session_start", current.ctx);
 
 	const { theme } = identityTheme();
