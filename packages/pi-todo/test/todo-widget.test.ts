@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import type {
+	ContextEvent,
 	ExtensionAPI,
 	ExtensionContext,
 	SessionEntry,
@@ -11,6 +12,8 @@ import { test } from "vitest";
 import todoWidgetExtension, {
 	renderTodoWidget,
 	sanitizeTodoText,
+	TODO_CONTEXT_MESSAGE_TYPE,
+	TODO_CONTEXT_VERSION,
 	TODO_DETAILS_VERSION,
 	TOOL_NAME,
 	type TodoDetails,
@@ -55,6 +58,16 @@ function createHarness() {
 		},
 		async emit(event: string, ctx: ExtensionContext) {
 			for (const handler of handlers.get(event) ?? []) await handler({} as never, ctx);
+		},
+		async context(messages: ContextEvent["messages"], ctx: ExtensionContext) {
+			let current = messages;
+			for (const handler of handlers.get("context") ?? []) {
+				const result = (await handler({ messages: current } as never, ctx)) as
+					| { messages?: ContextEvent["messages"] }
+					| undefined;
+				current = result?.messages ?? current;
+			}
+			return current;
 		},
 	};
 }
@@ -139,9 +152,64 @@ test("registers concise guidance for using and maintaining the todo list", () =>
 	assert.match(tool.promptSnippet, /multi-step work/u);
 	assert.deepEqual(tool.promptGuidelines, [
 		"Use todo_widget when work has multiple meaningful steps; skip it for simple, single-step tasks.",
-		"Keep tasks concise and action-oriented. Mark one task in_progress before starting it, complete tasks promptly, and revise the list when the plan changes.",
-		"Send the complete current list on every call, keep at most one task in_progress, and send an empty list when no tracked work remains.",
+		"Keep todo_widget synchronized with actual work. Mark one task in_progress before starting it, update the list immediately after its status changes, and revise the list when the plan changes.",
+		"Before a progress report or final response, reconcile todo_widget with actual work; do not report completion while finished work remains pending or in_progress.",
+		"Send the complete current list on every todo_widget call, keep at most one task in_progress, and send an empty list when no tracked work remains.",
 	]);
+});
+
+test("keeps one current todo reminder at the end of model context", async () => {
+	const harness = createHarness();
+	const current = createContext();
+	await harness.emit("session_start", current.ctx);
+	await setTodos(harness, current.ctx, [
+		{ text: "inspect", status: "completed" },
+		{ text: "implement", status: "in_progress" },
+	]);
+
+	const base = [
+		{
+			role: "compactionSummary" as const,
+			summary: "Earlier work was compacted.",
+			tokensBefore: 100,
+			timestamp: 0,
+		},
+	];
+	const transformed = await harness.context(base, current.ctx);
+	assert.equal(transformed.length, 2);
+	const reminder = transformed.at(-1);
+	assert.equal(reminder?.role, "custom");
+	if (reminder?.role !== "custom") assert.fail("Expected a custom todo reminder");
+	assert.equal(reminder.customType, TODO_CONTEXT_MESSAGE_TYPE);
+	assert.equal(reminder.display, false);
+	assert.deepEqual(reminder.details, { version: TODO_CONTEXT_VERSION });
+	assert.match(reminder.content as string, /call todo_widget immediately/u);
+	assert.match(reminder.content as string, /Before a progress report or final response/u);
+	assert.ok(
+		(reminder.content as string).includes(
+			'[{"text":"inspect","status":"completed"},{"text":"implement","status":"in_progress"}]',
+		),
+	);
+
+	const unchanged = await harness.context(transformed, current.ctx);
+	assert.equal(unchanged, transformed);
+
+	await setTodos(harness, current.ctx, [{ text: "implement", status: "completed" }]);
+	const updated = await harness.context(transformed, current.ctx);
+	assert.equal(
+		updated.filter(
+			(message) => message.role === "custom" && message.customType === TODO_CONTEXT_MESSAGE_TYPE,
+		).length,
+		1,
+	);
+	const updatedReminder = updated.at(-1);
+	assert.equal(updatedReminder?.role, "custom");
+	if (updatedReminder?.role !== "custom") assert.fail("Expected an updated todo reminder");
+	assert.match(updatedReminder.content as string, /"implement","status":"completed"/u);
+	assert.doesNotMatch(updatedReminder.content as string, /"inspect"/u);
+
+	await setTodos(harness, current.ctx, []);
+	assert.deepEqual(await harness.context(updated, current.ctx), base);
 });
 
 test("renders completed, current, and pending tasks with themed semantic symbols", () => {
@@ -293,6 +361,10 @@ test("guards component widgets to TUI mode and ignores stale session shutdown", 
 	await harness.emit("session_start", current.ctx);
 	await setTodos(harness, current.ctx, [{ text: "current", status: "in_progress" }]);
 	const currentWidgetCount = current.widgets.length;
+	const staleMessages = [
+		{ role: "user" as const, content: [{ type: "text" as const, text: "old" }], timestamp: 0 },
+	];
+	assert.equal(await harness.context(staleMessages, previous.ctx), staleMessages);
 
 	await harness.emit("session_shutdown", previous.ctx);
 	assert.equal(current.widgets.length, currentWidgetCount);
