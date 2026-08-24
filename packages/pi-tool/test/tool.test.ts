@@ -600,7 +600,7 @@ test("an empty catalog remains bounded and can close", async () => {
 	await mock.events.get("session_start")?.[0]?.({}, createMockContext({ hasUI: true }).ctx);
 	const command = mock.commands.get("tool");
 	assert.ok(command);
-	const tui = createTuiHarness({ width: 20, rows: 8 });
+	const tui = createTuiHarness({ width: 20, rows: 10 });
 	const base = createMockContext({
 		hasUI: true,
 		mode: "tui",
