@@ -96,8 +96,11 @@ uses the common idle dispatcher. Old queue metadata in `goal-state` or legacy `g
 is treated as inert legacy data and never dispatches automatic work.
 
 Goal prompts and compacted context use the same objective trust boundary, stale goal id, full-scope rule, and requirement-by-requirement completion audit.
-The runtime constructs one versioned hidden `goal-contract` message at a fixed `context` hook boundary after leading summaries.
-It restores Goal instructions when persisted active state has no retained handoff and keeps mutable accounting out of the leading provider prompt prefix.
+A newly activated Goal persists one versioned hidden `goal-contract` immediately before its Goal handoff, after retained pre-Goal conversation history.
+The matching contract stays at that position until Goal identity changes or the Goal becomes inactive.
+The `context` hook removes stale contracts and inserts a missing post-compaction contract after leading summaries.
+Session restore appends a missing active-Goal contract after retained history without waking an external wait.
+Mutable accounting remains outside the retained provider prompt prefix.
 Prompt wording is a guardrail; current files, commands, tests, runtime behavior, and external state remain the completion evidence.
 
 ## Usage, elapsed time, and circuit breakers
