@@ -99,6 +99,9 @@ export function supportsNativeDeferredToolLoading(model: ExtensionContext["model
 		const minor = version[2] && version[2].length < 8 ? Number(version[2]) : 0;
 		return major > 4 || (major === 4 && minor >= 5);
 	}
+	if (model.api === "openai-completions") {
+		return compatString(model.compat, "deferredToolsMode") === "kimi";
+	}
 	if (model.api === "openai-responses" || model.api === "openai-codex-responses") {
 		return (
 			compatBoolean(model.compat, "supportsAdditionalTools") === true ||
@@ -193,6 +196,12 @@ function compatBoolean(value: unknown, key: string) {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
 	const record = value as Record<string, unknown>;
 	return typeof record[key] === "boolean" ? record[key] : undefined;
+}
+
+function compatString(value: unknown, key: string) {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+	const record = value as Record<string, unknown>;
+	return typeof record[key] === "string" ? record[key] : undefined;
 }
 
 function unique(values: readonly string[]) {

@@ -158,7 +158,9 @@ The loader accepts a task-oriented `query`, matches it against the five capabili
 
 Loaded capability tools remain active for the rest of the session unless the user makes them unavailable through `/chrome-devtools`.
 
-Pi uses native deferred tool references on compatible Anthropic models and native additional-tools or tool-search loading on compatible OpenAI and Codex Responses models.
+Pi uses native deferred tool references on compatible Anthropic models, native additional-tools or tool-search loading on compatible OpenAI and Codex Responses models, and native Kimi loading on compatible OpenAI Chat Completions models.
+
+Kimi-compatible models declare `compat.deferredToolsMode: "kimi"` in Pi's model metadata.
 
 `azure-openai-responses` remains eager because Pi's Azure adapter does not implement native deferred tool-search serialization.
 

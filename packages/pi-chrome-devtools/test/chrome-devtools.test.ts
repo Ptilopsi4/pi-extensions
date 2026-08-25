@@ -209,6 +209,25 @@ test("chrome-devtools keeps Azure Responses eager when compat enables tool searc
 	});
 });
 
+test("chrome-devtools honors native Kimi deferred-tool support", async () => {
+	await withTempAgentDir(async () => {
+		const chromeDevtoolsModule = await importFreshChromeDevtools();
+		const model = {
+			api: "openai-completions",
+			provider: "moonshotai",
+			id: "kimi-k2.6",
+			compat: { deferredToolsMode: "kimi" },
+		};
+		const mock = createMockPi({ activeTools: ["other_tool", ...CAPABILITY_TOOLS] });
+		const { ctx } = createMockContext({ model });
+		chromeDevtoolsModule.default(mock.pi);
+
+		await mock.events.get("session_start")?.[0]?.({}, ctx);
+
+		assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL]);
+	});
+});
+
 test("chrome-devtools honors native additional-tools support", async () => {
 	await withTempAgentDir(async () => {
 		for (const api of ["openai-responses", "openai-codex-responses"]) {
