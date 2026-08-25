@@ -81,14 +81,30 @@ test("fixed and default review pagination reaches the end after height compactio
 		let rendered = plainRender(harness.component, 80);
 		assert.ok(harness.component.render(80).length <= 7);
 		assert.match(rendered, /row 1/u);
-		assert.match(rendered, /1-1\/20/u);
+		assert.match(rendered, /1-2\/20/u);
 
 		harness.component.handleInput("\u001b[F");
 		rendered = plainRender(harness.component, 80);
 		assert.match(rendered, /row 20/u);
-		assert.match(rendered, /20-20\/20/u);
+		assert.match(rendered, /19-20\/20/u);
 		harness.component.handleInput("u");
-		assert.match(plainRender(harness.component, 80), /row 19/u);
+		assert.match(plainRender(harness.component, 80), /row 17/u);
+	}
+});
+
+test("fixed and default reviews reserve their requested viewport before extra header rows", () => {
+	const content = Array.from({ length: 20 }, (_, index) => `row ${index + 1}`).join("\n");
+	const lines = Array.from({ length: 20 }, (_, index) => `Context ${index + 1}`);
+	for (const viewportSize of [14, undefined]) {
+		const harness = reviewComponentHarness(
+			{ ...reviewScreen, content, lines, viewportSize },
+			false,
+			24,
+		);
+		const rendered = plainRender(harness.component, 80);
+		assert.match(rendered, /row 1[\s\S]*row 14/u);
+		assert.match(rendered, /1-14\/20/u);
+		assert.ok(harness.component.render(80).length <= 21);
 	}
 });
 

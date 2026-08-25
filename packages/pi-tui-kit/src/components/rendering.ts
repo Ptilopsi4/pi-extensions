@@ -130,13 +130,12 @@ function compactInteractiveRows(
 	pinnedContentRows: number,
 	priorityTailRows: number,
 ): string[] {
+	const hintBudget = hintRows.length > 0 && availableRows > 1 ? 1 : 0;
 	const minimumContentRows = Math.min(
-		availableRows,
+		availableRows - hintBudget,
 		minimumFocusedRows(contentRows, pinnedContentRows, priorityTailRows),
 	);
-	let remainingRows = Math.max(0, availableRows - minimumContentRows);
-	const hintBudget = hintRows.length > 0 && remainingRows > 0 ? 1 : 0;
-	remainingRows -= hintBudget;
+	let remainingRows = Math.max(0, availableRows - hintBudget - minimumContentRows);
 	const titleBudget = titleRows.length > 0 && remainingRows > 0 ? 1 : 0;
 	remainingRows -= titleBudget;
 	const extraHintBudget = Math.min(Math.max(0, hintRows.length - hintBudget), remainingRows);
@@ -166,7 +165,7 @@ function compactStaticRows(
 	hintRows: readonly string[],
 	availableRows: number,
 ): string[] {
-	const titleBudget = Math.min(titleRows.length, availableRows);
+	const titleBudget = titleRows.length > 0 ? 1 : 0;
 	const hintBudget = Math.min(hintRows.length, Math.max(0, availableRows - titleBudget));
 	const contextBudget = Math.max(0, availableRows - titleBudget - hintBudget);
 	return [

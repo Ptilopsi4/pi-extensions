@@ -224,6 +224,8 @@ function allocateAdaptiveReviewChrome(
 	}
 
 	let remainingRows = availableRows - 3 - Number(showPosition);
+	const reservedViewportRows = Math.min(remainingRows, Math.max(0, (maximumViewportSize ?? 1) - 1));
+	remainingRows -= reservedViewportRows;
 	const extraHeaderCount = Math.min(remainingRows, Math.max(0, fullHeader.length - 1));
 	const header = [...compactHeader, ...fullHeader.slice(1, 1 + extraHeaderCount)];
 	remainingRows -= extraHeaderCount;
@@ -243,7 +245,7 @@ function allocateAdaptiveReviewChrome(
 		hint,
 		showPosition,
 		viewportSize: Math.min(
-			1 + remainingRows,
+			1 + reservedViewportRows + remainingRows,
 			maximumViewportSize === undefined ? Number.POSITIVE_INFINITY : maximumViewportSize,
 		),
 	};

@@ -242,7 +242,50 @@ test("choice and settings screens reserve host rows and keep focused controls vi
 	assert.equal(settingsLines.at(-1), "─".repeat(40));
 	assert.ok(settingsLines.some((line) => line.startsWith("> ")));
 	assert.match(settingsLines.join("\n"), /→ Setting 11/u);
+	assert.match(settingsLines.join("\n"), /Description for setting 11/u);
 	assert.match(settingsLines.join("\n"), /Esc to go back/u);
+});
+
+test("compact searchable choices preserve empty states ahead of search reminders", () => {
+	const harness = componentHarness(
+		{ ...choiceScreen, enableSearch: true },
+		{
+			plainTheme: true,
+			rows: 9,
+			keybindings: inputFriendlyKeybindings,
+		},
+	);
+	for (const input of ["z", "z", "z"]) harness.component.handleInput(input);
+	const rendered = plainRender(harness.component, 32).join("\n");
+	assert.match(rendered, /No matching choices/u);
+	assert.doesNotMatch(rendered, /Type to search/u);
+	assert.match(rendered, /esc\s+back/u);
+});
+
+test("compact interactive frames reserve their critical interaction hint", () => {
+	const harness = componentHarness(choiceScreen, {
+		selectedItemId: "verbose",
+		plainTheme: true,
+		rows: 9,
+		keybindings: inputFriendlyKeybindings,
+	});
+	const rendered = plainRender(harness.component, 32).join("\n");
+	assert.match(rendered, /→ \[-\] Verbose/u);
+	assert.match(rendered, /esc\s+back/u);
+});
+
+test("compact static frames reserve cancellation hints before wrapped titles", () => {
+	const harness = componentHarness(
+		{
+			...detailScreen,
+			title: "A very long detail title that wraps across every available compact row",
+			lines: [],
+		},
+		{ plainTheme: true, rows: 9, keybindings: inputFriendlyKeybindings },
+	);
+	const rendered = plainRender(harness.component, 20).join("\n");
+	assert.match(rendered, /A very long detail/u);
+	assert.match(rendered, /esc\s+back|ctrl\+c\s+close/u);
 });
 
 test("action screens honor injected navigation and distinguish Back from Ctrl+C Close", () => {
@@ -982,6 +1025,7 @@ test("searchable multi-select keeps its focused query and selected row in compac
 		items: Array.from({ length: 8 }, (_, index) => ({
 			id: `tool-${index}`,
 			label: `tool_${index}`,
+			description: `Description for tool ${index}`,
 			searchText: "shared tool",
 			selected: false,
 		})),
@@ -1000,6 +1044,7 @@ test("searchable multi-select keeps its focused query and selected row in compac
 	assert.equal(lines.at(-1), "─".repeat(32));
 	assert.ok(lines.some((line) => line.startsWith("> tool")));
 	assert.match(lines.join("\n"), /› \[ \] tool_7/u);
+	assert.match(lines.join("\n"), /Description for tool 7/u);
 });
 
 test("searchable multi-select keeps actions available for no matches and distinguishes empty", async () => {

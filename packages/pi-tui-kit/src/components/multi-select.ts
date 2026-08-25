@@ -190,14 +190,10 @@ export function createMultiSelectComponent<ScreenId extends string, ActionId ext
 								: undefined,
 						].filter((value): value is string => Boolean(value))
 				: [];
-			if (descriptions.length > 0) {
-				rowContent.push(
-					"",
-					...descriptions.flatMap((description) =>
-						wrapTextWithAnsi(options.theme.fg("dim", `  ${safeMenuText(description)}`), safeWidth),
-					),
-				);
-			}
+			const descriptionRows = descriptions.flatMap((description) =>
+				wrapTextWithAnsi(options.theme.fg("dim", `  ${safeMenuText(description)}`), safeWidth),
+			);
+			if (descriptionRows.length > 0) rowContent.push("", ...descriptionRows);
 			const content = options.screen.enableSearch
 				? [
 						...searchInput.render(safeWidth),
@@ -221,6 +217,7 @@ export function createMultiSelectComponent<ScreenId extends string, ActionId ext
 				{
 					confirmAction: row?.kind === "action" ? "select" : "toggle",
 					pinnedContentRows: options.screen.enableSearch ? 1 : 0,
+					priorityTailRows: descriptionRows.length + (options.screen.enableSearch ? 1 : 0),
 				},
 			);
 		},
