@@ -1,6 +1,6 @@
 {
 	"name": "@narumitw/pi-accounts",
-	"version": "0.49.9",
+	"version": "0.49.10",
 	"description": "Pi extension for switching named subscription OAuth accounts across supported providers.",
 	"type": "module",
 	"license": "MIT",
