@@ -8,14 +8,16 @@ body:
     attributes:
       value: |
         Thanks for taking the time to report a bug.
-        Please search existing issues before submitting a new report and remove any secrets from logs or screenshots.
+        Please search existing issues before submitting a new report.
+        Remove API keys, tokens, credentials, and personal data from logs, configuration, and screenshots.
+        When possible, reproduce the issue with extension discovery disabled and only the affected extension loaded.
 
   - type: input
     id: package
     attributes:
       label: Package
       description: Which package is affected?
-      placeholder: "@narumitw/pi-example"
+      placeholder: "@narumitw/pi-statusline"
     validations:
       required: true
 
@@ -29,11 +31,18 @@ body:
       required: true
 
   - type: input
+    id: installation-source
+    attributes:
+      label: Installation source
+      description: How did you install or load the package?
+      placeholder: "For example: npm, GitHub, or local checkout"
+
+  - type: input
     id: pi-version
     attributes:
       label: Pi version
       description: Run `pi --version` and paste the result.
-      placeholder: "For example: 0.84.2"
+      placeholder: "For example: 0.84.3"
     validations:
       required: true
 
@@ -50,7 +59,7 @@ body:
     id: description
     attributes:
       label: What happened?
-      description: Describe the problem and its impact.
+      description: Describe the specific problem, its impact, and any visible error messages.
     validations:
       required: true
 
@@ -58,12 +67,20 @@ body:
     id: reproduction
     attributes:
       label: Steps to reproduce
-      description: Provide the smallest set of steps or a minimal repository that reproduces the problem.
+      description: Provide the smallest set of steps, configuration, or repository that reproduces the problem.
       placeholder: |
         1. Install ...
         2. Configure ...
         3. Run ...
         4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: isolation
+    attributes:
+      label: Extension isolation result
+      description: Run Pi with extension discovery disabled and only the affected extension loaded, for example `pi -ne -e npm:@narumitw/pi-statusline`. Describe the result, or explain why this check is not possible.
     validations:
       required: true
 
@@ -78,15 +95,15 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Logs or screenshots
-      description: Add relevant output, stack traces, or screenshots after removing secrets and personal data.
+      label: Logs
+      description: Add relevant output or stack traces after removing secrets and personal data.
       render: shell
 
   - type: textarea
     id: additional-context
     attributes:
-      label: Additional context
-      description: Add any other details that may help diagnose the problem.
+      label: Additional context or screenshots
+      description: Add screenshots, related issues, or any other details that may help diagnose the problem.
 
   - type: checkboxes
     id: checks
