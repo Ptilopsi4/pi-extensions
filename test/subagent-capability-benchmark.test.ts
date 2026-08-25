@@ -39,10 +39,11 @@ function assistant(text: string): Record<string, unknown> {
 function toolResult(
 	toolName: string,
 	details: Record<string, unknown> = {},
+	isError = false,
 ): Record<string, unknown> {
 	return {
 		type: "message_end",
-		message: { role: "toolResult", toolName, isError: false, details, content: [] },
+		message: { role: "toolResult", toolName, isError, details, content: [] },
 	};
 }
 
@@ -219,6 +220,26 @@ test("event analysis enforces each arm topology and completion order", () => {
 	]);
 	assert.equal(wrongTopology.toolCompliance, false);
 	assert.equal(wrongTopology.toolCounts.unexpected, 1);
+});
+
+test("failed topology attempts make v2 and v3 trials noncompliant", () => {
+	const task = CAPABILITY_TASKS[0];
+	const final = completedSingleResearch();
+	for (const version of ["v2", "v3"] as const) {
+		const start = `subagent-${version}-start`;
+		const wait = `subagent-${version}-wait`;
+		const analysis = analyzeCapabilityEvents(`${version}-job`, task, [
+			toolResult(start, {}, true),
+			toolResult(start),
+			toolResult(wait, {}, true),
+			toolResult(wait, { state: "completed", timedOut: false }),
+			assistant(final),
+		]);
+		assert.deepEqual(analysis.toolCounts, { sync: 0, start: 1, wait: 1, unexpected: 2 });
+		assert.equal(analysis.completionObserved, true);
+		assert.equal(analysis.toolCompliance, false);
+		assert.equal(trialSucceeded(analysis, "completed", null), false);
+	}
 });
 
 test("wait timeouts and incomplete parallel joins fail topology compliance", () => {
@@ -516,4 +537,53 @@ test("manual runner selects the separately versioned v3 protocol explicitly", as
 	);
 	assert.equal(preview.environment.extensions["v3-job"], "custom-v3.ts");
 	assert.deepEqual(preview.capabilityMatrix, capabilityMatrix("v3"));
+});
+
+test("resume rejects changed v1, v2, and v3 extension identities", async () => {
+	const directory = mkdtempSync(path.join(os.tmpdir(), "subagent-capability-resume-identity-"));
+	const root = path.resolve(import.meta.dirname, "..");
+	const script = "scripts/benchmark-subagent-capabilities.ts";
+	try {
+		for (const testCase of [
+			{ protocol: [] as string[], option: "--v1-extension", name: "v1" },
+			{ protocol: [] as string[], option: "--v2-extension", name: "v2" },
+			{ protocol: ["--job-version", "v3"], option: "--v3-extension", name: "v3" },
+		]) {
+			const output = path.join(directory, `${testCase.name}.json`);
+			const initial = path.join(directory, testCase.name, "initial", "extension.ts");
+			const changed = path.join(directory, testCase.name, "changed", "extension.ts");
+			const { stdout } = await execFileAsync(
+				process.execPath,
+				[script, "--model", "provider/model", ...testCase.protocol, testCase.option, initial],
+				{ cwd: root, timeout: 3_000 },
+			);
+			writeFileSync(
+				output,
+				JSON.stringify({ ...JSON.parse(stdout), preview: false, rawRecords: [] }),
+			);
+			await assert.rejects(
+				() =>
+					execFileAsync(
+						process.execPath,
+						[
+							script,
+							"--run",
+							"--resume",
+							"--model",
+							"provider/model",
+							"--output",
+							output,
+							...testCase.protocol,
+							testCase.option,
+							changed,
+						],
+						{ cwd: root, timeout: 3_000 },
+					),
+				(error: Error & { stderr?: string }) =>
+					/different extension identities/i.test(error.stderr ?? ""),
+			);
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
 });

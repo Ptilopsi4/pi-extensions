@@ -19,6 +19,7 @@ test("package declares one source extension and one bundled operating skill", ()
 	assert.equal(manifest.piExtension.lifecycle, "experimental");
 	assert.ok(manifest.files.includes("src"));
 	assert.ok(manifest.files.includes("skills"));
+	assert.ok(manifest.files.includes("docs"));
 });
 
 test("bundled skill documents every minimal-runtime operating responsibility", () => {
