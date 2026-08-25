@@ -1,5 +1,10 @@
 import { stripVTControlCharacters } from "node:util";
-import { type Input, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import {
+	type Input,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import { HorizontalRule } from "../horizontal-rule.js";
 import { formatInteractionHints } from "../interaction-hints.js";
 import { replaceTerminalControls, safeMenuText } from "../text.js";
@@ -33,8 +38,10 @@ export function actionMenuDialogLabel(item: ActionMenuItem<string, string>): str
 }
 
 interface FrameLayoutOptions {
+	compactOverflowText?: string;
 	confirmAction?: string;
 	hint?: string;
+	navigation?: boolean;
 	pinnedContentRows?: number;
 	priorityTailRows?: number;
 }
@@ -50,6 +57,8 @@ export function renderFrame<ScreenId extends string, ActionId extends string>(
 ): string[] {
 	const safeWidth = Math.max(1, width);
 	const rule = renderHorizontalRule(safeWidth, options.theme);
+	const confirmAction = layout.confirmAction ?? "select";
+	const navigation = layout.navigation ?? true;
 	const titleRows = wrapTextWithAnsi(
 		options.theme.fg("accent", options.theme.bold(safeMenuText(title))),
 		safeWidth,
@@ -57,14 +66,30 @@ export function renderFrame<ScreenId extends string, ActionId extends string>(
 	const contextRows = lines.flatMap((line) =>
 		wrapTextWithAnsi(options.theme.fg("muted", safeMenuText(line)), safeWidth),
 	);
-	const hintRows = wrapTextWithAnsi(
+	const hintText =
+		layout.hint ??
+		options.interactionHint ??
+		menuHint(options.keybindings, destination, confirmAction, navigation);
+	const hintRows = wrapTextWithAnsi(options.theme.fg("dim", hintText), safeWidth);
+	const compactFullHintRows = wrapTextWithAnsi(
 		options.theme.fg(
 			"dim",
-			layout.hint ??
-				options.interactionHint ??
-				menuHint(options.keybindings, destination, layout.confirmAction ?? "select"),
+			layout.compactOverflowText
+				? `${hintText} • ${safeMenuText(layout.compactOverflowText).trim()}`
+				: hintText,
 		),
 		safeWidth,
+	);
+	const compactHintRow = options.theme.fg(
+		"dim",
+		compactMenuHint(
+			options.keybindings,
+			destination,
+			confirmAction,
+			navigation,
+			layout.compactOverflowText,
+			safeWidth,
+		),
 	);
 	const fullFrame = [
 		rule,
@@ -83,7 +108,8 @@ export function renderFrame<ScreenId extends string, ActionId extends string>(
 					titleRows,
 					contextRows,
 					content,
-					hintRows,
+					compactFullHintRows,
+					compactHintRow,
 					maxRows,
 					layout.pinnedContentRows ?? 0,
 					layout.priorityTailRows ?? 0,
@@ -97,6 +123,7 @@ function compactFrame(
 	contextRows: readonly string[],
 	contentRows: readonly string[],
 	hintRows: readonly string[],
+	compactHintRow: string,
 	maxRows: number,
 	pinnedContentRows: number,
 	priorityTailRows: number,
@@ -113,11 +140,12 @@ function compactFrame(
 					contextRows,
 					compactContentRows,
 					hintRows,
+					compactHintRow,
 					availableRows,
 					pinnedContentRows,
 					priorityTailRows,
 				)
-			: compactStaticRows(titleRows, contextRows, hintRows, availableRows);
+			: compactStaticRows(titleRows, contextRows, compactHintRow, availableRows);
 	return framed ? [rule, ...body, rule] : body;
 }
 
@@ -126,11 +154,12 @@ function compactInteractiveRows(
 	contextRows: readonly string[],
 	contentRows: readonly string[],
 	hintRows: readonly string[],
+	compactHintRow: string,
 	availableRows: number,
 	pinnedContentRows: number,
 	priorityTailRows: number,
 ): string[] {
-	const hintBudget = hintRows.length > 0 && availableRows > 1 ? 1 : 0;
+	const hintBudget = compactHintRow && availableRows > 1 ? 1 : 0;
 	const minimumContentRows = Math.min(
 		availableRows - hintBudget,
 		minimumFocusedRows(contentRows, pinnedContentRows, priorityTailRows),
@@ -138,8 +167,9 @@ function compactInteractiveRows(
 	let remainingRows = Math.max(0, availableRows - hintBudget - minimumContentRows);
 	const titleBudget = titleRows.length > 0 && remainingRows > 0 ? 1 : 0;
 	remainingRows -= titleBudget;
-	const extraHintBudget = Math.min(Math.max(0, hintRows.length - hintBudget), remainingRows);
-	remainingRows -= extraHintBudget;
+	const extraHintRows = Math.max(0, hintRows.length - hintBudget);
+	const useFullHints = hintBudget > 0 && extraHintRows <= remainingRows;
+	if (useFullHints) remainingRows -= extraHintRows;
 	const contentBudget = Math.min(contentRows.length, minimumContentRows + remainingRows);
 	remainingRows -= contentBudget - minimumContentRows;
 	const contextBudget = Math.min(contextRows.length, remainingRows);
@@ -149,29 +179,34 @@ function compactInteractiveRows(
 		pinnedContentRows,
 		priorityTailRows,
 	);
-	const totalHintBudget = hintBudget + extraHintBudget;
-	const boundedHints = totalHintBudget > 0 ? hintRows.slice(-totalHintBudget) : [];
 	return [
 		...titleRows.slice(0, titleBudget),
 		...contextRows.slice(0, contextBudget),
 		...boundedContent,
-		...boundedHints,
+		...(hintBudget > 0 ? (useFullHints ? hintRows : [compactHintRow]) : []),
 	];
 }
 
 function compactStaticRows(
 	titleRows: readonly string[],
 	contextRows: readonly string[],
-	hintRows: readonly string[],
+	compactHintRow: string,
 	availableRows: number,
 ): string[] {
-	const titleBudget = titleRows.length > 0 ? 1 : 0;
-	const hintBudget = Math.min(hintRows.length, Math.max(0, availableRows - titleBudget));
-	const contextBudget = Math.max(0, availableRows - titleBudget - hintBudget);
+	if (availableRows <= 0) return [];
+	if (availableRows === 1) {
+		return [contextRows[0] || compactHintRow || titleRows[0] || ""];
+	}
+	const hintBudget = compactHintRow ? 1 : 0;
+	const minimumContextRows = contextRows.length > 0 ? 1 : 0;
+	let remainingRows = Math.max(0, availableRows - hintBudget - minimumContextRows);
+	const titleBudget = titleRows.length > 0 && remainingRows > 0 ? 1 : 0;
+	remainingRows -= titleBudget;
+	const contextBudget = Math.min(contextRows.length, minimumContextRows + remainingRows);
 	return [
 		...titleRows.slice(0, titleBudget),
 		...contextRows.slice(0, contextBudget),
-		...(hintBudget > 0 ? hintRows.slice(-hintBudget) : []),
+		...(hintBudget > 0 ? [compactHintRow] : []),
 	];
 }
 
@@ -246,9 +281,12 @@ export function menuHint(
 	keybindings: MenuKeybindings,
 	destination: "back" | "close",
 	confirmAction: string,
+	navigation = true,
 ) {
 	return formatInteractionHints(keybindings, [
-		{ bindings: ["tui.select.up", "tui.select.down"], label: "navigate" },
+		...(navigation
+			? [{ bindings: ["tui.select.up", "tui.select.down"] as const, label: "navigate" }]
+			: []),
 		...(confirmAction ? [{ bindings: ["tui.select.confirm"] as const, label: confirmAction }] : []),
 		{
 			bindings: ["tui.select.cancel"],
@@ -257,6 +295,60 @@ export function menuHint(
 		},
 		...(destination === "back" ? [{ keys: ["ctrl+c"], label: "close" }] : []),
 	]);
+}
+
+function compactMenuHint(
+	keybindings: MenuKeybindings,
+	destination: "back" | "close",
+	confirmAction: string,
+	navigation: boolean,
+	compactOverflowText: string | undefined,
+	width: number,
+) {
+	const cancel = formatInteractionHints(keybindings, [
+		{
+			bindings: ["tui.select.cancel"],
+			excludeKeys: ["ctrl+c"],
+			label: destination,
+		},
+	]);
+	return fitCompactHintSegments(
+		[
+			cancel,
+			...(compactOverflowText ? [safeMenuText(compactOverflowText).trim()] : []),
+			...(destination === "back" || !cancel
+				? [formatInteractionHints(keybindings, [{ keys: ["ctrl+c"], label: "close" }])]
+				: []),
+			...(confirmAction
+				? [
+						formatInteractionHints(keybindings, [
+							{ bindings: ["tui.select.confirm"], label: confirmAction },
+						]),
+					]
+				: []),
+			...(navigation
+				? [
+						formatInteractionHints(keybindings, [
+							{ bindings: ["tui.select.up", "tui.select.down"], label: "navigate" },
+						]),
+					]
+				: []),
+		],
+		width,
+	);
+}
+
+export function fitCompactHintSegments(segments: readonly string[], width: number) {
+	const safeWidth = Math.max(1, width);
+	let result = "";
+	for (const segment of segments.map(safeMenuText).filter(Boolean)) {
+		const candidate = result ? `${result} • ${segment}` : segment;
+		if (visibleWidth(candidate) > safeWidth) {
+			return result || truncateToWidth(segment, safeWidth, "");
+		}
+		result = candidate;
+	}
+	return result;
 }
 
 export function handleSearchInput(input: Input, data: string) {

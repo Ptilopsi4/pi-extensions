@@ -151,6 +151,7 @@ function createDetailComponent<ScreenId extends string, ActionId extends string>
 				options.screen.hint ?? "back",
 				width,
 				options,
+				{ confirmAction: "", navigation: false },
 			);
 		},
 		invalidate() {},
@@ -303,6 +304,10 @@ function createChoiceComponent<ScreenId extends string, ActionId extends string>
 				safeWidth,
 				options,
 				{
+					compactOverflowText:
+						filteredItems.length > 1
+							? `  (${selectedIndex + 1}/${filteredItems.length})`
+							: undefined,
 					confirmAction: "select",
 					pinnedContentRows: options.screen.enableSearch ? 1 : 0,
 					priorityTailRows: detailRows.length + (options.screen.enableSearch ? 1 : 0),
@@ -476,6 +481,11 @@ function createSettingsComponent<ScreenId extends string, ActionId extends strin
 				safeWidth,
 				options,
 				{
+					compactOverflowText:
+						filteredItems.length > 1
+							? `  (${selectedIndex + 1}/${filteredItems.length})`
+							: undefined,
+					confirmAction: "change",
 					hint: settingsHint(options.keybindings),
 					pinnedContentRows: 1,
 					priorityTailRows: settingsRows.descriptionRows,
@@ -646,6 +656,8 @@ function commonListComponent<ScreenId extends string, ActionId extends string>(
 				...(detailRows.length > 0 ? ["", ...detailRows] : []),
 			];
 			return renderFrame(options.screen.title, lines, content, destination, width, options, {
+				compactOverflowText:
+					items.length > 1 ? `  (${selectedIndex + 1}/${items.length})` : undefined,
 				priorityTailRows: detailRows.length,
 			});
 		},

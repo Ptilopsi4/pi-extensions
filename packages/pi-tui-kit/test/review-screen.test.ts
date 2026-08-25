@@ -74,6 +74,22 @@ test("fixed and default review frames use consistent rules and preserve content"
 	]);
 });
 
+test("empty fixed and default reviews preserve controls at minimum heights", () => {
+	for (const viewportSize of [3, undefined]) {
+		for (const terminalRows of [4, 5]) {
+			const harness = reviewComponentHarness(
+				{ ...reviewScreen, content: "", viewportSize },
+				false,
+				terminalRows,
+			);
+			const lines = plainLines(harness.component, 80);
+			assert.ok(lines.length > 0);
+			assert.match(lines.join("\n"), /l Apply|q back|ctrl\+c close/u);
+			assert.ok(lines.every((line) => line.length > 0));
+		}
+	}
+});
+
 test("fixed and default review pagination reaches the end after height compaction", () => {
 	const content = Array.from({ length: 20 }, (_, index) => `row ${index + 1}`).join("\n");
 	for (const viewportSize of [14, undefined]) {

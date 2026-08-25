@@ -215,6 +215,8 @@ export function createMultiSelectComponent<ScreenId extends string, ActionId ext
 				width,
 				options,
 				{
+					compactOverflowText:
+						rows.length > 1 ? `  (${selectedIndex + 1}/${rows.length})` : undefined,
 					confirmAction: row?.kind === "action" ? "select" : "toggle",
 					pinnedContentRows: options.screen.enableSearch ? 1 : 0,
 					priorityTailRows: descriptionRows.length + (options.screen.enableSearch ? 1 : 0),

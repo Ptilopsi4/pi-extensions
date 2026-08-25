@@ -214,6 +214,39 @@ test("action screens prioritize actionable rows when terminal height is constrai
 		keybindings: inputFriendlyKeybindings,
 	});
 	assert.deepEqual(plainRender(minimumHarness.component, 32), ["→ Help"]);
+
+	const narrowHarness = componentHarness(screen, {
+		plainTheme: true,
+		rows: 8,
+		keybindings: inputFriendlyKeybindings,
+	});
+	assert.ok(plainRender(narrowHarness.component, 10).includes("esc close"));
+});
+
+test("compact action screens indicate options hidden by outer compaction", () => {
+	const screen: MenuScreen<ScreenId, ActionId> = {
+		kind: "actions",
+		title: "Actions",
+		items: Array.from({ length: 6 }, (_, index) => ({
+			id: `action-${index}`,
+			label: `Action ${index + 1}`,
+			action: "run" as const,
+		})),
+		hint: "close",
+	};
+	const harness = componentHarness(screen, {
+		plainTheme: true,
+		rows: 12,
+		keybindings: inputFriendlyKeybindings,
+	});
+	let rendered = plainRender(harness.component, 40).join("\n");
+	assert.match(rendered, /\(1\/6\)/u);
+	assert.doesNotMatch(rendered, /Action 6/u);
+
+	for (let index = 0; index < 5; index += 1) harness.component.handleInput("\u001b[B");
+	rendered = plainRender(harness.component, 40).join("\n");
+	assert.match(rendered, /→ Action 6/u);
+	assert.match(rendered, /\(6\/6\)/u);
 });
 
 test("choice and settings screens reserve host rows and keep focused controls visible", () => {
@@ -228,6 +261,7 @@ test("choice and settings screens reserve host rows and keep focused controls vi
 	assert.equal(choiceLines[0], "─".repeat(32));
 	assert.equal(choiceLines.at(-1), "─".repeat(32));
 	assert.match(choiceLines.join("\n"), /→ Balanced/u);
+	assert.match(choiceLines.join("\n"), /\(2\/3\)/u);
 	assert.match(choiceLines.join("\n"), /esc\s+back/u);
 
 	const settings = componentHarness(largeSettingsScreen(), {
@@ -243,7 +277,11 @@ test("choice and settings screens reserve host rows and keep focused controls vi
 	assert.ok(settingsLines.some((line) => line.startsWith("> ")));
 	assert.match(settingsLines.join("\n"), /→ Setting 11/u);
 	assert.match(settingsLines.join("\n"), /Description for setting 11/u);
-	assert.match(settingsLines.join("\n"), /Esc to go back/u);
+	assert.match(settingsLines.join("\n"), /esc back/u);
+	const narrowSettings = plainRender(settings.component, 25).join("\n");
+	assert.match(narrowSettings, /esc back/u);
+	assert.match(narrowSettings, /\(12\/12\)/u);
+	assert.doesNotMatch(narrowSettings, /(^|\n)(?:to )?close($|\n)/u);
 });
 
 test("compact searchable choices preserve empty states ahead of search reminders", () => {
@@ -285,7 +323,18 @@ test("compact static frames reserve cancellation hints before wrapped titles", (
 	);
 	const rendered = plainRender(harness.component, 20).join("\n");
 	assert.match(rendered, /A very long detail/u);
-	assert.match(rendered, /esc\s+back|ctrl\+c\s+close/u);
+	assert.match(rendered, /esc back/u);
+});
+
+test("compact detail frames preserve body text and advertise only supported controls", () => {
+	const harness = componentHarness(
+		{ ...detailScreen, title: "Details", lines: ["Important body"] },
+		{ plainTheme: true, rows: 8, keybindings: inputFriendlyKeybindings },
+	);
+	const rendered = plainRender(harness.component, 12).join("\n");
+	assert.match(rendered, /Important/u);
+	assert.match(rendered, /esc back/u);
+	assert.doesNotMatch(rendered, /navigate|select/u);
 });
 
 test("action screens honor injected navigation and distinguish Back from Ctrl+C Close", () => {
@@ -1045,6 +1094,7 @@ test("searchable multi-select keeps its focused query and selected row in compac
 	assert.ok(lines.some((line) => line.startsWith("> tool")));
 	assert.match(lines.join("\n"), /› \[ \] tool_7/u);
 	assert.match(lines.join("\n"), /Description for tool 7/u);
+	assert.match(lines.join("\n"), /\(8\/8\)/u);
 });
 
 test("searchable multi-select keeps actions available for no matches and distinguishes empty", async () => {

@@ -11,7 +11,13 @@ import {
 	RPC_DOCUMENT_LINE_WIDTH,
 	RPC_DOCUMENT_PAGE_SIZE,
 } from "./document-formatting.js";
-import { componentRows, menuHint, renderHorizontalRule, safeMenuText } from "./rendering.js";
+import {
+	componentRows,
+	fitCompactHintSegments,
+	menuHint,
+	renderHorizontalRule,
+	safeMenuText,
+} from "./rendering.js";
 
 const DEFAULT_REVIEW_VIEWPORT_SIZE = 14;
 const MIN_FRAMED_ROWS = 5;
@@ -40,11 +46,10 @@ export function createReviewComponent<ScreenId extends string, ActionId extends 
 	return {
 		render(width) {
 			const safeWidth = Math.max(1, width);
-			const allLines = documentLineCache.lines(
-				options.screen.content,
-				options.screen.format,
-				safeWidth,
-			);
+			const allLines =
+				options.screen.content.length === 0
+					? []
+					: documentLineCache.lines(options.screen.content, options.screen.format, safeWidth);
 			const frame = renderAdaptiveReviewFrame({
 				screen: options.screen,
 				allLines,
@@ -141,20 +146,22 @@ function renderAdaptiveReviewFrame<ActionId extends string>(
 		options.theme.fg("dim", menuHint(options.keybindings, destination, confirmAction)),
 		options.width,
 	).map((line) => truncateToWidth(line, options.width, ""));
-	const criticalHint = truncateToWidth(
-		options.theme.fg("dim", compactReviewHint(options.keybindings, destination, confirmAction)),
-		options.width,
-		"",
+	const criticalHint = options.theme.fg(
+		"dim",
+		compactReviewHint(options.keybindings, destination, confirmAction, options.width),
 	);
 
-	let chrome = allocateAdaptiveReviewChrome(
-		availableRows,
-		fullHeader,
-		fullHint,
-		criticalHint,
-		false,
-		options.maximumViewportSize,
-	);
+	let chrome =
+		options.allLines.length === 0
+			? allocateEmptyReviewChrome(availableRows, fullHeader, fullHint, criticalHint)
+			: allocateAdaptiveReviewChrome(
+					availableRows,
+					fullHeader,
+					fullHint,
+					criticalHint,
+					false,
+					options.maximumViewportSize,
+				);
 	if (availableRows >= 4 && options.allLines.length > chrome.viewportSize) {
 		chrome = allocateAdaptiveReviewChrome(
 			availableRows,
@@ -190,6 +197,21 @@ function renderAdaptiveReviewFrame<ActionId extends string>(
 		: contentLines;
 
 	return { lines, scrollOffset, maximumScroll, viewportSize: chrome.viewportSize };
+}
+
+function allocateEmptyReviewChrome(
+	availableRows: number,
+	fullHeader: readonly string[],
+	fullHint: readonly string[],
+	criticalHint: string,
+): AdaptiveReviewChrome {
+	if (availableRows <= 0) {
+		return { header: [], separator: false, hint: [], showPosition: false, viewportSize: 0 };
+	}
+	const hint =
+		fullHint.length > 0 && fullHint.length < availableRows ? [...fullHint] : [criticalHint];
+	const header = fullHeader.slice(0, Math.max(0, availableRows - hint.length));
+	return { header, separator: false, hint, showPosition: false, viewportSize: 0 };
 }
 
 function allocateAdaptiveReviewChrome(
@@ -255,17 +277,21 @@ function compactReviewHint(
 	keybindings: MenuKeybindings,
 	destination: "back" | "close",
 	confirmAction: string,
+	width: number,
 ) {
 	const confirm = reviewBindingText(keybindings, "tui.select.confirm");
 	const cancel = reviewBindingText(keybindings, "tui.select.cancel", "ctrl+c");
 	const up = reviewBindingText(keybindings, "tui.select.up");
 	const down = reviewBindingText(keybindings, "tui.select.down");
-	return [
-		...(confirm && confirmAction ? [`${confirm} ${confirmAction}`] : []),
-		...(cancel ? [`${cancel} ${destination}`] : []),
-		...(destination === "back" || !cancel ? ["ctrl+c close"] : []),
-		...(up || down ? [`${[up, down].filter(Boolean).join("/")} navigate`] : []),
-	].join(" • ");
+	return fitCompactHintSegments(
+		[
+			...(confirm && confirmAction ? [`${confirm} ${confirmAction}`] : []),
+			...(cancel ? [`${cancel} ${destination}`] : []),
+			...(destination === "back" || !cancel ? ["ctrl+c close"] : []),
+			...(up || down ? [`${[up, down].filter(Boolean).join("/")} navigate`] : []),
+		],
+		width,
+	);
 }
 
 function reviewBindingText(
