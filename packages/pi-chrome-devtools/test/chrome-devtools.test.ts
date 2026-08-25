@@ -209,6 +209,27 @@ test("chrome-devtools keeps Azure Responses eager when compat enables tool searc
 	});
 });
 
+test("chrome-devtools honors native additional-tools support", async () => {
+	await withTempAgentDir(async () => {
+		for (const api of ["openai-responses", "openai-codex-responses"]) {
+			const chromeDevtoolsModule = await importFreshChromeDevtools();
+			const model = {
+				api,
+				provider: api === "openai-responses" ? "openai" : "openai-codex",
+				id: "gpt-5.4",
+				compat: { supportsAdditionalTools: true },
+			};
+			const mock = createMockPi({ activeTools: ["other_tool", ...CAPABILITY_TOOLS] });
+			const { ctx } = createMockContext({ model });
+			chromeDevtoolsModule.default(mock.pi);
+
+			await mock.events.get("session_start")?.[0]?.({}, ctx);
+
+			assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL]);
+		}
+	});
+});
+
 test("chrome-devtools activates every available tool before switching to an unsupported model", async () => {
 	await withTempAgentDir(async () => {
 		const chromeDevtoolsModule = await importFreshChromeDevtools();
@@ -511,6 +532,47 @@ test("chrome-devtools rejects invalid settings updates and restores active tools
 		writeSettings(agentDir, NEW_SETTINGS_FILE, [LIST_PAGES_TOOL]);
 		await mock.commands.get("chrome-devtools")?.handler("disable", ctx);
 		assert.deepEqual(readSettings(agentDir, NEW_SETTINGS_FILE).tools, []);
+	});
+});
+
+test("chrome-devtools keeps failed-save rollback eager after an unsupported model switch", async () => {
+	await withTempAgentDir(async (agentDir) => {
+		const settingsPath = path.join(agentDir, NEW_SETTINGS_FILE);
+		writeFileSync(settingsPath, '{"tools":["invalid"]}\n');
+		const chromeDevtoolsModule = await importFreshChromeDevtools();
+		const mock = createMockPi({ activeTools: ["other_tool", ...CAPABILITY_TOOLS] });
+		const { ctx, notifications } = createMockContext();
+		chromeDevtoolsModule.default(mock.pi);
+		await mock.events.get("session_start")?.[0]?.({}, ctx);
+		assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL]);
+
+		let markRuntimeApply: (() => void) | undefined;
+		const runtimeApplied = new Promise<void>((resolve) => {
+			markRuntimeApply = resolve;
+		});
+		const setActiveTools = mock.rawPi.setActiveTools.bind(mock.rawPi);
+		mock.rawPi.setActiveTools = (names) => {
+			setActiveTools(names);
+			markRuntimeApply?.();
+			markRuntimeApply = undefined;
+		};
+
+		const command = mock.commands.get("chrome-devtools")?.handler("disable", ctx);
+		await runtimeApplied;
+		await mock.events.get("model_select")?.[0]?.(
+			{
+				model: {
+					api: "anthropic-messages",
+					provider: "anthropic",
+					id: "claude-haiku-4-5",
+				},
+			},
+			ctx,
+		);
+		await command;
+
+		assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL, ...CAPABILITY_TOOLS]);
+		assert.match(notifications.at(-1)?.message ?? "", /settings save failed/i);
 	});
 });
 

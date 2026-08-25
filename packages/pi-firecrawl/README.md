@@ -82,7 +82,7 @@ Loaded capability tools remain active for the session unless the user makes them
 
 On reload, resume, or fork, capabilities recorded by `firecrawl_load` on the active branch are restored when the current catalog still allows them.
 
-Pi uses native deferred tool references on compatible Anthropic models and native tool search on compatible OpenAI Responses models.
+Pi uses native deferred tool references on compatible Anthropic models and native additional-tools or tool-search loading on compatible OpenAI and Codex Responses models.
 
 `azure-openai-responses` remains eager because Pi's Azure adapter does not implement native deferred tool-search serialization.
 

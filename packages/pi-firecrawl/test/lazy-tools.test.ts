@@ -182,6 +182,27 @@ test("firecrawl keeps Azure Responses eager when compat enables tool search", as
 	});
 });
 
+test("firecrawl honors native additional-tools support", async () => {
+	await withTempAgentDir(async () => {
+		for (const api of ["openai-responses", "openai-codex-responses"]) {
+			const firecrawlModule = await importFreshFirecrawl();
+			const model = {
+				api,
+				provider: api === "openai-responses" ? "openai" : "openai-codex",
+				id: "gpt-5.4",
+				compat: { supportsAdditionalTools: true },
+			};
+			const mock = createMockPi({ activeTools: ["other_tool", ...CAPABILITY_TOOLS] });
+			const ctx = createMockContext({ model }).ctx;
+			firecrawlModule.default(mock.pi);
+
+			await mock.events.get("session_start")?.[0]?.({}, ctx);
+
+			assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL]);
+		}
+	});
+});
+
 test("firecrawl keeps its missing-settings catalog across session replacement", async () => {
 	await withTempAgentDir(async () => {
 		const firecrawlModule = await importFreshFirecrawl();

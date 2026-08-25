@@ -869,6 +869,47 @@ test("firecrawl rejects invalid settings updates and restores active tools", asy
 	});
 });
 
+test("firecrawl keeps failed-save rollback eager after an unsupported model switch", async () => {
+	await withTempAgentDir(async (agentDir) => {
+		const settingsPath = path.join(agentDir, NEW_SETTINGS_FILE);
+		writeFileSync(settingsPath, '{"tools":["invalid"]}\n');
+		const firecrawlModule = await importFreshFirecrawl();
+		const mock = createMockPi({ activeTools: ["other_tool", ...CAPABILITY_TOOLS] });
+		const { ctx, notifications } = createMockContext();
+		firecrawlModule.default(mock.pi);
+		await mock.events.get("session_start")?.[0]?.({}, ctx);
+		assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL]);
+
+		let markRuntimeApply: (() => void) | undefined;
+		const runtimeApplied = new Promise<void>((resolve) => {
+			markRuntimeApply = resolve;
+		});
+		const setActiveTools = mock.rawPi.setActiveTools.bind(mock.rawPi);
+		mock.rawPi.setActiveTools = (names) => {
+			setActiveTools(names);
+			markRuntimeApply?.();
+			markRuntimeApply = undefined;
+		};
+
+		const command = mock.commands.get("firecrawl")?.handler("disable", ctx);
+		await runtimeApplied;
+		await mock.events.get("model_select")?.[0]?.(
+			{
+				model: {
+					api: "anthropic-messages",
+					provider: "anthropic",
+					id: "claude-haiku-4-5",
+				},
+			},
+			ctx,
+		);
+		await command;
+
+		assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL, ...CAPABILITY_TOOLS]);
+		assert.match(notifications.at(-1)?.message ?? "", /settings save failed/i);
+	});
+});
+
 test("firecrawl rolls back a failed save after shutdown invalidates its session", async () => {
 	await withTempAgentDir(async (agentDir) => {
 		mkdirSync(path.join(agentDir, NEW_SETTINGS_FILE));

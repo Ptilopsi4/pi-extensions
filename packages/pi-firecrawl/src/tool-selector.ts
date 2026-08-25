@@ -223,7 +223,9 @@ async function transactSelectedToolsNow(
 			const previousLoadedTools = previousActiveTools.filter((name) =>
 				FIRECRAWL_TOOL_NAMES.includes(name as FirecrawlToolName),
 			);
-			pi.setActiveTools(unique([...currentNonCapabilityTools, ...previousLoadedTools]));
+			const restoredFirecrawlTools =
+				firecrawlToolExposureMode(pi) === "eager" ? previousAvailableTools : previousLoadedTools;
+			pi.setActiveTools(unique([...currentNonCapabilityTools, ...restoredFirecrawlTools]));
 		} catch (caught) {
 			rollbackError = caught;
 		}

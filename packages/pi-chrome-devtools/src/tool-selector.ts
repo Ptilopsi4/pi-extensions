@@ -122,7 +122,11 @@ async function transactSelectedToolsNow(
 			const previousLoadedChromeTools = previousActiveTools.filter((name) =>
 				CHROME_DEVTOOLS_TOOL_NAMES.includes(name as ChromeDevToolsToolName),
 			);
-			pi.setActiveTools(unique([...currentNonChromeTools, ...previousLoadedChromeTools]));
+			const restoredChromeTools =
+				chromeDevtoolsToolExposureMode(pi) === "eager"
+					? previousAvailableTools
+					: previousLoadedChromeTools;
+			pi.setActiveTools(unique([...currentNonChromeTools, ...restoredChromeTools]));
 		} catch (caught) {
 			rollbackError = caught;
 		}

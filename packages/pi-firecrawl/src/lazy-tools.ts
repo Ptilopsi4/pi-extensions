@@ -127,7 +127,10 @@ export function supportsNativeDeferredToolLoading(model: ExtensionContext["model
 		return major > 4 || (major === 4 && minor >= 5);
 	}
 	if (model.api === "openai-responses" || model.api === "openai-codex-responses") {
-		return compatBoolean(model.compat, "supportsToolSearch") === true;
+		return (
+			compatBoolean(model.compat, "supportsAdditionalTools") === true ||
+			compatBoolean(model.compat, "supportsToolSearch") === true
+		);
 	}
 	return false;
 }
