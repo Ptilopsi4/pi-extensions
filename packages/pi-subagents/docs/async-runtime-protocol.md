@@ -15,6 +15,8 @@ Omitting the field or using `background` preserves prior behavior and does not c
 Tool-result `details.agent.completionRequirements` provides fork-sensitive branch evidence.
 Session restoration retains exact requirements found on the active branch and treats sessions without visible subagent state as a possible compacted continuation.
 The successful lifecycle tool result and delivered completion message are the ordinary model-visible requirement handoff.
+When an uncompacted resume changes a retained pending run to cancelled and interrupted, `before_agent_start` appends one hidden versioned transition that supersedes the stale pending handoff.
+The retained transition prevents duplicate publication on later turns and participates in fork-sensitive branch reconstruction.
 If leading compaction or branch summaries remove equivalent current evidence, the `context` hook restores one canonical hidden `pi-subagent-required-completions` fallback immediately after the summaries.
 The fallback remains at that fixed boundary across ordinary turns and is removed when equivalent current evidence becomes visible or no retained requirement remains.
 `CompletionDeliveryBroker` owns exact completion visibility acknowledgement and asks the registry to mark the corresponding requirement visible.

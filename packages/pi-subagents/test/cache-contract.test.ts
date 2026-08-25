@@ -10,8 +10,12 @@ import { createMockContext, createMockPi } from "../../../test/support.js";
 import {
 	beginCompletionRequirement,
 	COMPLETION_REQUIREMENT_CONTEXT_TYPE,
+	COMPLETION_REQUIREMENT_TRANSITION_TYPE,
+	completionRequirementKey,
+	completionRequirementsFromBranch,
 	reconcileRequiredCompletionContext,
 } from "../src/completion-requirement.js";
+import { AgentRegistry } from "../src/registry.js";
 import {
 	createSubagentSessionGuidance,
 	reconcileSubagentSessionGuidance,
@@ -22,6 +26,7 @@ import {
 } from "../src/session-guidance-contract.js";
 import { resolveStatefulLimits } from "../src/stateful-limits.js";
 import subagents from "../src/subagents.js";
+import { record } from "./registry-test-helpers.js";
 import { installSubagentsTestEnvironment } from "./subagents-test-helpers.js";
 
 const restoreTestEnvironment = installSubagentsTestEnvironment();
@@ -263,6 +268,112 @@ test("session guidance persists once, appends live changes, and rejects stale se
 		retryContext.ctx,
 	)) as { message?: { customType?: string } } | undefined;
 	assert.equal(retried?.message?.customType, SUBAGENT_GUIDANCE_CONTEXT_TYPE);
+});
+
+test("uncompacted resume appends a restored requirement cancellation once", async () => {
+	const requirement = beginCompletionRequirement(undefined, {
+		runId: "run:restored",
+		generation: 1,
+		createdAt: 10,
+	})[0];
+	const registry = new AgentRegistry(
+		{ kind: "fake", runTurn: async () => ({ output: "unused", exitCode: 0 }) },
+		{ now: () => 20 },
+	);
+	registry.restore([
+		record({
+			state: "running",
+			completionRequirements: [requirement],
+		}),
+	]);
+	const cancelled = registry.list()[0]?.completionRequirements?.[0];
+	assert.equal(cancelled?.state, "cancelled");
+	assert.equal(cancelled?.terminalState, "interrupted");
+
+	const guidance = createSubagentSessionGuidance(guidanceSnapshot());
+	const pendingResult: ContextEvent["messages"][number] = {
+		role: "toolResult",
+		toolCallId: "spawn-restored",
+		toolName: "subagent_spawn",
+		content: [{ type: "text", text: "spawned required child" }],
+		details: { agent: { completionRequirements: [requirement] } },
+		isError: false,
+		timestamp: 0,
+	};
+	const branch: SessionEntry[] = [
+		{
+			type: "message",
+			id: "guidance",
+			parentId: null,
+			timestamp: new Date(0).toISOString(),
+			message: guidance,
+		} as SessionEntry,
+		{
+			type: "message",
+			id: "spawn",
+			parentId: "guidance",
+			timestamp: new Date(1).toISOString(),
+			message: pendingResult,
+		} as SessionEntry,
+	];
+	const mock = createMockPi();
+	registerSubagentSessionGuidance(mock.pi, guidanceSnapshot, () => registry.list());
+	const context = createMockContext({ sessionManager: sessionManagerFor(branch) });
+	await emit(mock, "session_start", { reason: "resume" }, context.ctx);
+
+	const firstMessages = await applyPromptBoundary(
+		mock,
+		[guidance, pendingResult, userMessage("continue resumed work")],
+		context.ctx,
+	);
+	const transitions = firstMessages.filter(
+		(message) =>
+			message.role === "custom" && message.customType === COMPLETION_REQUIREMENT_TRANSITION_TYPE,
+	);
+	assert.equal(transitions.length, 1);
+	const transition = transitions[0];
+	if (transition?.role !== "custom") assert.fail("expected restored cancellation transition");
+	assert.equal(firstMessages.at(-1), transition);
+	assert.match(String(transition.content), /cancelled.*run:restored.*interrupted/su);
+	assert.equal(
+		completionRequirementsFromBranch(transitions).records.get(completionRequirementKey(requirement))
+			?.state,
+		"cancelled",
+	);
+	const staleTransition = {
+		...transition,
+		details: { ...(transition.details as object), version: "stale-version" },
+	};
+	assert.deepEqual(completionRequirementsFromBranch([staleTransition]), {
+		observedState: false,
+		records: new Map(),
+		keys: new Set(),
+	});
+	branch.push({
+		type: "message",
+		id: "transition",
+		parentId: "spawn",
+		timestamp: new Date(2).toISOString(),
+		message: transition,
+	} as SessionEntry);
+	const secondMessages = await applyPromptBoundary(
+		mock,
+		[...firstMessages, assistantMessage("acknowledged"), userMessage("continue again")],
+		context.ctx,
+	);
+	assert.equal(
+		secondMessages.filter(
+			(message) =>
+				message.role === "custom" && message.customType === COMPLETION_REQUIREMENT_TRANSITION_TYPE,
+		).length,
+		1,
+		"the retained transition must suppress duplicate publication",
+	);
+	const first = convertToLlm(firstMessages);
+	const second = convertToLlm(secondMessages);
+	assert.deepEqual(second.slice(0, first.length), first);
+
+	await emit(mock, "session_shutdown", { reason: "quit" }, context.ctx);
 });
 
 test("compaction restores guidance and required completion at deterministic boundaries", () => {

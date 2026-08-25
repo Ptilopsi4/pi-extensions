@@ -10,7 +10,10 @@ import type {
 	ConsultResourcePolicy,
 	DelegationCwdPolicy,
 } from "./agents/types.js";
-import { reconcileRequiredCompletionContext } from "./completion-requirement.js";
+import {
+	createRequiredCompletionTransition,
+	reconcileRequiredCompletionContext,
+} from "./completion-requirement.js";
 import { DEFAULT_MAX_CONTEXT_BYTES, truncateUtf8 } from "./limits.js";
 import type { ManagedAgent } from "./registry.js";
 import type { StatefulLimits } from "./stateful-limits.js";
@@ -64,6 +67,13 @@ export function registerSubagentSessionGuidance(
 			return;
 		}
 		return { message: contract };
+	});
+
+	pi.on("before_agent_start", (_event, ctx) => {
+		if (ctx.sessionManager !== activeSession) return;
+		const messages = buildSessionContext(ctx.sessionManager.getBranch()).messages;
+		const transition = createRequiredCompletionTransition(messages, getAgents());
+		if (transition) return { message: transition };
 	});
 
 	pi.on("context", (event, ctx) => {

@@ -649,6 +649,7 @@ Required state moves from `pending` to `available` after durable terminal comple
 Interruption, close, stale restore, and shutdown terminalize unfinished requirements explicitly instead of silently dropping them.
 Tool-result details preserve fork-sensitive requirement evidence, and inspection projects bounded requirement state.
 The successful tool handoff and delivered completion messages are the ordinary model-visible source of requirement state.
+When an uncompacted resumed session terminalizes an in-flight required run, one hidden append-only transition supersedes the retained pending handoff before the next model turn.
 If leading compaction or branch summaries remove that handoff, one canonical hidden fallback is restored at a fixed boundary immediately after the summaries.
 The runtime rejects a sixty-fifth unresolved required run before acceptance so every unresolved exact identity fits in the bounded parent context.
 The terminal completion and recipient are persisted before delivery, simultaneous root completions are batched, and the root broker allows at most one in-flight wake until that parent turn starts.

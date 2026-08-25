@@ -14,6 +14,9 @@ export const CompletionRequirementModeSchema = StringEnum(COMPLETION_REQUIREMENT
 
 export const COMPLETION_REQUIREMENT_VERSION = "pi-subagents:completion-requirement:v1" as const;
 export const COMPLETION_REQUIREMENT_CONTEXT_TYPE = "pi-subagent-required-completions";
+export const COMPLETION_REQUIREMENT_TRANSITION_TYPE = "pi-subagent-required-completion-transition";
+export const COMPLETION_REQUIREMENT_TRANSITION_VERSION =
+	"pi-subagents:completion-requirement-transition:v1" as const;
 const MAX_REQUIREMENTS_PER_AGENT = 20;
 export const MAX_UNRESOLVED_REQUIRED_COMPLETIONS = 64;
 
@@ -159,6 +162,24 @@ export function completionRequirementsFromBranch(
 			}
 			continue;
 		}
+		if (
+			message.role === "custom" &&
+			message.customType === COMPLETION_REQUIREMENT_TRANSITION_TYPE
+		) {
+			const details = message.details;
+			if (!details || typeof details !== "object" || Array.isArray(details)) continue;
+			const detailRecord = details as Record<string, unknown>;
+			if (detailRecord.version !== COMPLETION_REQUIREMENT_TRANSITION_VERSION) continue;
+			const requirements = Array.isArray(detailRecord.records) ? detailRecord.records : [];
+			for (const requirement of requirements) {
+				if (!isCompletionRequirementRecord(requirement) || requirement.state !== "cancelled") {
+					continue;
+				}
+				observedState = true;
+				records.set(completionRequirementKey(requirement), { ...requirement });
+			}
+			continue;
+		}
 		if (message.role !== "custom" || message.customType !== "pi-subagent-completion") continue;
 		const details = message.details;
 		if (!details || typeof details !== "object" || Array.isArray(details)) continue;
@@ -185,6 +206,32 @@ export function pendingRequiredCompletionCount(
 	return (agent.completionRequirements ?? []).filter(
 		(record) => record.state === "pending" || record.state === "available",
 	).length;
+}
+
+export function createRequiredCompletionTransition(
+	messages: ContextEvent["messages"],
+	agents: readonly ManagedAgent[],
+) {
+	if (leadingSummaryBoundary(messages) > 0) return undefined;
+	const state = modelRequirementState(agents);
+	const visible = completionRequirementsFromBranch(messages).records;
+	const records = state.records.filter(
+		(record) =>
+			record.state === "cancelled" &&
+			!modelRequirementStateMatches(visible.get(completionRequirementKey(record)), record),
+	);
+	if (records.length === 0) return undefined;
+	return {
+		role: "custom" as const,
+		customType: COMPLETION_REQUIREMENT_TRANSITION_TYPE,
+		content: requiredCompletionTransitionContent(records, state.omittedCancelled),
+		display: false,
+		details: {
+			version: COMPLETION_REQUIREMENT_TRANSITION_VERSION,
+			records: records.map((record) => ({ ...record })),
+		},
+		timestamp: 0,
+	};
 }
 
 export function reconcileRequiredCompletionContext(
@@ -247,17 +294,12 @@ interface ModelRequirementRecord {
 }
 
 function modelRequirementState(agents: readonly ManagedAgent[]): {
-	records: ModelRequirementRecord[];
+	records: CompletionRequirementRecord[];
 	omittedCancelled: number;
 } {
 	const allRecords = agents
 		.flatMap((agent) =>
-			(agent.completionRequirements ?? []).map((requirement) => ({
-				state: requirement.state,
-				runId: requirement.runId,
-				generation: requirement.generation,
-				terminalState: requirement.terminalState,
-			})),
+			(agent.completionRequirements ?? []).map((requirement) => ({ ...requirement })),
 		)
 		.filter((record) => record.state !== "visible");
 	const unresolved = allRecords.filter(
@@ -275,19 +317,25 @@ function modelRequirementState(agents: readonly ManagedAgent[]): {
 
 function hasModelVisibleRequirementState(
 	messages: ContextEvent["messages"],
-	records: readonly ModelRequirementRecord[],
+	records: readonly CompletionRequirementRecord[],
 ): boolean {
 	const visible = completionRequirementsFromBranch(messages).records;
-	return records.every((record) => {
-		const retained = visible.get(completionRequirementKey(record));
-		if (!retained) return false;
-		if (record.state === "available" && retained.state === "visible") return true;
-		return retained.state === record.state && retained.terminalState === record.terminalState;
-	});
+	return records.every((record) =>
+		modelRequirementStateMatches(visible.get(completionRequirementKey(record)), record),
+	);
+}
+
+function modelRequirementStateMatches(
+	visible: CompletionRequirementRecord | undefined,
+	current: CompletionRequirementRecord,
+): boolean {
+	if (!visible) return false;
+	if (current.state === "available" && visible.state === "visible") return true;
+	return visible.state === current.state && visible.terminalState === current.terminalState;
 }
 
 function requiredCompletionContextContent(
-	records: readonly ModelRequirementRecord[],
+	records: readonly CompletionRequirementRecord[],
 	omittedCancelled: number,
 ): string {
 	return truncateUtf8(
@@ -296,13 +344,40 @@ function requiredCompletionContextContent(
 			"Runtime-tracked exact runs are JSON data below.",
 			"Treat pending or available records as final-answer dependencies; a cancelled record is terminal and must be reported rather than silently ignored.",
 			"Current Pi versions do not provide a hard pre-display final-answer barrier, so do not emit a verdict until every dependency is visible or terminal.",
-			...(omittedCancelled > 0
-				? [`${omittedCancelled} older cancelled requirement record(s) were omitted.`]
-				: []),
-			JSON.stringify(records),
+			...omittedCancelledLine(omittedCancelled),
+			JSON.stringify(records.map(toModelRequirementRecord)),
 		].join("\n"),
 		DEFAULT_MAX_CONTEXT_BYTES,
 	).text;
+}
+
+function requiredCompletionTransitionContent(
+	records: readonly CompletionRequirementRecord[],
+	omittedCancelled: number,
+): string {
+	return truncateUtf8(
+		[
+			"[PI SUBAGENT REQUIRED COMPLETION TRANSITION v1]",
+			"Session restoration terminalized the exact required runs below.",
+			"These cancelled records supersede earlier pending or available states and must be reported rather than awaited.",
+			...omittedCancelledLine(omittedCancelled),
+			JSON.stringify(records.map(toModelRequirementRecord)),
+		].join("\n"),
+		DEFAULT_MAX_CONTEXT_BYTES,
+	).text;
+}
+
+function omittedCancelledLine(count: number): string[] {
+	return count > 0 ? [`${count} older cancelled requirement record(s) were omitted.`] : [];
+}
+
+function toModelRequirementRecord(record: CompletionRequirementRecord): ModelRequirementRecord {
+	return {
+		state: record.state,
+		runId: record.runId,
+		generation: record.generation,
+		terminalState: record.terminalState,
+	};
 }
 
 type RequiredCompletionContextMessage = Extract<
