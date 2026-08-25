@@ -13,7 +13,7 @@ The default response is concise, while selected sections and sanitized bundles p
 - Captures provider-visible tool names, numeric request sizes, HTTP status, and response-header latency without retaining payload content.
 - Compares provider requests and runtime snapshots with explicit added, removed, and changed fields.
 - Produces actionable findings and deduplicated recommendations.
-- Audits every retained provider record against an allowlist before marking a diagnostic bundle shareable.
+- Audits retained provider fields and bundle source-path redaction before marking a diagnostic bundle shareable.
 - Bounds every tool result to 50 KB and 2,000 lines.
 
 ## Tool
@@ -60,7 +60,9 @@ Provider request records retain only a timestamp, session ID, provider and model
 The extension does not retain prompts, instructions, message content, tool schemas, tool arguments, HTTP headers, response bodies, credentials, API keys, or authorization values.
 Request and tool-definition sizes are retained as numbers rather than serialized content.
 Captured display strings are stripped of terminal controls, bidirectional controls, and newlines before retention.
-The `privacy` section reports the allowlist audit result and every excluded data class.
+Bundle exports replace every non-virtual tool and extension source path with `[redacted-local-path]`.
+Ordinary targeted diagnostics keep sanitized source paths available for local troubleshooting.
+The `privacy` section reports the provider-field allowlist and bundle path-redaction audit results.
 
 ## Limitations
 
@@ -68,6 +70,7 @@ The `before_provider_request` hook exposes the payload at this extension's handl
 A captured payload does not prove that the provider accepted or executed the exposed tools.
 Response latency ends when headers arrive and does not measure stream completion.
 Provider responses are matched to requests by event order because the hook exposes no request identifier.
+Unmatched request indexes are discarded at `agent_end` so a failed run cannot offset response attribution in a later run.
 Extension visibility includes only public tool and slash-command surfaces, so passive event-only extensions cannot be enumerated.
 Inactive tools include an honest generic explanation because Pi does not expose the configuration, filter, or deferred-loading reason.
 A cache finding cannot prove provider cache support and should be interpreted with the selected provider and model documentation.

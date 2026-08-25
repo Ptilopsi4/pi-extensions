@@ -66,7 +66,18 @@ interface DiagnosticReportOptions {
 export function createDiagnosticResponse(options: DiagnosticReportOptions) {
 	const runtime = createRuntimeReport(options.pi, options.ctx, options.capturedAt);
 	const provider = createProviderReport(options.action, options.limit, options.capture);
-	const privacy = createPrivacyAudit(options.capture.records);
+	const bundleRequested = options.action === "bundle";
+	const toolCatalog = bundleRequested
+		? redactToolCatalogPaths(runtime.toolCatalog)
+		: runtime.toolCatalog;
+	const extensions = bundleRequested
+		? redactExtensionSurfacePaths(runtime.extensions)
+		: runtime.extensions;
+	const privacy = createPrivacyAudit(options.capture.records, {
+		bundleRequested,
+		bundlePathRedactionPassed:
+			!bundleRequested || bundlePathsAreRedacted(toolCatalog, extensions.surfaces),
+	});
 	const findings = createFindings(runtime, provider, options.capture, privacy);
 	const selectedSections = selectSections(options);
 	const details: Record<string, unknown> = {};
@@ -75,13 +86,11 @@ export function createDiagnosticResponse(options: DiagnosticReportOptions) {
 	if (selectedSections.has("tools")) {
 		details.tools = {
 			state: runtime.tools,
-			catalog: runtime.toolCatalog,
-			definitionBytes: sumNullable(
-				runtime.toolCatalog.map(({ definitionBytes }) => definitionBytes),
-			),
+			catalog: toolCatalog,
+			definitionBytes: sumNullable(toolCatalog.map(({ definitionBytes }) => definitionBytes)),
 		};
 	}
-	if (selectedSections.has("extensions")) details.extensions = runtime.extensions;
+	if (selectedSections.has("extensions")) details.extensions = extensions;
 	if (selectedSections.has("environment")) details.environment = runtime.environment;
 	if (selectedSections.has("timeline")) {
 		details.timeline = {
@@ -101,9 +110,11 @@ export function createDiagnosticResponse(options: DiagnosticReportOptions) {
 		export:
 			options.action === "bundle"
 				? {
-						sanitized: true,
+						sanitized: privacy.passed,
 						contentType: "application/json",
-						description: "Shareable privacy-filtered runtime diagnostic bundle.",
+						description: privacy.passed
+							? "Shareable privacy-filtered runtime diagnostic bundle."
+							: "Diagnostic bundle failed its privacy audit and should not be shared.",
 					}
 				: undefined,
 		summary: {
@@ -249,6 +260,7 @@ export function formatCommandSummary(
 	return [
 		...header,
 		`Privacy audit: ${privacy?.passed ? "passed" : "failed"}`,
+		`Bundle path redaction: ${privacy?.bundlePathRedaction ?? "unknown"}`,
 		`Checked records: ${privacy?.checkedRecordCount ?? 0}`,
 		`Unexpected fields: ${formatNameList(privacy?.unexpectedFields ?? [])}`,
 		`Not retained: ${privacy?.notRetained.join(", ") ?? "unknown"}`,
@@ -396,7 +408,10 @@ function createFindings(
 	return findings;
 }
 
-function createPrivacyAudit(records: readonly ProviderRequestDiagnostic[]) {
+function createPrivacyAudit(
+	records: readonly ProviderRequestDiagnostic[],
+	options: { bundleRequested: boolean; bundlePathRedactionPassed: boolean },
+) {
 	const allowedRequestFields = new Set([
 		"version",
 		"requestIndex",
@@ -419,6 +434,9 @@ function createPrivacyAudit(records: readonly ProviderRequestDiagnostic[]) {
 		"responseHeaderLatencyMs",
 	]);
 	const unexpectedFields = new Set<string>();
+	if (options.bundleRequested && !options.bundlePathRedactionPassed) {
+		unexpectedFields.add("bundle.source.path");
+	}
 	for (const record of records) {
 		for (const key of Object.keys(record)) {
 			if (!allowedRequestFields.has(key)) unexpectedFields.add(`request.${key}`);
@@ -432,6 +450,11 @@ function createPrivacyAudit(records: readonly ProviderRequestDiagnostic[]) {
 		passed: unexpectedFields.size === 0,
 		checkedRecordCount: records.length,
 		unexpectedFields: [...unexpectedFields].sort(),
+		bundlePathRedaction: options.bundleRequested
+			? options.bundlePathRedactionPassed
+				? "passed"
+				: "failed"
+			: "not-applicable",
 		retainedFields: [...allowedRequestFields].sort(),
 		notRetained: [
 			"prompts and instructions",
@@ -443,8 +466,52 @@ function createPrivacyAudit(records: readonly ProviderRequestDiagnostic[]) {
 		notes: [
 			"Request and tool-definition byte counts are retained as numbers, never as serialized content.",
 			"Captured display strings are stripped of terminal controls and bounded before retention.",
+			"Bundle exports replace every non-virtual tool and extension source path with a redaction marker.",
 		],
 	};
+}
+
+const REDACTED_SOURCE_PATH = "[redacted-local-path]";
+
+function redactToolCatalogPaths(
+	catalog: RuntimeDiagnosticReport["toolCatalog"],
+): RuntimeDiagnosticReport["toolCatalog"] {
+	return catalog.map((tool) => ({
+		...tool,
+		source: {
+			...tool.source,
+			path: redactSourcePath(tool.source.path),
+		},
+	}));
+}
+
+function redactExtensionSurfacePaths(
+	extensions: RuntimeDiagnosticReport["extensions"],
+): RuntimeDiagnosticReport["extensions"] {
+	return {
+		...extensions,
+		surfaces: extensions.surfaces.map((surface) => ({
+			...surface,
+			path: redactSourcePath(surface.path),
+		})),
+	};
+}
+
+function bundlePathsAreRedacted(
+	catalog: RuntimeDiagnosticReport["toolCatalog"],
+	surfaces: RuntimeDiagnosticReport["extensions"]["surfaces"],
+): boolean {
+	return [...catalog.map(({ source }) => source.path), ...surfaces.map(({ path }) => path)].every(
+		(path) => path === REDACTED_SOURCE_PATH || isVirtualSourcePath(path),
+	);
+}
+
+function redactSourcePath(path: string): string {
+	return isVirtualSourcePath(path) ? path : REDACTED_SOURCE_PATH;
+}
+
+function isVirtualSourcePath(path: string): boolean {
+	return path.startsWith("<") && path.endsWith(">");
 }
 
 function selectComparisonRecords(

@@ -21,6 +21,7 @@ import {
 	createProviderResponseDiagnostic,
 	extractProviderRequestDiagnostic,
 } from "./provider-request.js";
+import { RUNTIME_ENTRY_TYPE } from "./snapshot.js";
 
 interface ToolResult {
 	content: Array<{ type: "text"; text: string }>;
@@ -414,7 +415,29 @@ test("defaults to a concise agent report and supports targeted, control, bundle,
 			),
 	);
 	assert.equal((bundle.export as { sanitized: boolean }).sanitized, true);
-	assert.ok((bundle.details as Record<string, unknown>).timeline);
+	const bundleDetails = bundle.details as Record<string, unknown>;
+	assert.ok(bundleDetails.timeline);
+	assert.equal(JSON.stringify(bundle).includes("/project/"), false);
+	assert.deepEqual(
+		(
+			bundleDetails.tools as {
+				catalog: Array<{ source: { path: string } }>;
+			}
+		).catalog.map(({ source }) => source.path),
+		["<builtin:read>", "[redacted-local-path]"],
+	);
+	assert.deepEqual(
+		(
+			bundleDetails.extensions as {
+				surfaces: Array<{ path: string }>;
+			}
+		).surfaces.map(({ path }) => path),
+		["[redacted-local-path]"],
+	);
+	assert.equal(
+		(bundleDetails.privacy as { bundlePathRedaction: string }).bundlePathRedaction,
+		"passed",
+	);
 
 	const cleared = parseToolResult(
 		await harness
@@ -460,6 +483,82 @@ test("defaults to a concise agent report and supports targeted, control, bundle,
 		} as ExtensionCommandContext),
 		/TUI and RPC modes only/,
 	);
+});
+
+test("clears unmatched provider requests before attributing responses in a later run", async () => {
+	const harness = createHarness();
+	await harness.emit("session_start", {});
+	harness.setTime(2_000);
+	await harness.emit("before_provider_request", { payload: { tools: [{ name: "read" }] } });
+	await harness.emit("agent_end", { messages: [] });
+
+	harness.setTime(3_000);
+	await harness.emit("before_provider_request", { payload: { tools: [{ name: "read" }] } });
+	harness.setTime(3_025);
+	await harness.emit("after_provider_response", { status: 200, headers: {} });
+
+	const shown = parseToolResult(
+		await harness
+			.tool()
+			.execute(
+				"call-show",
+				{ action: "show", limit: 2 },
+				new AbortController().signal,
+				undefined,
+				harness.context,
+			),
+	);
+	const records = (
+		(shown.details as Record<string, unknown>).providerRequestCapture as {
+			recent: Array<{ response: null | { status: number; responseHeaderLatencyMs: number } }>;
+		}
+	).recent;
+	assert.equal(records[0].response, null);
+	assert.deepEqual(records[1].response, {
+		version: 1,
+		requestIndex: 2,
+		capturedAt: 3_025,
+		status: 200,
+		responseHeaderLatencyMs: 25,
+	});
+});
+
+test("ignores malformed restored runtime snapshots before comparison", async () => {
+	const harness = createHarness();
+	await harness.emit("session_start", {});
+	for (const capturedAt of [2_000, 3_000]) {
+		harness.entries.push(
+			customEntry(RUNTIME_ENTRY_TYPE, {
+				version: 1,
+				capturedAt,
+				reason: "assistant_message",
+				sessionId: "session-1",
+				provider: "openai",
+				model: "gpt-test",
+				thinkingLevel: "high",
+				cache: null,
+				tools: { active: null, inactive: {} },
+			}),
+		);
+	}
+
+	const compared = parseToolResult(
+		await harness
+			.tool()
+			.execute(
+				"call-compare",
+				{ action: "compare" },
+				new AbortController().signal,
+				undefined,
+				harness.context,
+			),
+	);
+	const timeline = (compared.details as Record<string, unknown>).timeline as {
+		recentRuntimeRecords: unknown[];
+		comparison: unknown;
+	};
+	assert.equal(timeline.recentRuntimeRecords.length, 1);
+	assert.equal(timeline.comparison, null);
 });
 
 test("bounds a full diagnostic bundle below Pi tool output limits", async () => {

@@ -205,6 +205,10 @@ export function createDebugExtension(
 			recordRuntime(ctx, "tools_changed", false);
 		});
 
+		pi.on("agent_end", () => {
+			capture.pendingRequestIndexes = [];
+		});
+
 		pi.on("message_end", (event, ctx) => {
 			if (event.message.role !== "assistant") return;
 			const snapshot = createRuntimeSnapshot(pi, ctx, "assistant_message", now(), {

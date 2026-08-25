@@ -10,13 +10,16 @@ const MAX_EXTENSION_SURFACES = 100;
 const MAX_CACHE_SAMPLES = 20;
 const MAX_RUNTIME_RECORDS = 20;
 
-export type RuntimeSnapshotReason =
-	| "session_start"
-	| "model_select"
-	| "before_agent_start"
-	| "tools_changed"
-	| "assistant_message"
-	| "diagnostic_tool";
+const RUNTIME_SNAPSHOT_REASONS = [
+	"session_start",
+	"model_select",
+	"before_agent_start",
+	"tools_changed",
+	"assistant_message",
+	"diagnostic_tool",
+] as const;
+
+export type RuntimeSnapshotReason = (typeof RUNTIME_SNAPSHOT_REASONS)[number];
 
 interface UsageLike {
 	input?: number;
@@ -324,8 +327,8 @@ function collectRuntimeRecords(entries: readonly SessionEntry[]): RuntimeSnapsho
 			(entry): entry is Extract<SessionEntry, { type: "custom" }> =>
 				entry.type === "custom" && entry.customType === RUNTIME_ENTRY_TYPE,
 		)
-		.map(({ data }) => data)
-		.filter(isRuntimeSnapshot)
+		.map(({ data }) => normalizeRuntimeSnapshot(data))
+		.filter((snapshot): snapshot is RuntimeSnapshot => snapshot !== undefined)
 		.slice(-MAX_RUNTIME_RECORDS);
 }
 
@@ -458,15 +461,114 @@ function diffNames(from: readonly string[], to: readonly string[]) {
 	};
 }
 
-function isRuntimeSnapshot(value: unknown): value is RuntimeSnapshot {
-	if (!isRecord(value)) return false;
-	return (
-		value.version === 1 &&
-		typeof value.capturedAt === "number" &&
-		typeof value.reason === "string" &&
-		typeof value.sessionId === "string" &&
-		isRecord(value.tools)
-	);
+function normalizeRuntimeSnapshot(value: unknown): RuntimeSnapshot | undefined {
+	if (
+		!isRecord(value) ||
+		value.version !== 1 ||
+		!isFiniteNumber(value.capturedAt) ||
+		!isRuntimeSnapshotReason(value.reason) ||
+		typeof value.sessionId !== "string" ||
+		!isNullableString(value.provider) ||
+		!isNullableString(value.model) ||
+		typeof value.thinkingLevel !== "string"
+	) {
+		return undefined;
+	}
+	const tools = normalizeToolState(value.tools);
+	const cache = value.cache === null ? null : normalizeCacheSample(value.cache);
+	if (!tools || cache === undefined) return undefined;
+	return {
+		version: 1,
+		capturedAt: value.capturedAt,
+		reason: value.reason,
+		sessionId: sanitizeDiagnosticText(value.sessionId, 128),
+		provider: value.provider ? sanitizeDiagnosticText(value.provider, 128) : null,
+		model: value.model ? sanitizeDiagnosticText(value.model, 256) : null,
+		thinkingLevel: sanitizeDiagnosticText(value.thinkingLevel, 32),
+		cache,
+		tools,
+	};
+}
+
+function normalizeToolState(value: unknown): ToolState | undefined {
+	if (
+		!isRecord(value) ||
+		!isNonNegativeInteger(value.configuredCount) ||
+		!isNonNegativeInteger(value.activeCount) ||
+		!isNonNegativeInteger(value.inactiveCount) ||
+		!isNonNegativeInteger(value.omittedCount)
+	) {
+		return undefined;
+	}
+	const active = normalizeStringArray(value.active);
+	const inactive = normalizeStringArray(value.inactive);
+	const unknownActive = normalizeStringArray(value.unknownActive);
+	if (!active || !inactive || !unknownActive) return undefined;
+	return {
+		configuredCount: value.configuredCount,
+		activeCount: value.activeCount,
+		inactiveCount: value.inactiveCount,
+		active,
+		inactive,
+		unknownActive,
+		omittedCount: value.omittedCount,
+	};
+}
+
+function normalizeCacheSample(value: unknown): ResponseCacheSample | undefined {
+	if (
+		!isRecord(value) ||
+		!isFiniteNumber(value.capturedAt) ||
+		!isNullableString(value.provider) ||
+		!isNullableString(value.model) ||
+		!isNonNegativeNumber(value.input) ||
+		!isNonNegativeNumber(value.cacheRead) ||
+		!isNonNegativeNumber(value.cacheWrite) ||
+		!isNonNegativeNumber(value.promptTokens) ||
+		!(value.hitRatePercent === null || isFiniteNumber(value.hitRatePercent))
+	) {
+		return undefined;
+	}
+	return {
+		capturedAt: value.capturedAt,
+		provider: value.provider ? sanitizeDiagnosticText(value.provider, 128) : null,
+		model: value.model ? sanitizeDiagnosticText(value.model, 256) : null,
+		input: value.input,
+		cacheRead: value.cacheRead,
+		cacheWrite: value.cacheWrite,
+		promptTokens: value.promptTokens,
+		hitRatePercent: value.hitRatePercent,
+	};
+}
+
+function normalizeStringArray(value: unknown): string[] | undefined {
+	if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+		return undefined;
+	}
+	return [...new Set(value.map((item) => sanitizeDiagnosticText(item, 128)))]
+		.filter(Boolean)
+		.sort((left, right) => left.localeCompare(right))
+		.slice(0, MAX_TOOL_NAMES);
+}
+
+function isRuntimeSnapshotReason(value: unknown): value is RuntimeSnapshotReason {
+	return RUNTIME_SNAPSHOT_REASONS.includes(value as RuntimeSnapshotReason);
+}
+
+function isNullableString(value: unknown): value is string | null {
+	return value === null || typeof value === "string";
+}
+
+function isFiniteNumber(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value);
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+	return isFiniteNumber(value) && Number.isInteger(value) && value >= 0;
+}
+
+function isNonNegativeNumber(value: unknown): value is number {
+	return isFiniteNumber(value) && value >= 0;
 }
 
 function jsonByteLength(value: unknown): number | null {
