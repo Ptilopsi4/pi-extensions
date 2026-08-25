@@ -652,6 +652,7 @@ The successful tool handoff and delivered completion messages are the ordinary m
 When a resumed session terminalizes an in-flight required run and the retained transcript still contains its pending handoff, one hidden append-only transition supersedes that stale evidence before the next model turn.
 This also covers compacted contexts that retain the handoff.
 If leading compaction or branch summaries remove the handoff, one canonical hidden fallback is restored at a fixed boundary immediately after the summaries.
+Branch-local boundary metadata preserves that exact fallback across reload and branch navigation.
 That restored fallback remains fixed for the summary epoch while later cancellation transitions or completion messages supersede it at the conversation tail.
 The runtime rejects a sixty-fifth unresolved required run before acceptance so every unresolved exact identity fits in the bounded parent context.
 The terminal completion and recipient are persisted before delivery, simultaneous root completions are batched, and the root broker allows at most one in-flight wake until that parent turn starts.
@@ -783,6 +784,7 @@ The UI explicitly states that target/trust settings are not filesystem sandboxin
 When stateful tools are enabled, their membership and provider-visible definitions stay fixed across spawn, completion, interrupt, close, mailbox, catalog, and live-policy transitions.
 Ordinary turns preserve the normalized provider-visible prefix, while a new guidance message or required-completion transition starts an explicit append-only prefix epoch.
 Compaction restoration inserts deterministic guidance and requirement fallbacks after leading summaries and retains each restored message for that summary epoch while later tail messages supersede it.
+Branch-local session metadata reconstructs those exact historical boundaries after reload and isolates them during tree navigation, including when refreshed settings require a later guidance transition.
 These rules preserve cache-eligible prefixes but do not guarantee a provider-reported cache hit.
 
 | Tool | Purpose |

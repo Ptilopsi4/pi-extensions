@@ -1,10 +1,11 @@
 import { StringEnum } from "@earendil-works/pi-ai";
-import type {
-	ContextEvent,
-	ExtensionAPI,
-	ExtensionContext,
-	SessionEntry,
-	Theme,
+import {
+	buildSessionContext,
+	type ContextEvent,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type SessionEntry,
+	type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -14,6 +15,8 @@ export const WIDGET_KEY = "todo";
 export const TODO_CONTEXT_MESSAGE_TYPE = "todo-list-status";
 export const TODO_CONTEXT_VERSION = 1;
 export const TODO_DETAILS_VERSION = 1;
+export const TODO_RESTORED_BOUNDARY_ENTRY_TYPE = "todo-restored-context-boundary";
+const TODO_RESTORED_BOUNDARY_VERSION = 1;
 export const MAX_TODO_ITEMS = 50;
 export const MAX_TODO_TEXT_LENGTH = 300;
 
@@ -126,10 +129,15 @@ export default function todoWidgetExtension(pi: ExtensionAPI): void {
 		},
 	});
 
+	const restoreBranchState = (ctx: ExtensionContext): void => {
+		const branch = ctx.sessionManager.getBranch();
+		items = reconstructItems(branch);
+		restoredBoundary = reconstructRestoredTodoBoundary(branch);
+	};
+
 	pi.on("session_start", (_event, ctx) => {
 		activeSession = ctx.sessionManager;
-		items = reconstructItems(ctx.sessionManager.getBranch());
-		restoredBoundary = undefined;
+		restoreBranchState(ctx);
 		publish(ctx);
 	});
 
@@ -142,6 +150,10 @@ export default function todoWidgetExtension(pi: ExtensionAPI): void {
 			const boundaryMessage = messages[leadingSummaryBoundary(messages)];
 			if (isTodoContextMessage(boundaryMessage)) {
 				restoredBoundary = { summaryEpoch, content: boundaryMessage.content };
+				pi.appendEntry(TODO_RESTORED_BOUNDARY_ENTRY_TYPE, {
+					version: TODO_RESTORED_BOUNDARY_VERSION,
+					...restoredBoundary,
+				});
 			}
 		}
 		if (messages !== event.messages) return { messages };
@@ -149,7 +161,7 @@ export default function todoWidgetExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_tree", (_event, ctx) => {
 		if (!ownsSession(ctx)) return;
-		items = reconstructItems(ctx.sessionManager.getBranch());
+		restoreBranchState(ctx);
 		publish(ctx);
 	});
 
@@ -256,6 +268,49 @@ function todoContextContent(items: readonly TodoItem[]): string {
 	return `[PI TODO STATUS v${TODO_CONTEXT_VERSION}]
 Current todo list as JSON data:
 ${JSON.stringify(items)}`;
+}
+
+function reconstructRestoredTodoBoundary(
+	entries: readonly SessionEntry[],
+): { summaryEpoch: string; content: string } | undefined {
+	const summaryEpoch = leadingSummaryEpoch(buildSessionContext([...entries]).messages);
+	if (!summaryEpoch) return undefined;
+	for (let index = entries.length - 1; index >= 0; index -= 1) {
+		const entry = entries[index];
+		if (entry?.type !== "custom" || entry.customType !== TODO_RESTORED_BOUNDARY_ENTRY_TYPE) {
+			continue;
+		}
+		if (!isRestoredTodoBoundaryData(entry.data, summaryEpoch)) continue;
+		return { summaryEpoch, content: entry.data.content };
+	}
+	return undefined;
+}
+
+function isRestoredTodoBoundaryData(
+	value: unknown,
+	summaryEpoch: string,
+): value is { version: number; summaryEpoch: string; content: string } {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const data = value as Record<string, unknown>;
+	if (
+		data.version !== TODO_RESTORED_BOUNDARY_VERSION ||
+		data.summaryEpoch !== summaryEpoch ||
+		typeof data.content !== "string"
+	) {
+		return false;
+	}
+	const prefix = `[PI TODO STATUS v${TODO_CONTEXT_VERSION}]\nCurrent todo list as JSON data:\n`;
+	if (!data.content.startsWith(prefix)) return false;
+	try {
+		const restoredItems: unknown = JSON.parse(data.content.slice(prefix.length));
+		return (
+			isTodoItems(restoredItems) &&
+			restoredItems.length > 0 &&
+			todoContextContent(restoredItems) === data.content
+		);
+	} catch {
+		return false;
+	}
 }
 
 function hasModelVisibleTodoState(

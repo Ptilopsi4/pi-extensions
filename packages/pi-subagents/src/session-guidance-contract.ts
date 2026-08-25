@@ -3,6 +3,7 @@ import {
 	type ContextEvent,
 	type ExtensionAPI,
 	type ExtensionContext,
+	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import type {
 	CompletionDelivery,
@@ -21,6 +22,10 @@ import type { StatefulLimits } from "./stateful-limits.js";
 
 export const SUBAGENT_GUIDANCE_CONTEXT_TYPE = "pi-subagents-session-guidance";
 export const SUBAGENT_GUIDANCE_VERSION = "pi-subagents:session-guidance:v1" as const;
+export const SUBAGENT_RESTORED_BOUNDARY_ENTRY_TYPE = "pi-subagents-restored-context-boundary";
+const SUBAGENT_RESTORED_BOUNDARY_VERSION = 1;
+type RestoredBoundary = { summaryEpoch: string; content: string };
+type RestoredBoundaryKind = "guidance" | "requirement";
 
 export interface SubagentSessionGuidanceSnapshot {
 	blockingEnabled: boolean;
@@ -45,22 +50,41 @@ export function registerSubagentSessionGuidance(
 ): SubagentSessionGuidanceController {
 	let activeSession: ExtensionContext["sessionManager"] | undefined;
 	let lastPublishedContent: string | undefined;
-	let restoredGuidanceBoundary: { summaryEpoch: string; content: string } | undefined;
-	let restoredRequirementBoundary: { summaryEpoch: string; content: string } | undefined;
+	let restoredGuidanceBoundary: RestoredBoundary | undefined;
+	let restoredRequirementBoundary: RestoredBoundary | undefined;
+	let guidanceBoundaryPersisted = false;
+	let requirementBoundaryPersisted = false;
 
-	pi.on("session_start", (_event, ctx) => {
-		activeSession = ctx.sessionManager;
-		lastPublishedContent = undefined;
-		restoredRequirementBoundary = undefined;
-		const messages = buildSessionContext(ctx.sessionManager.getBranch()).messages;
+	const restoreBranchBoundaries = (ctx: ExtensionContext): void => {
+		const branch = ctx.sessionManager.getBranch();
+		const messages = buildSessionContext(branch).messages;
 		const summaryEpoch = leadingSummaryEpoch(messages);
+		const restored = reconstructRestoredSubagentBoundaries(branch, summaryEpoch);
 		restoredGuidanceBoundary =
-			summaryEpoch && !hasSubagentSessionGuidanceHistory(messages)
+			restored.guidance ??
+			(summaryEpoch && !hasSubagentSessionGuidanceHistory(messages)
 				? {
 						summaryEpoch,
 						content: createSubagentSessionGuidance(getSnapshot()).content,
 					}
-				: undefined;
+				: undefined);
+		restoredRequirementBoundary = restored.requirement;
+		guidanceBoundaryPersisted = restored.guidance !== undefined;
+		requirementBoundaryPersisted = restored.requirement !== undefined;
+	};
+
+	const persistBoundary = (kind: RestoredBoundaryKind, boundary: RestoredBoundary): void => {
+		pi.appendEntry(SUBAGENT_RESTORED_BOUNDARY_ENTRY_TYPE, {
+			version: SUBAGENT_RESTORED_BOUNDARY_VERSION,
+			kind,
+			...boundary,
+		});
+	};
+
+	pi.on("session_start", (_event, ctx) => {
+		activeSession = ctx.sessionManager;
+		lastPublishedContent = undefined;
+		restoreBranchBoundaries(ctx);
 	});
 
 	pi.on("before_agent_start", (_event, ctx) => {
@@ -98,9 +122,11 @@ export function registerSubagentSessionGuidance(
 		const summaryEpoch = leadingSummaryEpoch(event.messages);
 		if (restoredGuidanceBoundary?.summaryEpoch !== summaryEpoch) {
 			restoredGuidanceBoundary = undefined;
+			guidanceBoundaryPersisted = false;
 		}
 		if (restoredRequirementBoundary?.summaryEpoch !== summaryEpoch) {
 			restoredRequirementBoundary = undefined;
+			requirementBoundaryPersisted = false;
 		}
 		if (
 			restoredGuidanceBoundary === undefined &&
@@ -117,6 +143,10 @@ export function registerSubagentSessionGuidance(
 			getSnapshot(),
 			restoredGuidanceBoundary?.content,
 		);
+		if (restoredGuidanceBoundary && !guidanceBoundaryPersisted) {
+			persistBoundary("guidance", restoredGuidanceBoundary);
+			guidanceBoundaryPersisted = true;
+		}
 		const messages = reconcileRequiredCompletionContext(
 			withGuidance,
 			getAgents(),
@@ -135,7 +165,17 @@ export function registerSubagentSessionGuidance(
 				};
 			}
 		}
+		if (restoredRequirementBoundary && !requirementBoundaryPersisted) {
+			persistBoundary("requirement", restoredRequirementBoundary);
+			requirementBoundaryPersisted = true;
+		}
 		if (messages !== event.messages) return { messages };
+	});
+
+	pi.on("session_tree", (_event, ctx) => {
+		if (ctx.sessionManager !== activeSession) return;
+		lastPublishedContent = undefined;
+		restoreBranchBoundaries(ctx);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
@@ -144,6 +184,8 @@ export function registerSubagentSessionGuidance(
 		lastPublishedContent = undefined;
 		restoredGuidanceBoundary = undefined;
 		restoredRequirementBoundary = undefined;
+		guidanceBoundaryPersisted = false;
+		requirementBoundaryPersisted = false;
 	});
 
 	return {
@@ -282,6 +324,54 @@ function hasSubagentSessionGuidanceVersion(value: unknown): boolean {
 		!Array.isArray(details) &&
 		(details as Record<string, unknown>).version === SUBAGENT_GUIDANCE_VERSION
 	);
+}
+
+function reconstructRestoredSubagentBoundaries(
+	entries: readonly SessionEntry[],
+	summaryEpoch: string | undefined,
+): Partial<Record<RestoredBoundaryKind, RestoredBoundary>> {
+	const restored: Partial<Record<RestoredBoundaryKind, RestoredBoundary>> = {};
+	if (!summaryEpoch) return restored;
+	for (let index = entries.length - 1; index >= 0; index -= 1) {
+		const entry = entries[index];
+		if (
+			entry?.type !== "custom" ||
+			entry.customType !== SUBAGENT_RESTORED_BOUNDARY_ENTRY_TYPE ||
+			!isRestoredSubagentBoundaryData(entry.data, summaryEpoch)
+		) {
+			continue;
+		}
+		if (restored[entry.data.kind] === undefined) {
+			restored[entry.data.kind] = { summaryEpoch, content: entry.data.content };
+		}
+		if (restored.guidance && restored.requirement) break;
+	}
+	return restored;
+}
+
+function isRestoredSubagentBoundaryData(
+	value: unknown,
+	summaryEpoch: string,
+): value is {
+	version: number;
+	kind: RestoredBoundaryKind;
+	summaryEpoch: string;
+	content: string;
+} {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const data = value as Record<string, unknown>;
+	if (
+		data.version !== SUBAGENT_RESTORED_BOUNDARY_VERSION ||
+		(data.kind !== "guidance" && data.kind !== "requirement") ||
+		data.summaryEpoch !== summaryEpoch ||
+		typeof data.content !== "string" ||
+		Buffer.byteLength(data.content, "utf8") > DEFAULT_MAX_CONTEXT_BYTES
+	) {
+		return false;
+	}
+	return data.kind === "guidance"
+		? data.content.startsWith(`[PI SUBAGENTS SESSION GUIDANCE ${SUBAGENT_GUIDANCE_VERSION}]\n`)
+		: data.content.startsWith("[PI SUBAGENT REQUIRED COMPLETIONS v1]\n");
 }
 
 function leadingSummaryEpoch(messages: readonly unknown[]): string | undefined {
