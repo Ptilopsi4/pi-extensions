@@ -1,0 +1,3232 @@
+{
+	"version": "pi-extensions:subagent-capability-benchmark:v1",
+	"model": "openai-codex/gpt-5.6-sol",
+	"thinkingLevel": "medium",
+	"repetitions": 1,
+	"pairs": 4,
+	"retries": 0,
+	"timeoutMs": 120000,
+	"readinessTimeoutMs": 15000,
+	"concurrency": 1,
+	"controls": {
+		"fixture": "fresh generated identical fixture per paired arm",
+		"parent": "same model, thinking, prompt information, core tools, and disabled resources",
+		"child": "same explicit user-agent model, thinking, prompt, and tool allow-list",
+		"order": "alternating arm order by task and repetition",
+		"evaluator": "fixed text rubric plus independent node:test for mutation",
+		"eventRetention": "bounded responses, lifecycle boundaries, and non-user message_end evidence"
+	},
+	"comparability": {
+		"quality": "diagnostic paired comparison; provider seeds unavailable",
+		"cost": "not comparable because v2 does not propagate child usage into parent session stats",
+		"toolSurface": "arm-specific names and surface size are product differences and cannot be blinded"
+	},
+	"tasks": [
+		{
+			"id": "single-research",
+			"category": "background",
+			"description": "One detached explorer returns three exact implementation facts.",
+			"evidence": [
+				{
+					"id": "retry-attempts",
+					"terms": ["src/queue.ts", "RETRY_ATTEMPTS", "4"]
+				},
+				{
+					"id": "completion-channel",
+					"terms": ["src/delivery.ts", "COMPLETION_CHANNEL", "steer"]
+				},
+				{
+					"id": "shutdown-order",
+					"terms": ["src/shutdown.ts", "stop-delivery", "abort-children", "await-streams"]
+				}
+			]
+		},
+		{
+			"id": "parallel-research",
+			"category": "parallel",
+			"description": "Two detached explorers cover independent protocol and retention files.",
+			"evidence": [
+				{
+					"id": "protocol-version",
+					"terms": ["src/protocol.ts", "PROTOCOL_VERSION", "job-v3"]
+				},
+				{
+					"id": "frame-limit",
+					"terms": ["src/protocol.ts", "MAX_FRAME_BYTES", "49152"]
+				},
+				{
+					"id": "terminal-limit",
+					"terms": ["src/retention.ts", "MAX_TERMINAL_JOBS", "32"]
+				},
+				{
+					"id": "retention-hours",
+					"terms": ["src/retention.ts", "RETENTION_HOURS", "24"]
+				}
+			]
+		},
+		{
+			"id": "consult-review",
+			"category": "consultation",
+			"description": "One synchronous read-only consultation finds three planted security defects.",
+			"evidence": [
+				{
+					"id": "owner-prefix",
+					"terms": ["src/review.ts", "startsWith", "owner"]
+				},
+				{
+					"id": "path-traversal",
+					"terms": ["src/review.ts", "path.join", "traversal"]
+				},
+				{
+					"id": "token-leak",
+					"terms": ["src/review.ts", "slice(0, 8)", "token"]
+				}
+			]
+		},
+		{
+			"id": "worker-fix",
+			"category": "mutation",
+			"description": "One detached worker fixes two functions and the parent verifies the fixture.",
+			"evidence": [
+				{
+					"id": "clamp-fixed",
+					"terms": ["src/math.mjs", "clamp", "pass"]
+				},
+				{
+					"id": "even-fixed",
+					"terms": ["src/math.mjs", "isEven", "pass"]
+				},
+				{
+					"id": "parent-verification",
+					"terms": ["node --test", "test/math.test.mjs", "pass"]
+				}
+			]
+		}
+	],
+	"capabilityMatrix": [
+		{
+			"capability": "Bounded background start, inspect, cancel, wait, and read-only consult",
+			"v1": "supported",
+			"v2": "supported",
+			"evidence": "Both package READMEs and lifecycle tool tests"
+		},
+		{
+			"capability": "One terminal asynchronous completion with stale-result suppression",
+			"v1": "supported",
+			"v2": "supported",
+			"evidence": "completion-delivery and SubagentRuntime tests"
+		},
+		{
+			"capability": "Retained follow-up conversation and queue-only mailbox",
+			"v1": "supported",
+			"v2": "intentionally omitted",
+			"evidence": "pi-subagents capability matrix; pi-subagents-v2 limitations"
+		},
+		{
+			"capability": "Blocking chain, fan-in, panel, workflow DAG, and managed verification",
+			"v1": "supported",
+			"v2": "intentionally omitted",
+			"evidence": "pi-subagents execution and workflow tests; pi-subagents-v2 limitations"
+		},
+		{
+			"capability": "Subprocess, in-process, RPC, and automatic transport selection",
+			"v1": "supported",
+			"v2": "subprocess only",
+			"evidence": "pi-subagents transport tests; pi-subagents-v2 process runtime"
+		},
+		{
+			"capability": "Durable logical history across reload and explicit semantic revalidation",
+			"v1": "supported",
+			"v2": "intentionally omitted",
+			"evidence": "pi-subagents persistence tests; pi-subagents-v2 retention limits"
+		},
+		{
+			"capability": "Automatic idle-parent wake for required completion",
+			"v1": "opt-in supported",
+			"v2": "not supported",
+			"evidence": "pi-subagents auto-resume tests; pi-subagents-v2 limitations"
+		},
+		{
+			"capability": "Contracts, structured-v2 outcomes, capability grants, and exact-tree acceptance",
+			"v1": "supported",
+			"v2": "intentionally omitted",
+			"evidence": "pi-subagents contract and verified-execution tests; pi-subagents-v2 limitations"
+		},
+		{
+			"capability": "Extension-owned settings, status, diagnostics, and local usage recording",
+			"v1": "supported",
+			"v2": "intentionally omitted",
+			"evidence": "pi-subagents settings and inspection tests; v2 registers no commands"
+		}
+	],
+	"order": [
+		{
+			"pairIndex": 0,
+			"repetition": 0,
+			"orderIndex": 0,
+			"arm": "pi-subagents",
+			"taskId": "single-research"
+		},
+		{
+			"pairIndex": 0,
+			"repetition": 0,
+			"orderIndex": 1,
+			"arm": "pi-subagents-v2",
+			"taskId": "single-research"
+		},
+		{
+			"pairIndex": 1,
+			"repetition": 0,
+			"orderIndex": 0,
+			"arm": "pi-subagents-v2",
+			"taskId": "parallel-research"
+		},
+		{
+			"pairIndex": 1,
+			"repetition": 0,
+			"orderIndex": 1,
+			"arm": "pi-subagents",
+			"taskId": "parallel-research"
+		},
+		{
+			"pairIndex": 2,
+			"repetition": 0,
+			"orderIndex": 0,
+			"arm": "pi-subagents",
+			"taskId": "consult-review"
+		},
+		{
+			"pairIndex": 2,
+			"repetition": 0,
+			"orderIndex": 1,
+			"arm": "pi-subagents-v2",
+			"taskId": "consult-review"
+		},
+		{
+			"pairIndex": 3,
+			"repetition": 0,
+			"orderIndex": 0,
+			"arm": "pi-subagents-v2",
+			"taskId": "worker-fix"
+		},
+		{
+			"pairIndex": 3,
+			"repetition": 0,
+			"orderIndex": 1,
+			"arm": "pi-subagents",
+			"taskId": "worker-fix"
+		}
+	],
+	"environment": {
+		"node": "v26.5.0",
+		"platform": "linux",
+		"architecture": "x64",
+		"piCommand": "pi",
+		"repository": {
+			"commit": "2e078e1c7e548d918d9433a4b9f0c5777006e2a6",
+			"dirty": true,
+			"stateDigest": "27d470ee69c7ffb2d40b5768552fd251c6f639e8f9a447fec1c46dbf25fb75e5"
+		},
+		"extensions": {
+			"pi-subagents": "packages/pi-subagents/src/index.ts",
+			"pi-subagents-v2": "packages/pi-subagents-v2/src/index.ts"
+		}
+	},
+	"preview": false,
+	"generatedAt": "2026-08-24T18:36:02.238Z",
+	"rawRecords": [
+		{
+			"version": "pi-extensions:subagent-capability-benchmark:v1",
+			"pairIndex": 0,
+			"repetition": 0,
+			"orderIndex": 0,
+			"arm": "pi-subagents",
+			"taskId": "single-research",
+			"outcome": "completed",
+			"success": true,
+			"fixturePassed": null,
+			"readinessMs": 661.646,
+			"elapsedMs": 21012.484,
+			"parentVisibleCost": 0.11314400000000001,
+			"startedAt": "2026-08-24T18:32:25.149Z",
+			"completedAt": "2026-08-24T18:32:46.842Z",
+			"finalAnswer": "Fixture identifier: **pair-0**\n\n- Retry attempt count: **4** — `src/queue.ts`, symbol `RETRY_ATTEMPTS`\n- Completion channel: **`\"steer\"`** — `src/delivery.ts`, symbol `COMPLETION_CHANNEL`\n- Exact shutdown order: **`stop-delivery` → `abort-children` → `await-streams`** — `src/shutdown.ts`, symbol `SHUTDOWN_ORDER`\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"single-research\",\"complete\":true}",
+			"marker": {
+				"taskId": "single-research",
+				"complete": true
+			},
+			"matchedEvidence": ["retry-attempts", "completion-channel", "shutdown-order"],
+			"evidenceScore": 1,
+			"toolCompliance": true,
+			"completionObserved": true,
+			"prematureFinal": false,
+			"toolCounts": {
+				"start": 1,
+				"wait": 1,
+				"consult": 0
+			},
+			"events": [
+				{
+					"type": "response",
+					"id": "capability_benchmark_1",
+					"command": "get_state",
+					"success": true
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_2",
+					"command": "prompt",
+					"success": true
+				},
+				{
+					"type": "agent_start"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent_spawn",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "Spawned benchmark-explorer as /root/single_research (sa_1b19a4ad-7133-46c4-824e-527285f4ba0a). This exact run is runtime-tracked as required until its completion becomes visible or reaches an explicit terminal state. Current Pi versions still cannot prevent already-streamed premature output. Continue the identified non-overlapping local work immediately; do not merely announce the spawn or end while useful local work remains. Only an explicit user-requested specialist model, tool-profile, or isolation exception may lack concurrent local work. Auto-resume steers completions into active parent work or requests synthesis when idle. Treat this response as progress, not final synthesis, until every final-answer-required completion message is visible. If local work is exhausted while required children remain active, emit at most one brief progress sentence and end the turn; do not repeat waiting updates or use the requested final format, verdict, or conclusion. Do not redo a running child's assigned work. Do not poll for progress."
+							}
+						],
+						"details": {
+							"agent": {
+								"id": "sa_1b19a4ad-7133-46c4-824e-527285f4ba0a",
+								"taskName": "single_research",
+								"taskPath": "/root/single_research",
+								"agent": "benchmark-explorer",
+								"rootId": "sa_1b19a4ad-7133-46c4-824e-527285f4ba0a",
+								"depth": 0,
+								"children": [],
+								"state": "running",
+								"createdAt": 1787596350722,
+								"updatedAt": 1787596350725,
+								"cwd": "/tmp/subagent-capability-pi-subagents-5AjgVz",
+								"workspaceMode": "shared",
+								"thinkingLevel": "medium",
+								"timeoutMs": 120000,
+								"currentTimeoutMs": 120000,
+								"currentTask": "Inspect src/queue.ts, src/delivery.ts, and src/shutdown.ts in the current fixture.\nReport the retry attempt count, completion channel, and exact shutdown order.\nCite each repository-relative path and symbol.\nDo not edit files.",
+								"historyCount": 0,
+								"unreadMessages": 0,
+								"context": {
+									"turns": 0,
+									"sources": 0,
+									"bytes": 0,
+									"truncated": false
+								},
+								"resultFormat": "text",
+								"completionRequirements": [
+									{
+										"version": "pi-subagents:completion-requirement:v1",
+										"runId": "run:sa_1b19a4ad-7133-46c4-824e-527285f4ba0a:a8d2653e-3cd7-491e-b66a-61ee1c9eff39",
+										"generation": 1,
+										"state": "pending",
+										"createdAt": 1787596350725,
+										"updatedAt": 1787596350725
+									}
+								],
+								"executionPlan": {
+									"version": "pi-subagents:execution-plan:v1",
+									"mode": "audit",
+									"agent": {
+										"name": "benchmark-explorer",
+										"source": "user",
+										"capabilitiesKnown": false
+									},
+									"capabilityFit": "unknown",
+									"missingCapabilities": [],
+									"requestedCapabilities": [],
+									"declaredCapabilities": [],
+									"requestedTools": [],
+									"effectiveTools": ["read", "grep", "find", "ls"],
+									"missingTools": [],
+									"overgrantedTools": [],
+									"resultFormat": "text",
+									"sideEffectPolicy": "mutating",
+									"resultFormatSupported": "unknown",
+									"target": {
+										"cwd": "/tmp/subagent-capability-pi-subagents-5AjgVz",
+										"boundary": "current-workspace",
+										"trust": {
+											"kind": "session-untrusted",
+											"projectTrusted": false,
+											"sourcePath": "/tmp/subagent-capability-pi-subagents-5AjgVz"
+										}
+									},
+									"workspaceMode": "shared",
+									"transport": "subprocess",
+									"model": "openai-codex/gpt-5.6-sol",
+									"thinkingLevel": "medium",
+									"timeoutMs": 120000,
+									"unsupportedGuarantees": [],
+									"warnings": ["agent-capabilities-unknown"],
+									"taskGeneration": 1,
+									"cancellationLineage": [],
+									"admission": {
+										"version": "pi-subagents:admission:v1",
+										"recommendation": "abstain-insufficient-evidence",
+										"reasonCodes": ["requirements-incomplete"],
+										"benefitHypothesis": "none",
+										"auditOnly": true
+									},
+									"id": "47bd47ee37f0f25a507a7b8ba51148f4fe0c3ffa7d9326205593d57d0316e3c2"
+								},
+								"capabilityGrant": {
+									"version": "pi-subagents:capability-grant:v1",
+									"id": "b3d7d3a8380ae6ddac11ce11aac9fd1f597f06cef216df287f7888ae2e031596",
+									"executionPlanId": "47bd47ee37f0f25a507a7b8ba51148f4fe0c3ffa7d9326205593d57d0316e3c2",
+									"taskGeneration": 1,
+									"effectiveTools": ["read", "grep", "find", "ls"],
+									"issuedAt": 1787596350722,
+									"expiresAt": 1787596530722,
+									"state": "active"
+								},
+								"semanticCompatibility": {
+									"status": "compatible",
+									"changedComponents": []
+								},
+								"semanticSnapshotDigest": "c0cbc303fb55bac529e06904d4f9f58ed7e749bf27f4a28c0ed5b2965b1898f2",
+								"telemetry": {
+									"phase": "queued",
+									"queuePosition": 1,
+									"updatedAt": 1787596350725,
+									"timing": {
+										"queuedAt": 1787596350725
+									},
+									"budgetSource": {
+										"timeout": "explicit",
+										"idleTimeout": "runtime",
+										"turnLimit": "runtime",
+										"toolCallLimit": "runtime"
+									}
+								},
+								"target": {
+									"cwd": "/tmp/subagent-capability-pi-subagents-5AjgVz",
+									"boundary": "current-workspace",
+									"trust": {
+										"kind": "session-untrusted",
+										"projectTrusted": false,
+										"sourcePath": "/tmp/subagent-capability-pi-subagents-5AjgVz"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "read",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "# Generated capability fixture\n\nFixture ID: pair-0.\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent_await",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "Subagent /root/single_research settled as completed.\n\n- Retry attempt count: **4** — `src/queue.ts`, `RETRY_ATTEMPTS`\n- Completion channel: **`\"steer\"`** — `src/delivery.ts`, `COMPLETION_CHANNEL`\n- Shutdown order: **`stop-delivery` → `abort-children` → `await-streams`** — `src/shutdown.ts`, `SHUTDOWN_ORDER`"
+							}
+						],
+						"details": {
+							"agent": {
+								"id": "sa_1b19a4ad-7133-46c4-824e-527285f4ba0a",
+								"taskName": "single_research",
+								"taskPath": "/root/single_research",
+								"agent": "benchmark-explorer",
+								"rootId": "sa_1b19a4ad-7133-46c4-824e-527285f4ba0a",
+								"depth": 0,
+								"children": [],
+								"state": "completed",
+								"createdAt": 1787596350722,
+								"updatedAt": 1787596362609,
+								"cwd": "/tmp/subagent-capability-pi-subagents-5AjgVz",
+								"workspaceMode": "shared",
+								"thinkingLevel": "medium",
+								"timeoutMs": 120000,
+								"historyCount": 1,
+								"unreadMessages": 0,
+								"context": {
+									"turns": 0,
+									"sources": 0,
+									"bytes": 0,
+									"truncated": false
+								},
+								"resultFormat": "text",
+								"completionRequirements": [
+									{
+										"version": "pi-subagents:completion-requirement:v1",
+										"runId": "run:sa_1b19a4ad-7133-46c4-824e-527285f4ba0a:a8d2653e-3cd7-491e-b66a-61ee1c9eff39",
+										"generation": 1,
+										"state": "available",
+										"createdAt": 1787596350725,
+										"updatedAt": 1787596362609,
+										"completionId": "completion:sa_1b19a4ad-7133-46c4-824e-527285f4ba0a:cbe5ad33-652b-454e-b057-9d4406168c0b",
+										"terminalState": "completed"
+									}
+								],
+								"executionPlan": {
+									"version": "pi-subagents:execution-plan:v1",
+									"mode": "audit",
+									"agent": {
+										"name": "benchmark-explorer",
+										"source": "user",
+										"capabilitiesKnown": false
+									},
+									"capabilityFit": "unknown",
+									"missingCapabilities": [],
+									"requestedCapabilities": [],
+									"declaredCapabilities": [],
+									"requestedTools": [],
+									"effectiveTools": ["read", "grep", "find", "ls"],
+									"missingTools": [],
+									"overgrantedTools": [],
+									"resultFormat": "text",
+									"sideEffectPolicy": "mutating",
+									"resultFormatSupported": "unknown",
+									"target": {
+										"cwd": "/tmp/subagent-capability-pi-subagents-5AjgVz",
+										"boundary": "current-workspace",
+										"trust": {
+											"kind": "session-untrusted",
+											"projectTrusted": false,
+											"sourcePath": "/tmp/subagent-capability-pi-subagents-5AjgVz"
+										}
+									},
+									"workspaceMode": "shared",
+									"transport": "subprocess",
+									"model": "openai-codex/gpt-5.6-sol",
+									"thinkingLevel": "medium",
+									"timeoutMs": 120000,
+									"unsupportedGuarantees": [],
+									"warnings": ["agent-capabilities-unknown"],
+									"taskGeneration": 1,
+									"cancellationLineage": [],
+									"admission": {
+										"version": "pi-subagents:admission:v1",
+										"recommendation": "abstain-insufficient-evidence",
+										"reasonCodes": ["requirements-incomplete"],
+										"benefitHypothesis": "none",
+										"auditOnly": true
+									},
+									"id": "47bd47ee37f0f25a507a7b8ba51148f4fe0c3ffa7d9326205593d57d0316e3c2"
+								},
+								"capabilityGrant": {
+									"version": "pi-subagents:capability-grant:v1",
+									"id": "b3d7d3a8380ae6ddac11ce11aac9fd1f597f06cef216df287f7888ae2e031596",
+									"executionPlanId": "47bd47ee37f0f25a507a7b8ba51148f4fe0c3ffa7d9326205593d57d0316e3c2",
+									"taskGeneration": 1,
+									"effectiveTools": ["read", "grep", "find", "ls"],
+									"issuedAt": 1787596350722,
+									"expiresAt": 1787596530722,
+									"state": "revoked",
+									"revokedAt": 1787596362609,
+									"revocationReason": "turn-settled"
+								},
+								"semanticCompatibility": {
+									"status": "compatible",
+									"changedComponents": []
+								},
+								"semanticSnapshotDigest": "c0cbc303fb55bac529e06904d4f9f58ed7e749bf27f4a28c0ed5b2965b1898f2",
+								"telemetry": {
+									"transport": "subprocess",
+									"phase": "settled",
+									"updatedAt": 1787596362608,
+									"timing": {
+										"queuedAt": 1787596350725,
+										"startedAt": 1787596350830,
+										"transportStartedAt": 1787596350830,
+										"promptAcceptedAt": 1787596350830,
+										"firstActivityAt": 1787596362608,
+										"settledAt": 1787596362608
+									},
+									"provider": "openai-codex",
+									"model": "gpt-5.6-sol",
+									"thinkingLevel": "medium",
+									"usage": {
+										"input": 3533,
+										"output": 219,
+										"cacheRead": 0,
+										"cacheWrite": 0,
+										"totalTokens": 3752,
+										"cost": 0.024235000000000003,
+										"turns": 2
+									}
+								},
+								"error": "\n--- Startup Timings: main ---\n  parseArgs: 2ms\n  runMigrations: 0ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 59ms\n  readPipedStdin: 1ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 64ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts module import: 27ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts factory: 1ms\n  <inline:llama.cpp> factory: 0ms\n  TOTAL: 28ms\n-----------------------------------\n\n",
+								"target": {
+									"cwd": "/tmp/subagent-capability-pi-subagents-5AjgVz",
+									"boundary": "current-workspace",
+									"trust": {
+										"kind": "session-untrusted",
+										"projectTrusted": false,
+										"sourcePath": "/tmp/subagent-capability-pi-subagents-5AjgVz"
+									}
+								},
+								"policy": {
+									"inherited": ["environment"],
+									"overridden": ["cwd", "model", "thinkingLevel", "tools"],
+									"unsupported": ["approvalPolicy", "sandboxProfile", "providerHeaders"]
+								}
+							},
+							"timedOut": false,
+							"timeoutMs": 120000,
+							"output": "- Retry attempt count: **4** — `src/queue.ts`, `RETRY_ATTEMPTS`\n- Completion channel: **`\"steer\"`** — `src/delivery.ts`, `COMPLETION_CHANNEL`\n- Shutdown order: **`stop-delivery` → `abort-children` → `await-streams`** — `src/shutdown.ts`, `SHUTDOWN_ORDER`",
+							"error": "\n--- Startup Timings: main ---\n  parseArgs: 2ms\n  runMigrations: 0ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 59ms\n  readPipedStdin: 1ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 64ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts module import: 27ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts factory: 1ms\n  <inline:llama.cpp> factory: 0ms\n  TOTAL: 28ms\n-----------------------------------\n\n"
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": [
+							{
+								"type": "text",
+								"text": "Fixture identifier: **pair-0**\n\n- Retry attempt count: **4** — `src/queue.ts`, symbol `RETRY_ATTEMPTS`\n- Completion channel: **`\"steer\"`** — `src/delivery.ts`, symbol `COMPLETION_CHANNEL`\n- Exact shutdown order: **`stop-delivery` → `abort-children` → `await-streams`** — `src/shutdown.ts`, symbol `SHUTDOWN_ORDER`\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"single-research\",\"complete\":true}"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "custom",
+						"customType": "pi-subagent-completion",
+						"content": "Message Type: SUBAGENT_COMPLETION\nProtocol: pi-subagents:v1\nCompletion ID: completion:sa_1b19a4ad-7133-46c4-824e-527285f4ba0a:cbe5ad33-652b-454e-b057-9d4406168c0b\nRun ID: run:sa_1b19a4ad-7133-46c4-824e-527285f4ba0a:a8d2653e-3cd7-491e-b66a-61ee1c9eff39\nGeneration: 1\nAgent ID: sa_1b19a4ad-7133-46c4-824e-527285f4ba0a\nAgent Path: /root/single_research\nRecipient Path: /root\nAgent: benchmark-explorer\nTask: Inspect src/queue.ts, src/delivery.ts, and src/shutdown.ts in the current fixture. Report the retry attempt count, completion channel, and exact shutdown order. Cite each repository-relative path and symbol. Do not edit files.\nState: completed\nError:\n\n--- Startup Timings: main ---\n  parseArgs: 2ms\n  runMigrations: 0ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 59ms\n  readPipedStdin: 1ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 64ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts module import: 27ms\n  $HOME/worksp\n… [truncated by pi-subagents]\nPayload:\n- Retry attempt count: **4** — `src/queue.ts`, `RETRY_ATTEMPTS`\n- Completion channel: **`\"steer\"`** — `src/delivery.ts`, `COMPLETION_CHANNEL`\n- Shutdown order: **`stop-delivery` → `abort-children` → `await-streams`** — `src/shutdown.ts`, `SHUTDOWN_ORDER`",
+						"details": {
+							"protocol": "pi-subagents:v1",
+							"completionId": "completion:sa_1b19a4ad-7133-46c4-824e-527285f4ba0a:cbe5ad33-652b-454e-b057-9d4406168c0b",
+							"runId": "run:sa_1b19a4ad-7133-46c4-824e-527285f4ba0a:a8d2653e-3cd7-491e-b66a-61ee1c9eff39",
+							"generation": 1,
+							"agentId": "sa_1b19a4ad-7133-46c4-824e-527285f4ba0a",
+							"taskPath": "/root/single_research",
+							"recipientPath": "/root",
+							"agent": "benchmark-explorer",
+							"task": "Inspect src/queue.ts, src/delivery.ts, and src/shutdown.ts in the current fixture. Report the retry attempt count, completion channel, and exact shutdown order. Cite each repository-relative path and symbol. Do not edit files.",
+							"state": "completed",
+							"transport": "subprocess",
+							"capabilityGrant": {
+								"version": "pi-subagents:capability-grant:v1",
+								"id": "b3d7d3a8380ae6ddac11ce11aac9fd1f597f06cef216df287f7888ae2e031596",
+								"executionPlanId": "47bd47ee37f0f25a507a7b8ba51148f4fe0c3ffa7d9326205593d57d0316e3c2",
+								"taskGeneration": 1,
+								"effectiveTools": ["read", "grep", "find", "ls"],
+								"issuedAt": 1787596350722,
+								"expiresAt": 1787596530722,
+								"state": "revoked",
+								"revokedAt": 1787596362609,
+								"revocationReason": "turn-settled"
+							},
+							"completionRequirement": {
+								"version": "pi-subagents:completion-requirement:v1",
+								"runId": "run:sa_1b19a4ad-7133-46c4-824e-527285f4ba0a:a8d2653e-3cd7-491e-b66a-61ee1c9eff39",
+								"generation": 1,
+								"state": "available",
+								"createdAt": 1787596350725,
+								"updatedAt": 1787596362609,
+								"completionId": "completion:sa_1b19a4ad-7133-46c4-824e-527285f4ba0a:cbe5ad33-652b-454e-b057-9d4406168c0b",
+								"terminalState": "completed"
+							}
+						}
+					}
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_3",
+					"command": "get_session_stats",
+					"success": true,
+					"data": {
+						"sessionId": "01a0350b-8ff4-70ae-8870-6263381a3cd7",
+						"userMessages": 1,
+						"assistantMessages": 4,
+						"toolCalls": 3,
+						"toolResults": 3,
+						"totalMessages": 8,
+						"tokens": {
+							"input": 16196,
+							"output": 398,
+							"cacheRead": 40448,
+							"cacheWrite": 0,
+							"total": 57042
+						},
+						"cost": 0.11314400000000001,
+						"contextUsage": {
+							"tokens": 14957,
+							"contextWindow": 272000,
+							"percent": 5.4988970588235295
+						}
+					}
+				}
+			],
+			"stderr": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 0ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 320ms\n  readPipedStdin: 1ms\n  prepareInitialMessage: 0ms\n  initTheme: 0ms\n  resolveModelScope: 0ms\n  createAgentSession: 1ms\n  TOTAL: 324ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/index.ts module import: 295ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/index.ts factory: 2ms\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 298ms\n-----------------------------------\n\n"
+		},
+		{
+			"version": "pi-extensions:subagent-capability-benchmark:v1",
+			"pairIndex": 0,
+			"repetition": 0,
+			"orderIndex": 1,
+			"arm": "pi-subagents-v2",
+			"taskId": "single-research",
+			"outcome": "completed",
+			"success": true,
+			"fixturePassed": null,
+			"readinessMs": 248.208,
+			"elapsedMs": 18449.891,
+			"parentVisibleCost": 0.042743,
+			"startedAt": "2026-08-24T18:32:46.850Z",
+			"completedAt": "2026-08-24T18:33:05.560Z",
+			"finalAnswer": "Fixture ID: `pair-0`\n\n- Retry attempts: **4** — `src/queue.ts`, symbol `RETRY_ATTEMPTS`\n- Completion channel: **`\"steer\"`** — `src/delivery.ts`, symbol `COMPLETION_CHANNEL`\n- Shutdown order: **`stop-delivery` → `abort-children` → `await-streams`** — `src/shutdown.ts`, symbol `SHUTDOWN_ORDER`\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"single-research\",\"complete\":true}",
+			"marker": {
+				"taskId": "single-research",
+				"complete": true
+			},
+			"matchedEvidence": ["retry-attempts", "completion-channel", "shutdown-order"],
+			"evidenceScore": 1,
+			"toolCompliance": true,
+			"completionObserved": true,
+			"prematureFinal": false,
+			"toolCounts": {
+				"start": 1,
+				"wait": 1,
+				"consult": 0
+			},
+			"events": [
+				{
+					"type": "response",
+					"id": "capability_benchmark_1",
+					"command": "get_state",
+					"success": true
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_2",
+					"command": "prompt",
+					"success": true
+				},
+				{
+					"type": "agent_start"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent-v2-start",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "{\n  \"jobId\": \"job_mt7kq33z_1\",\n  \"agent\": \"benchmark-explorer\",\n  \"state\": \"queued\",\n  \"timeoutMs\": 120000\n}"
+							}
+						],
+						"details": {
+							"jobId": "job_mt7kq33z_1",
+							"agent": "benchmark-explorer",
+							"state": "queued",
+							"timeoutMs": 120000
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "read",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "# Generated capability fixture\n\nFixture ID: pair-0.\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent-v2-wait",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "{\n  \"jobId\": \"job_mt7kq33z_1\",\n  \"state\": \"completed\",\n  \"timedOut\": false,\n  \"result\": \"- Retry attempt count: **4** — `src/queue.ts`, symbol `RETRY_ATTEMPTS`\\n- Completion channel: **`\\\"steer\\\"`** — `src/delivery.ts`, symbol `COMPLETION_CHANNEL`\\n- Shutdown order: **`stop-delivery` → `abort-children` → `await-streams`** — `src/shutdown.ts`, symbol `SHUTDOWN_ORDER`\"\n}"
+							}
+						],
+						"details": {
+							"jobId": "job_mt7kq33z_1",
+							"state": "completed",
+							"timedOut": false,
+							"result": "- Retry attempt count: **4** — `src/queue.ts`, symbol `RETRY_ATTEMPTS`\n- Completion channel: **`\"steer\"`** — `src/delivery.ts`, symbol `COMPLETION_CHANNEL`\n- Shutdown order: **`stop-delivery` → `abort-children` → `await-streams`** — `src/shutdown.ts`, symbol `SHUTDOWN_ORDER`"
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "custom",
+						"customType": "pi-subagents-v2-completion",
+						"content": "Subagent job completion:\n{\"jobId\":\"job_mt7kq33z_1\",\"state\":\"completed\",\"timedOut\":false,\"result\":\"- Retry attempt count: **4** — `src/queue.ts`, symbol `RETRY_ATTEMPTS`\\n- Completion channel: **`\\\"steer\\\"`** — `src/delivery.ts`, symbol `COMPLETION_CHANNEL`\\n- Shutdown order: **`stop-delivery` → `abort-children` → `await-streams`** — `src/shutdown.ts`, symbol `SHUTDOWN_ORDER`\"}",
+						"details": {
+							"jobId": "job_mt7kq33z_1",
+							"state": "completed",
+							"timedOut": false,
+							"result": "- Retry attempt count: **4** — `src/queue.ts`, symbol `RETRY_ATTEMPTS`\n- Completion channel: **`\"steer\"`** — `src/delivery.ts`, symbol `COMPLETION_CHANNEL`\n- Shutdown order: **`stop-delivery` → `abort-children` → `await-streams`** — `src/shutdown.ts`, symbol `SHUTDOWN_ORDER`"
+						}
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": [
+							{
+								"type": "text",
+								"text": "Fixture ID: `pair-0`\n\n- Retry attempts: **4** — `src/queue.ts`, symbol `RETRY_ATTEMPTS`\n- Completion channel: **`\"steer\"`** — `src/delivery.ts`, symbol `COMPLETION_CHANNEL`\n- Shutdown order: **`stop-delivery` → `abort-children` → `await-streams`** — `src/shutdown.ts`, symbol `SHUTDOWN_ORDER`\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"single-research\",\"complete\":true}"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "agent_end"
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_3",
+					"command": "get_session_stats",
+					"success": true,
+					"data": {
+						"sessionId": "01a0350b-e4bb-7387-9858-027510f45e47",
+						"userMessages": 1,
+						"assistantMessages": 4,
+						"toolCalls": 3,
+						"toolResults": 3,
+						"totalMessages": 8,
+						"tokens": {
+							"input": 6415,
+							"output": 330,
+							"cacheRead": 1536,
+							"cacheWrite": 0,
+							"total": 8281
+						},
+						"cost": 0.042743,
+						"contextUsage": {
+							"tokens": 2440,
+							"contextWindow": 272000,
+							"percent": 0.8970588235294117
+						}
+					}
+				}
+			],
+			"stderr": "\n--- Startup Timings: main ---\n  parseArgs: 2ms\n  runMigrations: 0ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 56ms\n  readPipedStdin: 1ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 61ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents-v2/src/index.ts module import: 32ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents-v2/src/index.ts factory: 0ms\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 33ms\n-----------------------------------\n\n"
+		},
+		{
+			"version": "pi-extensions:subagent-capability-benchmark:v1",
+			"pairIndex": 1,
+			"repetition": 0,
+			"orderIndex": 0,
+			"arm": "pi-subagents-v2",
+			"taskId": "parallel-research",
+			"outcome": "completed",
+			"success": true,
+			"fixturePassed": null,
+			"readinessMs": 250.145,
+			"elapsedMs": 18192.653,
+			"parentVisibleCost": 0.042406,
+			"startedAt": "2026-08-24T18:33:05.567Z",
+			"completedAt": "2026-08-24T18:33:24.024Z",
+			"finalAnswer": "Fixture: `pair-1`\n\n- `src/protocol.ts` — `PROTOCOL_VERSION = \"job-v3\"`\n- `src/protocol.ts` — `MAX_FRAME_BYTES = 49_152` bytes\n- `src/retention.ts` — `MAX_TERMINAL_JOBS = 32`\n- `src/retention.ts` — `RETENTION_HOURS = 24` hours\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"parallel-research\",\"complete\":true}",
+			"marker": {
+				"taskId": "parallel-research",
+				"complete": true
+			},
+			"matchedEvidence": ["protocol-version", "frame-limit", "terminal-limit", "retention-hours"],
+			"evidenceScore": 1,
+			"toolCompliance": true,
+			"completionObserved": true,
+			"prematureFinal": false,
+			"toolCounts": {
+				"start": 2,
+				"wait": 2,
+				"consult": 0
+			},
+			"events": [
+				{
+					"type": "response",
+					"id": "capability_benchmark_1",
+					"command": "get_state",
+					"success": true
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_2",
+					"command": "prompt",
+					"success": true
+				},
+				{
+					"type": "agent_start"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent-v2-start",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "{\n  \"jobId\": \"job_mt7kqjd1_1\",\n  \"agent\": \"benchmark-explorer\",\n  \"state\": \"queued\",\n  \"timeoutMs\": 120000\n}"
+							}
+						],
+						"details": {
+							"jobId": "job_mt7kqjd1_1",
+							"agent": "benchmark-explorer",
+							"state": "queued",
+							"timeoutMs": 120000
+						}
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent-v2-start",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "{\n  \"jobId\": \"job_mt7kqjd1_2\",\n  \"agent\": \"benchmark-explorer\",\n  \"state\": \"queued\",\n  \"timeoutMs\": 120000\n}"
+							}
+						],
+						"details": {
+							"jobId": "job_mt7kqjd1_2",
+							"agent": "benchmark-explorer",
+							"state": "queued",
+							"timeoutMs": 120000
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "read",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "# Generated capability fixture\n\nFixture ID: pair-1.\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent-v2-wait",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "{\n  \"jobId\": \"job_mt7kqjd1_1\",\n  \"state\": \"completed\",\n  \"timedOut\": false,\n  \"result\": \"- `src/protocol.ts`: `PROTOCOL_VERSION = \\\"job-v3\\\"`\\n- `src/protocol.ts`: `MAX_FRAME_BYTES = 49_152` bytes\"\n}"
+							}
+						],
+						"details": {
+							"jobId": "job_mt7kqjd1_1",
+							"state": "completed",
+							"timedOut": false,
+							"result": "- `src/protocol.ts`: `PROTOCOL_VERSION = \"job-v3\"`\n- `src/protocol.ts`: `MAX_FRAME_BYTES = 49_152` bytes"
+						}
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent-v2-wait",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "{\n  \"jobId\": \"job_mt7kqjd1_2\",\n  \"state\": \"completed\",\n  \"timedOut\": false,\n  \"result\": \"- Retained terminal-job limit: `32` — `src/retention.ts`, symbol `MAX_TERMINAL_JOBS`\\n- Retention period: `24` hours — `src/retention.ts`, symbol `RETENTION_HOURS`\"\n}"
+							}
+						],
+						"details": {
+							"jobId": "job_mt7kqjd1_2",
+							"state": "completed",
+							"timedOut": false,
+							"result": "- Retained terminal-job limit: `32` — `src/retention.ts`, symbol `MAX_TERMINAL_JOBS`\n- Retention period: `24` hours — `src/retention.ts`, symbol `RETENTION_HOURS`"
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "custom",
+						"customType": "pi-subagents-v2-completion",
+						"content": "Subagent job completion:\n{\"jobId\":\"job_mt7kqjd1_1\",\"state\":\"completed\",\"timedOut\":false,\"result\":\"- `src/protocol.ts`: `PROTOCOL_VERSION = \\\"job-v3\\\"`\\n- `src/protocol.ts`: `MAX_FRAME_BYTES = 49_152` bytes\"}",
+						"details": {
+							"jobId": "job_mt7kqjd1_1",
+							"state": "completed",
+							"timedOut": false,
+							"result": "- `src/protocol.ts`: `PROTOCOL_VERSION = \"job-v3\"`\n- `src/protocol.ts`: `MAX_FRAME_BYTES = 49_152` bytes"
+						}
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": [
+							{
+								"type": "text",
+								"text": "Fixture: `pair-1`\n\n- `src/protocol.ts` — `PROTOCOL_VERSION = \"job-v3\"`\n- `src/protocol.ts` — `MAX_FRAME_BYTES = 49_152` bytes\n- `src/retention.ts` — `MAX_TERMINAL_JOBS = 32`\n- `src/retention.ts` — `RETENTION_HOURS = 24` hours\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"parallel-research\",\"complete\":true}"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "custom",
+						"customType": "pi-subagents-v2-completion",
+						"content": "Subagent job completion:\n{\"jobId\":\"job_mt7kqjd1_2\",\"state\":\"completed\",\"timedOut\":false,\"result\":\"- Retained terminal-job limit: `32` — `src/retention.ts`, symbol `MAX_TERMINAL_JOBS`\\n- Retention period: `24` hours — `src/retention.ts`, symbol `RETENTION_HOURS`\"}",
+						"details": {
+							"jobId": "job_mt7kqjd1_2",
+							"state": "completed",
+							"timedOut": false,
+							"result": "- Retained terminal-job limit: `32` — `src/retention.ts`, symbol `MAX_TERMINAL_JOBS`\n- Retention period: `24` hours — `src/retention.ts`, symbol `RETENTION_HOURS`"
+						}
+					}
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_3",
+					"command": "get_session_stats",
+					"success": true,
+					"data": {
+						"sessionId": "01a0350c-2dd8-7d79-b275-a56ea288914e",
+						"userMessages": 1,
+						"assistantMessages": 4,
+						"toolCalls": 5,
+						"toolResults": 5,
+						"totalMessages": 10,
+						"tokens": {
+							"input": 5414,
+							"output": 460,
+							"cacheRead": 3072,
+							"cacheWrite": 0,
+							"total": 8946
+						},
+						"cost": 0.042406,
+						"contextUsage": {
+							"tokens": 2712,
+							"contextWindow": 272000,
+							"percent": 0.9970588235294118
+						}
+					}
+				}
+			],
+			"stderr": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 57ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 61ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents-v2/src/index.ts module import: 32ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents-v2/src/index.ts factory: 0ms\n  <inline:llama.cpp> factory: 0ms\n  TOTAL: 32ms\n-----------------------------------\n\n"
+		},
+		{
+			"version": "pi-extensions:subagent-capability-benchmark:v1",
+			"pairIndex": 1,
+			"repetition": 0,
+			"orderIndex": 1,
+			"arm": "pi-subagents",
+			"taskId": "parallel-research",
+			"outcome": "completed",
+			"success": true,
+			"fixturePassed": null,
+			"readinessMs": 656.929,
+			"elapsedMs": 21334.744,
+			"parentVisibleCost": 0.129004,
+			"startedAt": "2026-08-24T18:33:24.032Z",
+			"completedAt": "2026-08-24T18:33:46.041Z",
+			"finalAnswer": "Fixture ID: `pair-1`\n\n- `src/protocol.ts` — `PROTOCOL_VERSION = \"job-v3\"`\n- `src/protocol.ts` — `MAX_FRAME_BYTES = 49_152` bytes\n- `src/retention.ts` — `MAX_TERMINAL_JOBS = 32`\n- `src/retention.ts` — `RETENTION_HOURS = 24` hours\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"parallel-research\",\"complete\":true}",
+			"marker": {
+				"taskId": "parallel-research",
+				"complete": true
+			},
+			"matchedEvidence": ["protocol-version", "frame-limit", "terminal-limit", "retention-hours"],
+			"evidenceScore": 1,
+			"toolCompliance": true,
+			"completionObserved": true,
+			"prematureFinal": false,
+			"toolCounts": {
+				"start": 2,
+				"wait": 2,
+				"consult": 0
+			},
+			"events": [
+				{
+					"type": "response",
+					"id": "capability_benchmark_1",
+					"command": "get_state",
+					"success": true
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_2",
+					"command": "prompt",
+					"success": true
+				},
+				{
+					"type": "agent_start"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent_spawn",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "Spawned benchmark-explorer as /root/protocol_research (sa_a8f601eb-a446-4bd1-8b00-5680181d98f0). This exact run is runtime-tracked as required until its completion becomes visible or reaches an explicit terminal state. Current Pi versions still cannot prevent already-streamed premature output. Continue the identified non-overlapping local work immediately; do not merely announce the spawn or end while useful local work remains. Only an explicit user-requested specialist model, tool-profile, or isolation exception may lack concurrent local work. Auto-resume steers completions into active parent work or requests synthesis when idle. Treat this response as progress, not final synthesis, until every final-answer-required completion message is visible. If local work is exhausted while required children remain active, emit at most one brief progress sentence and end the turn; do not repeat waiting updates or use the requested final format, verdict, or conclusion. Do not redo a running child's assigned work. Do not poll for progress."
+							}
+						],
+						"details": {
+							"agent": {
+								"id": "sa_a8f601eb-a446-4bd1-8b00-5680181d98f0",
+								"taskName": "protocol_research",
+								"taskPath": "/root/protocol_research",
+								"agent": "benchmark-explorer",
+								"rootId": "sa_a8f601eb-a446-4bd1-8b00-5680181d98f0",
+								"depth": 0,
+								"children": [],
+								"state": "running",
+								"createdAt": 1787596412614,
+								"updatedAt": 1787596412617,
+								"cwd": "/tmp/subagent-capability-pi-subagents-eybhwb",
+								"workspaceMode": "shared",
+								"thinkingLevel": "medium",
+								"timeoutMs": 120000,
+								"currentTimeoutMs": 120000,
+								"currentTask": "Inspect only src/protocol.ts in the current fixture.\nReport the protocol version and maximum frame bytes with exact symbol and path evidence.\nDo not edit files.",
+								"historyCount": 0,
+								"unreadMessages": 0,
+								"context": {
+									"turns": 0,
+									"sources": 0,
+									"bytes": 0,
+									"truncated": false
+								},
+								"resultFormat": "text",
+								"completionRequirements": [
+									{
+										"version": "pi-subagents:completion-requirement:v1",
+										"runId": "run:sa_a8f601eb-a446-4bd1-8b00-5680181d98f0:3f48e193-94a7-4616-a28b-acb510280baa",
+										"generation": 1,
+										"state": "pending",
+										"createdAt": 1787596412616,
+										"updatedAt": 1787596412616
+									}
+								],
+								"executionPlan": {
+									"version": "pi-subagents:execution-plan:v1",
+									"mode": "audit",
+									"agent": {
+										"name": "benchmark-explorer",
+										"source": "user",
+										"capabilitiesKnown": false
+									},
+									"capabilityFit": "unknown",
+									"missingCapabilities": [],
+									"requestedCapabilities": [],
+									"declaredCapabilities": [],
+									"requestedTools": [],
+									"effectiveTools": ["read", "grep", "find", "ls"],
+									"missingTools": [],
+									"overgrantedTools": [],
+									"resultFormat": "text",
+									"sideEffectPolicy": "mutating",
+									"resultFormatSupported": "unknown",
+									"target": {
+										"cwd": "/tmp/subagent-capability-pi-subagents-eybhwb",
+										"boundary": "current-workspace",
+										"trust": {
+											"kind": "session-untrusted",
+											"projectTrusted": false,
+											"sourcePath": "/tmp/subagent-capability-pi-subagents-eybhwb"
+										}
+									},
+									"workspaceMode": "shared",
+									"transport": "subprocess",
+									"model": "openai-codex/gpt-5.6-sol",
+									"thinkingLevel": "medium",
+									"timeoutMs": 120000,
+									"unsupportedGuarantees": [],
+									"warnings": ["agent-capabilities-unknown"],
+									"taskGeneration": 1,
+									"cancellationLineage": [],
+									"admission": {
+										"version": "pi-subagents:admission:v1",
+										"recommendation": "abstain-insufficient-evidence",
+										"reasonCodes": ["requirements-incomplete"],
+										"benefitHypothesis": "none",
+										"auditOnly": true
+									},
+									"id": "bf89340f89c1fe4137d1ea374db5b6a81216c80ff98d9a9d37c4d8db5f6fb2ec"
+								},
+								"capabilityGrant": {
+									"version": "pi-subagents:capability-grant:v1",
+									"id": "0bf347beb82770fc9badb72cc5cfca7bd0e7bab9acdc70d9f6a3806d6c71728f",
+									"executionPlanId": "bf89340f89c1fe4137d1ea374db5b6a81216c80ff98d9a9d37c4d8db5f6fb2ec",
+									"taskGeneration": 1,
+									"effectiveTools": ["read", "grep", "find", "ls"],
+									"issuedAt": 1787596412613,
+									"expiresAt": 1787596592613,
+									"state": "active"
+								},
+								"semanticCompatibility": {
+									"status": "compatible",
+									"changedComponents": []
+								},
+								"semanticSnapshotDigest": "6decd0b359213b3541ee6b17c47bcfb2860c68ee89e11378eebc91aa07dcd9be",
+								"telemetry": {
+									"phase": "queued",
+									"queuePosition": 1,
+									"updatedAt": 1787596412616,
+									"timing": {
+										"queuedAt": 1787596412616
+									},
+									"budgetSource": {
+										"timeout": "explicit",
+										"idleTimeout": "runtime",
+										"turnLimit": "runtime",
+										"toolCallLimit": "runtime"
+									}
+								},
+								"target": {
+									"cwd": "/tmp/subagent-capability-pi-subagents-eybhwb",
+									"boundary": "current-workspace",
+									"trust": {
+										"kind": "session-untrusted",
+										"projectTrusted": false,
+										"sourcePath": "/tmp/subagent-capability-pi-subagents-eybhwb"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent_spawn",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "Spawned benchmark-explorer as /root/retention_research (sa_59c0f67e-c528-4807-a0b2-739aa69a3af6). This exact run is runtime-tracked as required until its completion becomes visible or reaches an explicit terminal state. Current Pi versions still cannot prevent already-streamed premature output. Continue the identified non-overlapping local work immediately; do not merely announce the spawn or end while useful local work remains. Only an explicit user-requested specialist model, tool-profile, or isolation exception may lack concurrent local work. Auto-resume steers completions into active parent work or requests synthesis when idle. Treat this response as progress, not final synthesis, until every final-answer-required completion message is visible. If local work is exhausted while required children remain active, emit at most one brief progress sentence and end the turn; do not repeat waiting updates or use the requested final format, verdict, or conclusion. Do not redo a running child's assigned work. Do not poll for progress."
+							}
+						],
+						"details": {
+							"agent": {
+								"id": "sa_59c0f67e-c528-4807-a0b2-739aa69a3af6",
+								"taskName": "retention_research",
+								"taskPath": "/root/retention_research",
+								"agent": "benchmark-explorer",
+								"rootId": "sa_59c0f67e-c528-4807-a0b2-739aa69a3af6",
+								"depth": 0,
+								"children": [],
+								"state": "running",
+								"createdAt": 1787596412615,
+								"updatedAt": 1787596412724,
+								"cwd": "/tmp/subagent-capability-pi-subagents-eybhwb",
+								"workspaceMode": "shared",
+								"thinkingLevel": "medium",
+								"timeoutMs": 120000,
+								"currentTimeoutMs": 120000,
+								"currentTask": "Inspect only src/retention.ts in the current fixture.\nReport the retained terminal-job limit and retention hours with exact symbol and path evidence.\nDo not edit files.",
+								"historyCount": 0,
+								"unreadMessages": 0,
+								"context": {
+									"turns": 0,
+									"sources": 0,
+									"bytes": 0,
+									"truncated": false
+								},
+								"resultFormat": "text",
+								"completionRequirements": [
+									{
+										"version": "pi-subagents:completion-requirement:v1",
+										"runId": "run:sa_59c0f67e-c528-4807-a0b2-739aa69a3af6:61da860a-a865-4b28-a43b-306fdd3e6be1",
+										"generation": 1,
+										"state": "pending",
+										"createdAt": 1787596412723,
+										"updatedAt": 1787596412723
+									}
+								],
+								"executionPlan": {
+									"version": "pi-subagents:execution-plan:v1",
+									"mode": "audit",
+									"agent": {
+										"name": "benchmark-explorer",
+										"source": "user",
+										"capabilitiesKnown": false
+									},
+									"capabilityFit": "unknown",
+									"missingCapabilities": [],
+									"requestedCapabilities": [],
+									"declaredCapabilities": [],
+									"requestedTools": [],
+									"effectiveTools": ["read", "grep", "find", "ls"],
+									"missingTools": [],
+									"overgrantedTools": [],
+									"resultFormat": "text",
+									"sideEffectPolicy": "mutating",
+									"resultFormatSupported": "unknown",
+									"target": {
+										"cwd": "/tmp/subagent-capability-pi-subagents-eybhwb",
+										"boundary": "current-workspace",
+										"trust": {
+											"kind": "session-untrusted",
+											"projectTrusted": false,
+											"sourcePath": "/tmp/subagent-capability-pi-subagents-eybhwb"
+										}
+									},
+									"workspaceMode": "shared",
+									"transport": "subprocess",
+									"model": "openai-codex/gpt-5.6-sol",
+									"thinkingLevel": "medium",
+									"timeoutMs": 120000,
+									"unsupportedGuarantees": [],
+									"warnings": ["agent-capabilities-unknown"],
+									"taskGeneration": 1,
+									"cancellationLineage": [],
+									"admission": {
+										"version": "pi-subagents:admission:v1",
+										"recommendation": "abstain-insufficient-evidence",
+										"reasonCodes": ["requirements-incomplete"],
+										"benefitHypothesis": "none",
+										"auditOnly": true
+									},
+									"id": "bf89340f89c1fe4137d1ea374db5b6a81216c80ff98d9a9d37c4d8db5f6fb2ec"
+								},
+								"capabilityGrant": {
+									"version": "pi-subagents:capability-grant:v1",
+									"id": "77c1ce19223cb44be334b21fafd1595417c3688b235bf12e76cead15d85b28f2",
+									"executionPlanId": "bf89340f89c1fe4137d1ea374db5b6a81216c80ff98d9a9d37c4d8db5f6fb2ec",
+									"taskGeneration": 1,
+									"effectiveTools": ["read", "grep", "find", "ls"],
+									"issuedAt": 1787596412615,
+									"expiresAt": 1787596592615,
+									"state": "active"
+								},
+								"semanticCompatibility": {
+									"status": "compatible",
+									"changedComponents": []
+								},
+								"semanticSnapshotDigest": "50629d1b78890e115a186bb2a50b6fbe91f65612ebc5785703f3842875931c68",
+								"telemetry": {
+									"phase": "queued",
+									"queuePosition": 1,
+									"updatedAt": 1787596412723,
+									"timing": {
+										"queuedAt": 1787596412723
+									},
+									"budgetSource": {
+										"timeout": "explicit",
+										"idleTimeout": "runtime",
+										"turnLimit": "runtime",
+										"toolCallLimit": "runtime"
+									}
+								},
+								"target": {
+									"cwd": "/tmp/subagent-capability-pi-subagents-eybhwb",
+									"boundary": "current-workspace",
+									"trust": {
+										"kind": "session-untrusted",
+										"projectTrusted": false,
+										"sourcePath": "/tmp/subagent-capability-pi-subagents-eybhwb"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "read",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "# Generated capability fixture\n\nFixture ID: pair-1.\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent_await",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "Subagent /root/protocol_research settled as completed.\n\n- Protocol version: `\"job-v3\"` — `src/protocol.ts`, symbol `PROTOCOL_VERSION`\n- Maximum frame size: `49_152` bytes — `src/protocol.ts`, symbol `MAX_FRAME_BYTES`"
+							}
+						],
+						"details": {
+							"agent": {
+								"id": "sa_a8f601eb-a446-4bd1-8b00-5680181d98f0",
+								"taskName": "protocol_research",
+								"taskPath": "/root/protocol_research",
+								"agent": "benchmark-explorer",
+								"rootId": "sa_a8f601eb-a446-4bd1-8b00-5680181d98f0",
+								"depth": 0,
+								"children": [],
+								"state": "completed",
+								"createdAt": 1787596412614,
+								"updatedAt": 1787596420784,
+								"cwd": "/tmp/subagent-capability-pi-subagents-eybhwb",
+								"workspaceMode": "shared",
+								"thinkingLevel": "medium",
+								"timeoutMs": 120000,
+								"historyCount": 1,
+								"unreadMessages": 0,
+								"context": {
+									"turns": 0,
+									"sources": 0,
+									"bytes": 0,
+									"truncated": false
+								},
+								"resultFormat": "text",
+								"completionRequirements": [
+									{
+										"version": "pi-subagents:completion-requirement:v1",
+										"runId": "run:sa_a8f601eb-a446-4bd1-8b00-5680181d98f0:3f48e193-94a7-4616-a28b-acb510280baa",
+										"generation": 1,
+										"state": "available",
+										"createdAt": 1787596412616,
+										"updatedAt": 1787596420784,
+										"completionId": "completion:sa_a8f601eb-a446-4bd1-8b00-5680181d98f0:19cddb73-58e1-4220-9d3b-82ed042829ff",
+										"terminalState": "completed"
+									}
+								],
+								"executionPlan": {
+									"version": "pi-subagents:execution-plan:v1",
+									"mode": "audit",
+									"agent": {
+										"name": "benchmark-explorer",
+										"source": "user",
+										"capabilitiesKnown": false
+									},
+									"capabilityFit": "unknown",
+									"missingCapabilities": [],
+									"requestedCapabilities": [],
+									"declaredCapabilities": [],
+									"requestedTools": [],
+									"effectiveTools": ["read", "grep", "find", "ls"],
+									"missingTools": [],
+									"overgrantedTools": [],
+									"resultFormat": "text",
+									"sideEffectPolicy": "mutating",
+									"resultFormatSupported": "unknown",
+									"target": {
+										"cwd": "/tmp/subagent-capability-pi-subagents-eybhwb",
+										"boundary": "current-workspace",
+										"trust": {
+											"kind": "session-untrusted",
+											"projectTrusted": false,
+											"sourcePath": "/tmp/subagent-capability-pi-subagents-eybhwb"
+										}
+									},
+									"workspaceMode": "shared",
+									"transport": "subprocess",
+									"model": "openai-codex/gpt-5.6-sol",
+									"thinkingLevel": "medium",
+									"timeoutMs": 120000,
+									"unsupportedGuarantees": [],
+									"warnings": ["agent-capabilities-unknown"],
+									"taskGeneration": 1,
+									"cancellationLineage": [],
+									"admission": {
+										"version": "pi-subagents:admission:v1",
+										"recommendation": "abstain-insufficient-evidence",
+										"reasonCodes": ["requirements-incomplete"],
+										"benefitHypothesis": "none",
+										"auditOnly": true
+									},
+									"id": "bf89340f89c1fe4137d1ea374db5b6a81216c80ff98d9a9d37c4d8db5f6fb2ec"
+								},
+								"capabilityGrant": {
+									"version": "pi-subagents:capability-grant:v1",
+									"id": "0bf347beb82770fc9badb72cc5cfca7bd0e7bab9acdc70d9f6a3806d6c71728f",
+									"executionPlanId": "bf89340f89c1fe4137d1ea374db5b6a81216c80ff98d9a9d37c4d8db5f6fb2ec",
+									"taskGeneration": 1,
+									"effectiveTools": ["read", "grep", "find", "ls"],
+									"issuedAt": 1787596412613,
+									"expiresAt": 1787596592613,
+									"state": "revoked",
+									"revokedAt": 1787596420784,
+									"revocationReason": "turn-settled"
+								},
+								"semanticCompatibility": {
+									"status": "compatible",
+									"changedComponents": []
+								},
+								"semanticSnapshotDigest": "6decd0b359213b3541ee6b17c47bcfb2860c68ee89e11378eebc91aa07dcd9be",
+								"telemetry": {
+									"transport": "subprocess",
+									"phase": "settled",
+									"updatedAt": 1787596420784,
+									"timing": {
+										"queuedAt": 1787596412616,
+										"startedAt": 1787596412718,
+										"transportStartedAt": 1787596412718,
+										"promptAcceptedAt": 1787596412718,
+										"firstActivityAt": 1787596420784,
+										"settledAt": 1787596420784
+									},
+									"provider": "openai-codex",
+									"model": "gpt-5.6-sol",
+									"thinkingLevel": "medium",
+									"usage": {
+										"input": 3364,
+										"output": 82,
+										"cacheRead": 0,
+										"cacheWrite": 0,
+										"totalTokens": 3446,
+										"cost": 0.019280000000000002,
+										"turns": 2
+									}
+								},
+								"error": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 58ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 62ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts module import: 26ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts factory: 0ms\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 27ms\n-----------------------------------\n\n",
+								"target": {
+									"cwd": "/tmp/subagent-capability-pi-subagents-eybhwb",
+									"boundary": "current-workspace",
+									"trust": {
+										"kind": "session-untrusted",
+										"projectTrusted": false,
+										"sourcePath": "/tmp/subagent-capability-pi-subagents-eybhwb"
+									}
+								},
+								"policy": {
+									"inherited": ["environment"],
+									"overridden": ["cwd", "model", "thinkingLevel", "tools"],
+									"unsupported": ["approvalPolicy", "sandboxProfile", "providerHeaders"]
+								}
+							},
+							"timedOut": false,
+							"timeoutMs": 120000,
+							"output": "- Protocol version: `\"job-v3\"` — `src/protocol.ts`, symbol `PROTOCOL_VERSION`\n- Maximum frame size: `49_152` bytes — `src/protocol.ts`, symbol `MAX_FRAME_BYTES`",
+							"error": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 58ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 62ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts module import: 26ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts factory: 0ms\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 27ms\n-----------------------------------\n\n"
+						}
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent_await",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "Subagent /root/retention_research settled as completed.\n\n- `src/retention.ts`: `MAX_TERMINAL_JOBS = 32`\n- `src/retention.ts`: `RETENTION_HOURS = 24` hours"
+							}
+						],
+						"details": {
+							"agent": {
+								"id": "sa_59c0f67e-c528-4807-a0b2-739aa69a3af6",
+								"taskName": "retention_research",
+								"taskPath": "/root/retention_research",
+								"agent": "benchmark-explorer",
+								"rootId": "sa_59c0f67e-c528-4807-a0b2-739aa69a3af6",
+								"depth": 0,
+								"children": [],
+								"state": "completed",
+								"createdAt": 1787596412615,
+								"updatedAt": 1787596420627,
+								"cwd": "/tmp/subagent-capability-pi-subagents-eybhwb",
+								"workspaceMode": "shared",
+								"thinkingLevel": "medium",
+								"timeoutMs": 120000,
+								"historyCount": 1,
+								"unreadMessages": 0,
+								"context": {
+									"turns": 0,
+									"sources": 0,
+									"bytes": 0,
+									"truncated": false
+								},
+								"resultFormat": "text",
+								"completionRequirements": [
+									{
+										"version": "pi-subagents:completion-requirement:v1",
+										"runId": "run:sa_59c0f67e-c528-4807-a0b2-739aa69a3af6:61da860a-a865-4b28-a43b-306fdd3e6be1",
+										"generation": 1,
+										"state": "available",
+										"createdAt": 1787596412723,
+										"updatedAt": 1787596420627,
+										"completionId": "completion:sa_59c0f67e-c528-4807-a0b2-739aa69a3af6:3bca97b9-aa57-47ee-856e-ff8ddd9786e6",
+										"terminalState": "completed"
+									}
+								],
+								"executionPlan": {
+									"version": "pi-subagents:execution-plan:v1",
+									"mode": "audit",
+									"agent": {
+										"name": "benchmark-explorer",
+										"source": "user",
+										"capabilitiesKnown": false
+									},
+									"capabilityFit": "unknown",
+									"missingCapabilities": [],
+									"requestedCapabilities": [],
+									"declaredCapabilities": [],
+									"requestedTools": [],
+									"effectiveTools": ["read", "grep", "find", "ls"],
+									"missingTools": [],
+									"overgrantedTools": [],
+									"resultFormat": "text",
+									"sideEffectPolicy": "mutating",
+									"resultFormatSupported": "unknown",
+									"target": {
+										"cwd": "/tmp/subagent-capability-pi-subagents-eybhwb",
+										"boundary": "current-workspace",
+										"trust": {
+											"kind": "session-untrusted",
+											"projectTrusted": false,
+											"sourcePath": "/tmp/subagent-capability-pi-subagents-eybhwb"
+										}
+									},
+									"workspaceMode": "shared",
+									"transport": "subprocess",
+									"model": "openai-codex/gpt-5.6-sol",
+									"thinkingLevel": "medium",
+									"timeoutMs": 120000,
+									"unsupportedGuarantees": [],
+									"warnings": ["agent-capabilities-unknown"],
+									"taskGeneration": 1,
+									"cancellationLineage": [],
+									"admission": {
+										"version": "pi-subagents:admission:v1",
+										"recommendation": "abstain-insufficient-evidence",
+										"reasonCodes": ["requirements-incomplete"],
+										"benefitHypothesis": "none",
+										"auditOnly": true
+									},
+									"id": "bf89340f89c1fe4137d1ea374db5b6a81216c80ff98d9a9d37c4d8db5f6fb2ec"
+								},
+								"capabilityGrant": {
+									"version": "pi-subagents:capability-grant:v1",
+									"id": "77c1ce19223cb44be334b21fafd1595417c3688b235bf12e76cead15d85b28f2",
+									"executionPlanId": "bf89340f89c1fe4137d1ea374db5b6a81216c80ff98d9a9d37c4d8db5f6fb2ec",
+									"taskGeneration": 1,
+									"effectiveTools": ["read", "grep", "find", "ls"],
+									"issuedAt": 1787596412615,
+									"expiresAt": 1787596592615,
+									"state": "revoked",
+									"revokedAt": 1787596420627,
+									"revocationReason": "turn-settled"
+								},
+								"semanticCompatibility": {
+									"status": "compatible",
+									"changedComponents": []
+								},
+								"semanticSnapshotDigest": "50629d1b78890e115a186bb2a50b6fbe91f65612ebc5785703f3842875931c68",
+								"telemetry": {
+									"transport": "subprocess",
+									"phase": "settled",
+									"updatedAt": 1787596420627,
+									"timing": {
+										"queuedAt": 1787596412723,
+										"startedAt": 1787596412724,
+										"transportStartedAt": 1787596412724,
+										"promptAcceptedAt": 1787596412724,
+										"firstActivityAt": 1787596420627,
+										"settledAt": 1787596420627
+									},
+									"provider": "openai-codex",
+									"model": "gpt-5.6-sol",
+									"thinkingLevel": "medium",
+									"usage": {
+										"input": 1833,
+										"output": 74,
+										"cacheRead": 1536,
+										"cacheWrite": 0,
+										"totalTokens": 3443,
+										"cost": 0.012153,
+										"turns": 2
+									}
+								},
+								"error": "\n--- Startup Timings: main ---\n  parseArgs: 2ms\n  runMigrations: 0ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 57ms\n  readPipedStdin: 1ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 62ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts module import: 25ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts factory: 1ms\n  <inline:llama.cpp> factory: 0ms\n  TOTAL: 26ms\n-----------------------------------\n\n",
+								"target": {
+									"cwd": "/tmp/subagent-capability-pi-subagents-eybhwb",
+									"boundary": "current-workspace",
+									"trust": {
+										"kind": "session-untrusted",
+										"projectTrusted": false,
+										"sourcePath": "/tmp/subagent-capability-pi-subagents-eybhwb"
+									}
+								},
+								"policy": {
+									"inherited": ["environment"],
+									"overridden": ["cwd", "model", "thinkingLevel", "tools"],
+									"unsupported": ["approvalPolicy", "sandboxProfile", "providerHeaders"]
+								}
+							},
+							"timedOut": false,
+							"timeoutMs": 120000,
+							"output": "- `src/retention.ts`: `MAX_TERMINAL_JOBS = 32`\n- `src/retention.ts`: `RETENTION_HOURS = 24` hours",
+							"error": "\n--- Startup Timings: main ---\n  parseArgs: 2ms\n  runMigrations: 0ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 57ms\n  readPipedStdin: 1ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 62ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts module import: 25ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts factory: 1ms\n  <inline:llama.cpp> factory: 0ms\n  TOTAL: 26ms\n-----------------------------------\n\n"
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "custom",
+						"customType": "pi-subagent-completion",
+						"content": "Message Type: SUBAGENT_COMPLETION\nProtocol: pi-subagents:v1\nCompletion ID: completion:sa_59c0f67e-c528-4807-a0b2-739aa69a3af6:3bca97b9-aa57-47ee-856e-ff8ddd9786e6\nRun ID: run:sa_59c0f67e-c528-4807-a0b2-739aa69a3af6:61da860a-a865-4b28-a43b-306fdd3e6be1\nGeneration: 1\nAgent ID: sa_59c0f67e-c528-4807-a0b2-739aa69a3af6\nAgent Path: /root/retention_research\nRecipient Path: /root\nAgent: benchmark-explorer\nTask: Inspect only src/retention.ts in the current fixture. Report the retained terminal-job limit and retention hours with exact symbol and path evidence. Do not edit files.\nState: completed\nError:\n\n--- Startup Timings: main ---\n  parseArgs: 2ms\n  runMigrations: 0ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 57ms\n  readPipedStdin: 1ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 62ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts module import: 25ms\n  $HOME/worksp\n… [truncated by pi-subagents]\nPayload:\n- `src/retention.ts`: `MAX_TERMINAL_JOBS = 32`\n- `src/retention.ts`: `RETENTION_HOURS = 24` hours",
+						"details": {
+							"protocol": "pi-subagents:v1",
+							"completionId": "completion:sa_59c0f67e-c528-4807-a0b2-739aa69a3af6:3bca97b9-aa57-47ee-856e-ff8ddd9786e6",
+							"runId": "run:sa_59c0f67e-c528-4807-a0b2-739aa69a3af6:61da860a-a865-4b28-a43b-306fdd3e6be1",
+							"generation": 1,
+							"agentId": "sa_59c0f67e-c528-4807-a0b2-739aa69a3af6",
+							"taskPath": "/root/retention_research",
+							"recipientPath": "/root",
+							"agent": "benchmark-explorer",
+							"task": "Inspect only src/retention.ts in the current fixture. Report the retained terminal-job limit and retention hours with exact symbol and path evidence. Do not edit files.",
+							"state": "completed",
+							"transport": "subprocess",
+							"capabilityGrant": {
+								"version": "pi-subagents:capability-grant:v1",
+								"id": "77c1ce19223cb44be334b21fafd1595417c3688b235bf12e76cead15d85b28f2",
+								"executionPlanId": "bf89340f89c1fe4137d1ea374db5b6a81216c80ff98d9a9d37c4d8db5f6fb2ec",
+								"taskGeneration": 1,
+								"effectiveTools": ["read", "grep", "find", "ls"],
+								"issuedAt": 1787596412615,
+								"expiresAt": 1787596592615,
+								"state": "revoked",
+								"revokedAt": 1787596420627,
+								"revocationReason": "turn-settled"
+							},
+							"completionRequirement": {
+								"version": "pi-subagents:completion-requirement:v1",
+								"runId": "run:sa_59c0f67e-c528-4807-a0b2-739aa69a3af6:61da860a-a865-4b28-a43b-306fdd3e6be1",
+								"generation": 1,
+								"state": "available",
+								"createdAt": 1787596412723,
+								"updatedAt": 1787596420627,
+								"completionId": "completion:sa_59c0f67e-c528-4807-a0b2-739aa69a3af6:3bca97b9-aa57-47ee-856e-ff8ddd9786e6",
+								"terminalState": "completed"
+							}
+						}
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": [
+							{
+								"type": "text",
+								"text": "Fixture ID: `pair-1`\n\n- `src/protocol.ts` — `PROTOCOL_VERSION = \"job-v3\"`\n- `src/protocol.ts` — `MAX_FRAME_BYTES = 49_152` bytes\n- `src/retention.ts` — `MAX_TERMINAL_JOBS = 32`\n- `src/retention.ts` — `RETENTION_HOURS = 24` hours\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"parallel-research\",\"complete\":true}"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "custom",
+						"customType": "pi-subagent-completion",
+						"content": "Message Type: SUBAGENT_COMPLETION\nProtocol: pi-subagents:v1\nCompletion ID: completion:sa_a8f601eb-a446-4bd1-8b00-5680181d98f0:19cddb73-58e1-4220-9d3b-82ed042829ff\nRun ID: run:sa_a8f601eb-a446-4bd1-8b00-5680181d98f0:3f48e193-94a7-4616-a28b-acb510280baa\nGeneration: 1\nAgent ID: sa_a8f601eb-a446-4bd1-8b00-5680181d98f0\nAgent Path: /root/protocol_research\nRecipient Path: /root\nAgent: benchmark-explorer\nTask: Inspect only src/protocol.ts in the current fixture. Report the protocol version and maximum frame bytes with exact symbol and path evidence. Do not edit files.\nState: completed\nError:\n\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 58ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 62ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts module import: 26ms\n  $HOME/worksp\n… [truncated by pi-subagents]\nPayload:\n- Protocol version: `\"job-v3\"` — `src/protocol.ts`, symbol `PROTOCOL_VERSION`\n- Maximum frame size: `49_152` bytes — `src/protocol.ts`, symbol `MAX_FRAME_BYTES`",
+						"details": {
+							"protocol": "pi-subagents:v1",
+							"completionId": "completion:sa_a8f601eb-a446-4bd1-8b00-5680181d98f0:19cddb73-58e1-4220-9d3b-82ed042829ff",
+							"runId": "run:sa_a8f601eb-a446-4bd1-8b00-5680181d98f0:3f48e193-94a7-4616-a28b-acb510280baa",
+							"generation": 1,
+							"agentId": "sa_a8f601eb-a446-4bd1-8b00-5680181d98f0",
+							"taskPath": "/root/protocol_research",
+							"recipientPath": "/root",
+							"agent": "benchmark-explorer",
+							"task": "Inspect only src/protocol.ts in the current fixture. Report the protocol version and maximum frame bytes with exact symbol and path evidence. Do not edit files.",
+							"state": "completed",
+							"transport": "subprocess",
+							"capabilityGrant": {
+								"version": "pi-subagents:capability-grant:v1",
+								"id": "0bf347beb82770fc9badb72cc5cfca7bd0e7bab9acdc70d9f6a3806d6c71728f",
+								"executionPlanId": "bf89340f89c1fe4137d1ea374db5b6a81216c80ff98d9a9d37c4d8db5f6fb2ec",
+								"taskGeneration": 1,
+								"effectiveTools": ["read", "grep", "find", "ls"],
+								"issuedAt": 1787596412613,
+								"expiresAt": 1787596592613,
+								"state": "revoked",
+								"revokedAt": 1787596420784,
+								"revocationReason": "turn-settled"
+							},
+							"completionRequirement": {
+								"version": "pi-subagents:completion-requirement:v1",
+								"runId": "run:sa_a8f601eb-a446-4bd1-8b00-5680181d98f0:3f48e193-94a7-4616-a28b-acb510280baa",
+								"generation": 1,
+								"state": "available",
+								"createdAt": 1787596412616,
+								"updatedAt": 1787596420784,
+								"completionId": "completion:sa_a8f601eb-a446-4bd1-8b00-5680181d98f0:19cddb73-58e1-4220-9d3b-82ed042829ff",
+								"terminalState": "completed"
+							}
+						}
+					}
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_3",
+					"command": "get_session_stats",
+					"success": true,
+					"data": {
+						"sessionId": "01a0350c-75f4-74b5-823f-8ab2c0e87ce8",
+						"userMessages": 1,
+						"assistantMessages": 4,
+						"toolCalls": 5,
+						"toolResults": 5,
+						"totalMessages": 10,
+						"tokens": {
+							"input": 17964,
+							"output": 632,
+							"cacheRead": 40448,
+							"cacheWrite": 0,
+							"total": 59044
+						},
+						"cost": 0.129004,
+						"contextUsage": {
+							"tokens": 15835,
+							"contextWindow": 272000,
+							"percent": 5.821691176470589
+						}
+					}
+				}
+			],
+			"stderr": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 0ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 324ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 327ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/index.ts module import: 298ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/index.ts factory: 2ms\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 301ms\n-----------------------------------\n\n"
+		},
+		{
+			"version": "pi-extensions:subagent-capability-benchmark:v1",
+			"pairIndex": 2,
+			"repetition": 0,
+			"orderIndex": 0,
+			"arm": "pi-subagents",
+			"taskId": "consult-review",
+			"outcome": "completed",
+			"success": true,
+			"fixturePassed": null,
+			"readinessMs": 653.027,
+			"elapsedMs": 35616.571,
+			"parentVisibleCost": 0.121995,
+			"startedAt": "2026-08-24T18:33:46.052Z",
+			"completedAt": "2026-08-24T18:34:22.336Z",
+			"finalAnswer": "- `src/review.ts` — `canRead`: `ownerId.startsWith(userId)` permits prefix and empty-ID matches. Validate/canonicalize IDs, then use exact equality: `ownerId === userId`.\n- `src/review.ts` — `resolveUpload`: `path.join(root, requested)` allows `..` path traversal outside `root`. Resolve both paths with `path.resolve`, compute `path.relative(base, target)`, and reject `..`, `../...`, or absolute relative paths. Also prevent symlink escapes where applicable.\n- `src/review.ts` — `tokenLabel`: `token.slice(0, 8)` discloses authentication-token characters. Return a fixed redaction such as `\"[redacted]\"`; if correlation is required, use a short keyed-HMAC digest instead of token content.\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"consult-review\",\"complete\":true}",
+			"marker": {
+				"taskId": "consult-review",
+				"complete": true
+			},
+			"matchedEvidence": ["owner-prefix", "path-traversal", "token-leak"],
+			"evidenceScore": 1,
+			"toolCompliance": true,
+			"completionObserved": true,
+			"prematureFinal": false,
+			"toolCounts": {
+				"start": 0,
+				"wait": 0,
+				"consult": 1
+			},
+			"events": [
+				{
+					"type": "response",
+					"id": "capability_benchmark_1",
+					"command": "get_state",
+					"success": true
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_2",
+					"command": "prompt",
+					"success": true
+				},
+				{
+					"type": "agent_start"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent_consult",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "1. **Broken authorization check — `src/review.ts`, `canRead`**\n   - Unsafe operation: `ownerId.startsWith(userId)`\n   - Prefixes—and even an empty `userId`—can match unrelated owners.\n   - Safe replacement: validate/canonicalize both IDs, then require exact equality:\n     ```ts\n     return ownerId === userId;\n     ```\n\n2. **Path traversal — `src/review.ts`, `resolveUpload`**\n   - Unsafe operation: `path.join(root, requested)`\n   - `requested` can contain `..` components and escape the upload root.\n   - Safe replacement: resolve both paths and reject any target outside the root, preferably using `path.relative`:\n     ```ts\n     const base = path.resolve(root);\n     const target = path.resolve(base, requested);\n     const relative = path.relative(base, target);\n\n     if (\n       relative === \"..\" ||\n       relative.startsWith(`..${path.sep}`) ||\n       path.isAbsolute(relative)\n     ) {\n       throw new Error(\"Upload path escapes root\");\n     }\n     return target;\n     ```\n     If attackers can create symlinks under `root`, filesystem operations must also prevent symlink escapes, such as by validating canonical parents or using no-follow semantics.\n\n3. **Secret disclosure — `src/review.ts`, `tokenLabel`**\n   - Unsafe operation: `token.slice(0, 8)`\n   - This exposes part of an authentication token in labels, logs, or UI.\n   - Safe replacement: do not derive labels directly from the token:\n     ```ts\n     return \"[redacted]\";\n     ```\n     If correlation is required, use a keyed HMAC with a server-held secret and expose only a short digest, never token characters themselves."
+							}
+						],
+						"details": {
+							"agent": "benchmark-explorer",
+							"agentSource": "user",
+							"agentScope": "user",
+							"cwd": ".",
+							"model": "openai-codex/gpt-5.6-sol",
+							"thinkingLevel": "medium",
+							"timeoutMs": 120000,
+							"policy": {
+								"requestedTools": ["read", "grep", "find", "ls"],
+								"effectiveTools": ["read", "grep", "find", "ls"],
+								"cwdBoundary": "current-workspace",
+								"targetTrust": {
+									"kind": "session-untrusted",
+									"projectTrusted": false,
+									"sourcePath": "."
+								},
+								"requestedResources": "project-context",
+								"effectiveResources": {
+									"policy": "none",
+									"projectResources": false,
+									"contextFiles": false,
+									"skills": false,
+									"promptTemplates": false
+								},
+								"resourceDowngradeReason": "Target trust is session-untrusted",
+								"extensions": "disabled",
+								"sessionPersistence": "disabled",
+								"retainedAgent": false
+							},
+							"child": {
+								"exitCode": 0,
+								"stopReason": "stop",
+								"truncated": false,
+								"processStarted": true,
+								"actualProvider": "openai-codex",
+								"actualModel": "gpt-5.6-sol",
+								"partialOutput": "1. **Broken authorization check — `src/review.ts`, `canRead`**\n   - Unsafe operation: `ownerId.startsWith(userId)`\n   - Prefixes—and even an empty `userId`—can match unrelated owners.\n   - Safe replacement: validate/canonicalize both IDs, then require exact equality:\n     ```ts\n     return ownerId === userId;\n     ```\n\n2. **Path traversal — `src/review.ts`, `resolveUpload`**\n   - Unsafe operation: `path.join(root, requested)`\n   - `requested` can contain `..` components and escape the upload root.\n   - Safe replacement: resolve both paths and reject any target outside the root, preferably using `path.relative`:\n     ```ts\n     const base = path.resolve(root);\n     const target = path.resolve(base, requested);\n     const relative = path.relative(base, target);\n\n     if (\n       relative === \"..\" ||\n       relative.startsWith(`..${path.sep}`) ||\n       path.isAbsolute(relative)\n     ) {\n       throw new Error(\"Upload path escapes root\");\n     }\n     return target;\n     ```\n     If attackers can create symlinks under `root`, filesystem operations must also prevent symlink escapes, such as by validating canonical parents or using no-follow semantics.\n\n3. **Secret disclosure — `src/review.ts`, `tokenLabel`**\n   - Unsafe operation: `token.slice(0, 8)`\n   - This exposes part of an authentication token in labels, logs, or UI.\n   - Safe replacement: do not derive labels directly from the token:\n     ```ts\n     return \"[redacted]\";\n     ```\n     If correlation is required, use a keyed HMAC with a server-held secret and expose only a short digest, never token characters themselves.",
+								"usage": {
+									"input": 1453,
+									"output": 787,
+									"cacheRead": 0,
+									"cacheWrite": 0,
+									"cost": 0.030875000000000003,
+									"contextTokens": 1540,
+									"turns": 2,
+									"costInput": 0.007265000000000001,
+									"costOutput": 0.023610000000000003,
+									"costCacheRead": 0,
+									"costCacheWrite": 0,
+									"totalTokens": 2240
+								}
+							}
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": [
+							{
+								"type": "text",
+								"text": "- `src/review.ts` — `canRead`: `ownerId.startsWith(userId)` permits prefix and empty-ID matches. Validate/canonicalize IDs, then use exact equality: `ownerId === userId`.\n- `src/review.ts` — `resolveUpload`: `path.join(root, requested)` allows `..` path traversal outside `root`. Resolve both paths with `path.resolve`, compute `path.relative(base, target)`, and reject `..`, `../...`, or absolute relative paths. Also prevent symlink escapes where applicable.\n- `src/review.ts` — `tokenLabel`: `token.slice(0, 8)` discloses authentication-token characters. Return a fixed redaction such as `\"[redacted]\"`; if correlation is required, use a short keyed-HMAC digest instead of token content.\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"consult-review\",\"complete\":true}"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "agent_end"
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_3",
+					"command": "get_session_stats",
+					"success": true,
+					"data": {
+						"sessionId": "01a0350c-cbf8-79aa-bf54-899a65ae139b",
+						"userMessages": 1,
+						"assistantMessages": 2,
+						"toolCalls": 1,
+						"toolResults": 1,
+						"totalMessages": 4,
+						"tokens": {
+							"input": 16405,
+							"output": 1119,
+							"cacheRead": 12800,
+							"cacheWrite": 0,
+							"total": 30324
+						},
+						"cost": 0.121995,
+						"contextUsage": {
+							"tokens": 14341,
+							"contextWindow": 272000,
+							"percent": 5.272426470588235
+						}
+					}
+				}
+			],
+			"stderr": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 317ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 321ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/index.ts module import: 292ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/index.ts factory: 2ms\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 295ms\n-----------------------------------\n\n"
+		},
+		{
+			"version": "pi-extensions:subagent-capability-benchmark:v1",
+			"pairIndex": 2,
+			"repetition": 0,
+			"orderIndex": 1,
+			"arm": "pi-subagents-v2",
+			"taskId": "consult-review",
+			"outcome": "completed",
+			"success": true,
+			"fixturePassed": null,
+			"readinessMs": 248.484,
+			"elapsedMs": 31217.173,
+			"parentVisibleCost": 0.024083,
+			"startedAt": "2026-08-24T18:34:22.350Z",
+			"completedAt": "2026-08-24T18:34:53.827Z",
+			"finalAnswer": "Three security defects in `src/review.ts`:\n\n1. **Authorization bypass in `canRead()`**\n   - Unsafe operation: `ownerId.startsWith(userId)`.\n   - Prefixes—and an empty `userId`—can incorrectly authorize access.\n   - Safe replacement: validate identities and require exact equality: `ownerId === userId`.\n\n2. **Path traversal in `resolveUpload()`**\n   - Unsafe operation: `path.join(root, requested)`.\n   - Input such as `../../secret` can escape the upload root.\n   - Safe replacement: resolve the base and target with `path.resolve()`, calculate `path.relative(base, target)`, and reject `..`, paths beginning with `..${path.sep}`, and absolute relative paths. For filesystem access, also use canonical paths or symlink-safe opening controls.\n\n3. **Credential disclosure in `tokenLabel()`**\n   - Unsafe operation: `token.slice(0, 8)`.\n   - It exposes bearer-token material through output, logs, or telemetry.\n   - Safe replacement: return a fixed redaction such as `\"[REDACTED]\"`, use a separate random identifier, or derive a non-reversible label with a server-secret HMAC.\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"consult-review\",\"complete\":true}",
+			"marker": {
+				"taskId": "consult-review",
+				"complete": true
+			},
+			"matchedEvidence": ["owner-prefix", "path-traversal", "token-leak"],
+			"evidenceScore": 1,
+			"toolCompliance": true,
+			"completionObserved": true,
+			"prematureFinal": false,
+			"toolCounts": {
+				"start": 0,
+				"wait": 0,
+				"consult": 1
+			},
+			"events": [
+				{
+					"type": "response",
+					"id": "capability_benchmark_1",
+					"command": "get_state",
+					"success": true
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_2",
+					"command": "prompt",
+					"success": true
+				},
+				{
+					"type": "agent_start"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent-v2-consult",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "{\n  \"agent\": \"benchmark-explorer\",\n  \"state\": \"completed\",\n  \"result\": \"Three defects in `src/review.ts`:\\n\\n1. **Authorization bypass — `canRead()`**\\n   - Unsafe operation: `ownerId.startsWith(userId)`\\n   - A user ID that is merely a prefix of the owner ID is authorized; an empty `userId` also matches every owner.\\n   - Safe replacement: require exact, validated identity equality:\\n     ```ts\\n     return ownerId === userId;\\n     ```\\n\\n2. **Path traversal — `resolveUpload()`**\\n   - Unsafe operation: `path.join(root, requested)`\\n   - Values such as `../../secret` can escape the upload root.\\n   - Safe replacement: resolve both paths, then enforce component-boundary containment:\\n     ```ts\\n     const base = path.resolve(root);\\n     const target = path.resolve(base, requested);\\n     const relative = path.relative(base, target);\\n\\n     if (\\n       relative === \\\"..\\\" ||\\n       relative.startsWith(`..${path.sep}`) ||\\n       path.isAbsolute(relative)\\n     ) {\\n       throw new Error(\\\"Path escapes upload root\\\");\\n     }\\n     return target;\\n     ```\\n     If filesystem access follows, symlinks must also be handled using canonical/real paths or symlink-safe file-opening controls.\\n\\n3. **Credential disclosure — `tokenLabel()`**\\n   - Unsafe operation: `token.slice(0, 8)`\\n   - This exposes part of the Bearer [redacted] in UI output, logs, or telemetry.\\n   - Safe replacement: use a separate random identifier stored with the token, or derive a non-reversible label using a server-secret HMAC. If no stable label is needed, return a fixed redaction such as `\\\"[REDACTED]\\\"`.\",\n  \"limitations\": []\n}"
+							}
+						],
+						"details": {
+							"agent": "benchmark-explorer",
+							"state": "completed",
+							"result": "Three defects in `src/review.ts`:\n\n1. **Authorization bypass — `canRead()`**\n   - Unsafe operation: `ownerId.startsWith(userId)`\n   - A user ID that is merely a prefix of the owner ID is authorized; an empty `userId` also matches every owner.\n   - Safe replacement: require exact, validated identity equality:\n     ```ts\n     return ownerId === userId;\n     ```\n\n2. **Path traversal — `resolveUpload()`**\n   - Unsafe operation: `path.join(root, requested)`\n   - Values such as `../../secret` can escape the upload root.\n   - Safe replacement: resolve both paths, then enforce component-boundary containment:\n     ```ts\n     const base = path.resolve(root);\n     const target = path.resolve(base, requested);\n     const relative = path.relative(base, target);\n\n     if (\n       relative === \"..\" ||\n       relative.startsWith(`..${path.sep}`) ||\n       path.isAbsolute(relative)\n     ) {\n       throw new Error(\"Path escapes upload root\");\n     }\n     return target;\n     ```\n     If filesystem access follows, symlinks must also be handled using canonical/real paths or symlink-safe file-opening controls.\n\n3. **Credential disclosure — `tokenLabel()`**\n   - Unsafe operation: `token.slice(0, 8)`\n   - This exposes part of the Bearer [redacted] in UI output, logs, or telemetry.\n   - Safe replacement: use a separate random identifier stored with the token, or derive a non-reversible label using a server-secret HMAC. If no stable label is needed, return a fixed redaction such as `\"[REDACTED]\"`.",
+							"limitations": []
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": [
+							{
+								"type": "text",
+								"text": "Three security defects in `src/review.ts`:\n\n1. **Authorization bypass in `canRead()`**\n   - Unsafe operation: `ownerId.startsWith(userId)`.\n   - Prefixes—and an empty `userId`—can incorrectly authorize access.\n   - Safe replacement: validate identities and require exact equality: `ownerId === userId`.\n\n2. **Path traversal in `resolveUpload()`**\n   - Unsafe operation: `path.join(root, requested)`.\n   - Input such as `../../secret` can escape the upload root.\n   - Safe replacement: resolve the base and target with `path.resolve()`, calculate `path.relative(base, target)`, and reject `..`, paths beginning with `..${path.sep}`, and absolute relative paths. For filesystem access, also use canonical paths or symlink-safe opening controls.\n\n3. **Credential disclosure in `tokenLabel()`**\n   - Unsafe operation: `token.slice(0, 8)`.\n   - It exposes bearer-token material through output, logs, or telemetry.\n   - Safe replacement: return a fixed redaction such as `\"[REDACTED]\"`, use a separate random identifier, or derive a non-reversible label with a server-secret HMAC.\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"consult-review\",\"complete\":true}"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "agent_end"
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_3",
+					"command": "get_session_stats",
+					"success": true,
+					"data": {
+						"sessionId": "01a0350d-59c9-7a61-8dfc-b4197cb7ef65",
+						"userMessages": 1,
+						"assistantMessages": 2,
+						"toolCalls": 1,
+						"toolResults": 1,
+						"totalMessages": 4,
+						"tokens": {
+							"input": 2365,
+							"output": 383,
+							"cacheRead": 1536,
+							"cacheWrite": 0,
+							"total": 4284
+						},
+						"cost": 0.024083,
+						"contextUsage": {
+							"tokens": 2509,
+							"contextWindow": 272000,
+							"percent": 0.9224264705882353
+						}
+					}
+				}
+			],
+			"stderr": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 0ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 55ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 58ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents-v2/src/index.ts module import: 30ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents-v2/src/index.ts factory: 0ms\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 31ms\n-----------------------------------\n\n"
+		},
+		{
+			"version": "pi-extensions:subagent-capability-benchmark:v1",
+			"pairIndex": 3,
+			"repetition": 0,
+			"orderIndex": 0,
+			"arm": "pi-subagents-v2",
+			"taskId": "worker-fix",
+			"outcome": "completed",
+			"success": true,
+			"fixturePassed": true,
+			"readinessMs": 253.361,
+			"elapsedMs": 31336.023,
+			"parentVisibleCost": 0.063652,
+			"startedAt": "2026-08-24T18:34:53.842Z",
+			"completedAt": "2026-08-24T18:35:25.510Z",
+			"finalAnswer": "Changed `src/math.mjs` only:\n\n- `clamp`: clamps values to inclusive minimum/maximum bounds.\n- `isEven`: correctly classifies positive and negative integers.\n\nVerified with `node --test test/math.test.mjs`: 2 passed, 0 failed.\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"worker-fix\",\"complete\":true}",
+			"marker": {
+				"taskId": "worker-fix",
+				"complete": true
+			},
+			"matchedEvidence": ["clamp-fixed", "even-fixed", "parent-verification"],
+			"evidenceScore": 1,
+			"toolCompliance": true,
+			"completionObserved": true,
+			"prematureFinal": false,
+			"toolCounts": {
+				"start": 1,
+				"wait": 1,
+				"consult": 0
+			},
+			"events": [
+				{
+					"type": "response",
+					"id": "capability_benchmark_1",
+					"command": "get_state",
+					"success": true
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_2",
+					"command": "prompt",
+					"success": true
+				},
+				{
+					"type": "agent_start"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent-v2-start",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "{\n  \"jobId\": \"job_mt7ksuol_1\",\n  \"agent\": \"benchmark-worker\",\n  \"state\": \"queued\",\n  \"timeoutMs\": 120000\n}"
+							}
+						],
+						"details": {
+							"jobId": "job_mt7ksuol_1",
+							"agent": "benchmark-worker",
+							"state": "queued",
+							"timeoutMs": 120000
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "read",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "# Generated capability fixture\n\nFixture ID: pair-3.\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "read",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "import assert from \"node:assert/strict\";\nimport { test } from \"node:test\";\nimport { clamp, isEven } from \"../src/math.mjs\";\n\ntest(\"clamp keeps values inside inclusive bounds\", () => {\n\tassert.equal(clamp(-2, 0, 10), 0);\n\tassert.equal(clamp(5, 0, 10), 5);\n\tassert.equal(clamp(12, 0, 10), 10);\n});\n\ntest(\"isEven classifies positive and negative integers\", () => {\n\tassert.equal(isEven(2), true);\n\tassert.equal(isEven(3), false);\n\tassert.equal(isEven(-4), true);\n});\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "bash",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "✔ clamp keeps values inside inclusive bounds (0.512793ms)\n✔ isEven classifies positive and negative integers (0.092487ms)\nℹ tests 2\nℹ suites 0\nℹ pass 2\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 42.231827\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "custom",
+						"customType": "pi-subagents-v2-completion",
+						"content": "Subagent job completion:\n{\"jobId\":\"job_mt7ksuol_1\",\"state\":\"completed\",\"timedOut\":false,\"result\":\"Changed:\\n- `src/math.mjs`\\n\\nCheck:\\n- `node --test test/math.test.mjs`\\n- **2 passed, 0 failed**\"}",
+						"details": {
+							"jobId": "job_mt7ksuol_1",
+							"state": "completed",
+							"timedOut": false,
+							"result": "Changed:\n- `src/math.mjs`\n\nCheck:\n- `node --test test/math.test.mjs`\n- **2 passed, 0 failed**"
+						}
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "read",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "export function clamp(value, minimum, maximum) {\n\treturn Math.max(minimum, Math.min(maximum, value));\n}\n\nexport function isEven(value) {\n\treturn value % 2 === 0;\n}\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent-v2-wait",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "{\n  \"jobId\": \"job_mt7ksuol_1\",\n  \"state\": \"completed\",\n  \"timedOut\": false,\n  \"result\": \"Changed:\\n- `src/math.mjs`\\n\\nCheck:\\n- `node --test test/math.test.mjs`\\n- **2 passed, 0 failed**\"\n}"
+							}
+						],
+						"details": {
+							"jobId": "job_mt7ksuol_1",
+							"state": "completed",
+							"timedOut": false,
+							"result": "Changed:\n- `src/math.mjs`\n\nCheck:\n- `node --test test/math.test.mjs`\n- **2 passed, 0 failed**"
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": [
+							{
+								"type": "text",
+								"text": "Changed `src/math.mjs` only:\n\n- `clamp`: clamps values to inclusive minimum/maximum bounds.\n- `isEven`: correctly classifies positive and negative integers.\n\nVerified with `node --test test/math.test.mjs`: 2 passed, 0 failed.\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"worker-fix\",\"complete\":true}"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "agent_end"
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_3",
+					"command": "get_session_stats",
+					"success": true,
+					"data": {
+						"sessionId": "01a0350d-d4ce-73a7-8e14-e1a7cdf9a752",
+						"userMessages": 1,
+						"assistantMessages": 6,
+						"toolCalls": 6,
+						"toolResults": 6,
+						"totalMessages": 13,
+						"tokens": {
+							"input": 8132,
+							"output": 664,
+							"cacheRead": 6144,
+							"cacheWrite": 0,
+							"total": 14940
+						},
+						"cost": 0.063652,
+						"contextUsage": {
+							"tokens": 2977,
+							"contextWindow": 272000,
+							"percent": 1.094485294117647
+						}
+					}
+				}
+			],
+			"stderr": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 58ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 62ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents-v2/src/index.ts module import: 32ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents-v2/src/index.ts factory: 1ms\n  <inline:llama.cpp> factory: 0ms\n  TOTAL: 33ms\n-----------------------------------\n\n"
+		},
+		{
+			"version": "pi-extensions:subagent-capability-benchmark:v1",
+			"pairIndex": 3,
+			"repetition": 0,
+			"orderIndex": 1,
+			"arm": "pi-subagents",
+			"taskId": "worker-fix",
+			"outcome": "completed",
+			"success": true,
+			"fixturePassed": true,
+			"readinessMs": 674.968,
+			"elapsedMs": 35947.869,
+			"parentVisibleCost": 0.143982,
+			"startedAt": "2026-08-24T18:35:25.526Z",
+			"completedAt": "2026-08-24T18:36:02.233Z",
+			"finalAnswer": "Changed only `src/math.mjs`:\n\n- `clamp`: clamps inclusively using `Math.max(minimum, Math.min(maximum, value))`.\n- `isEven`: checks `value % 2 === 0`.\n\nVerified `BENCHMARK.md` and `test/math.test.mjs` were not edited.\n\nWorker and independent check output for `node --test test/math.test.mjs`:\n\n- Tests: 2\n- Passed: 2\n- Failed: 0\n- Cancelled/skipped/todo: 0\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"worker-fix\",\"complete\":true}",
+			"marker": {
+				"taskId": "worker-fix",
+				"complete": true
+			},
+			"matchedEvidence": ["clamp-fixed", "even-fixed", "parent-verification"],
+			"evidenceScore": 1,
+			"toolCompliance": true,
+			"completionObserved": true,
+			"prematureFinal": false,
+			"toolCounts": {
+				"start": 1,
+				"wait": 1,
+				"consult": 0
+			},
+			"events": [
+				{
+					"type": "response",
+					"id": "capability_benchmark_1",
+					"command": "get_state",
+					"success": true
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_2",
+					"command": "prompt",
+					"success": true
+				},
+				{
+					"type": "agent_start"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent_spawn",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "Spawned benchmark-worker as /root/worker_fix_math (sa_75d6d16a-0a45-4895-92f8-d53347597a49). This exact run is runtime-tracked as required until its completion becomes visible or reaches an explicit terminal state. Current Pi versions still cannot prevent already-streamed premature output. Continue the identified non-overlapping local work immediately; do not merely announce the spawn or end while useful local work remains. Only an explicit user-requested specialist model, tool-profile, or isolation exception may lack concurrent local work. Auto-resume steers completions into active parent work or requests synthesis when idle. Treat this response as progress, not final synthesis, until every final-answer-required completion message is visible. If local work is exhausted while required children remain active, emit at most one brief progress sentence and end the turn; do not repeat waiting updates or use the requested final format, verdict, or conclusion. Do not redo a running child's assigned work. Do not poll for progress."
+							}
+						],
+						"details": {
+							"agent": {
+								"id": "sa_75d6d16a-0a45-4895-92f8-d53347597a49",
+								"taskName": "worker_fix_math",
+								"taskPath": "/root/worker_fix_math",
+								"agent": "benchmark-worker",
+								"rootId": "sa_75d6d16a-0a45-4895-92f8-d53347597a49",
+								"depth": 0,
+								"children": [],
+								"state": "running",
+								"createdAt": 1787596531694,
+								"updatedAt": 1787596531697,
+								"cwd": "/tmp/subagent-capability-pi-subagents-kOWPfJ",
+								"workspaceMode": "shared",
+								"thinkingLevel": "medium",
+								"timeoutMs": 120000,
+								"currentTimeoutMs": 120000,
+								"currentTask": "Fix only src/math.mjs so all tests in test/math.test.mjs pass.\nDo not edit tests or BENCHMARK.md.\nRun node --test test/math.test.mjs and report changed paths and check output.",
+								"historyCount": 0,
+								"unreadMessages": 0,
+								"context": {
+									"turns": 1,
+									"sources": 1,
+									"bytes": 1051,
+									"truncated": false
+								},
+								"resultFormat": "text",
+								"completionRequirements": [
+									{
+										"version": "pi-subagents:completion-requirement:v1",
+										"runId": "run:sa_75d6d16a-0a45-4895-92f8-d53347597a49:cfe7f959-fde7-41d5-a5af-0429f7309edb",
+										"generation": 1,
+										"state": "pending",
+										"createdAt": 1787596531696,
+										"updatedAt": 1787596531696
+									}
+								],
+								"executionPlan": {
+									"version": "pi-subagents:execution-plan:v1",
+									"mode": "audit",
+									"agent": {
+										"name": "benchmark-worker",
+										"source": "user",
+										"capabilitiesKnown": false
+									},
+									"capabilityFit": "unknown",
+									"missingCapabilities": [],
+									"requestedCapabilities": [],
+									"declaredCapabilities": [],
+									"requestedTools": [],
+									"effectiveTools": ["read", "grep", "find", "ls", "edit", "write", "bash"],
+									"missingTools": [],
+									"overgrantedTools": [],
+									"resultFormat": "text",
+									"sideEffectPolicy": "mutating",
+									"resultFormatSupported": "unknown",
+									"target": {
+										"cwd": "/tmp/subagent-capability-pi-subagents-kOWPfJ",
+										"boundary": "current-workspace",
+										"trust": {
+											"kind": "session-untrusted",
+											"projectTrusted": false,
+											"sourcePath": "/tmp/subagent-capability-pi-subagents-kOWPfJ"
+										}
+									},
+									"workspaceMode": "shared",
+									"transport": "subprocess",
+									"model": "openai-codex/gpt-5.6-sol",
+									"thinkingLevel": "medium",
+									"timeoutMs": 120000,
+									"unsupportedGuarantees": [],
+									"warnings": ["agent-capabilities-unknown"],
+									"taskGeneration": 1,
+									"cancellationLineage": [],
+									"admission": {
+										"version": "pi-subagents:admission:v1",
+										"recommendation": "abstain-insufficient-evidence",
+										"reasonCodes": ["requirements-incomplete"],
+										"benefitHypothesis": "none",
+										"auditOnly": true
+									},
+									"id": "1ca9fcdc6102490ac46c75c1f7be8c495b248a724a0a911d13645f95a3af37e4"
+								},
+								"capabilityGrant": {
+									"version": "pi-subagents:capability-grant:v1",
+									"id": "aa770675953601dafa23b10f0b78b56990edb7627388281b11491158d6e1a6a7",
+									"executionPlanId": "1ca9fcdc6102490ac46c75c1f7be8c495b248a724a0a911d13645f95a3af37e4",
+									"taskGeneration": 1,
+									"effectiveTools": ["read", "grep", "find", "ls", "edit", "write", "bash"],
+									"issuedAt": 1787596531693,
+									"expiresAt": 1787596711693,
+									"state": "active"
+								},
+								"semanticCompatibility": {
+									"status": "compatible",
+									"changedComponents": []
+								},
+								"semanticSnapshotDigest": "3c6db55b2ceb2a1aab3fb2c8ec341b0d0e2b8fcec183ac8c5a3bea22af66a8d5",
+								"telemetry": {
+									"phase": "queued",
+									"queuePosition": 1,
+									"updatedAt": 1787596531696,
+									"timing": {
+										"queuedAt": 1787596531696
+									},
+									"budgetSource": {
+										"timeout": "explicit",
+										"idleTimeout": "runtime",
+										"turnLimit": "runtime",
+										"toolCallLimit": "runtime"
+									}
+								},
+								"target": {
+									"cwd": "/tmp/subagent-capability-pi-subagents-kOWPfJ",
+									"boundary": "current-workspace",
+									"trust": {
+										"kind": "session-untrusted",
+										"projectTrusted": false,
+										"sourcePath": "/tmp/subagent-capability-pi-subagents-kOWPfJ"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "read",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "# Generated capability fixture\n\nFixture ID: pair-3.\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "read",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "import assert from \"node:assert/strict\";\nimport { test } from \"node:test\";\nimport { clamp, isEven } from \"../src/math.mjs\";\n\ntest(\"clamp keeps values inside inclusive bounds\", () => {\n\tassert.equal(clamp(-2, 0, 10), 0);\n\tassert.equal(clamp(5, 0, 10), 5);\n\tassert.equal(clamp(12, 0, 10), 10);\n});\n\ntest(\"isEven classifies positive and negative integers\", () => {\n\tassert.equal(isEven(2), true);\n\tassert.equal(isEven(3), false);\n\tassert.equal(isEven(-4), true);\n});\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": [
+							{
+								"type": "text",
+								"text": "Background worker is still running; required completion is pending."
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "agent_end"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "custom",
+						"customType": "pi-subagent-peer-message",
+						"content": "Message Type: SUBAGENT_PEER_MESSAGE\nProtocol: pi-subagents:v1\nMessage ID: msg_8595262c-a2c3-49ce-9b5d-b9e40ba2ded8\nSender ID: sa_75d6d16a-0a45-4895-92f8-d53347597a49\nSender Path: /root/worker_fix_math\nPayload:\nFixed only `src/math.mjs`: `clamp` now computes `Math.max(minimum, Math.min(maximum, value))`; `isEven` now checks `value % 2 === 0`. Check `node --test test/math.test.mjs` passed: tests 2, pass 2, fail 0, cancelled 0, skipped 0, todo 0.",
+						"details": {
+							"id": "msg_8595262c-a2c3-49ce-9b5d-b9e40ba2ded8",
+							"senderId": "sa_75d6d16a-0a45-4895-92f8-d53347597a49",
+							"recipientId": "root",
+							"content": "Fixed only `src/math.mjs`: `clamp` now computes `Math.max(minimum, Math.min(maximum, value))`; `isEven` now checks `value % 2 === 0`. Check `node --test test/math.test.mjs` passed: tests 2, pass 2, fail 0, cancelled 0, skipped 0, todo 0.",
+							"createdAt": 1787596546528,
+							"senderPath": "/root/worker_fix_math"
+						}
+					}
+				},
+				{
+					"type": "agent_start"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "custom",
+						"customType": "pi-subagent-completion",
+						"content": "Message Type: SUBAGENT_COMPLETION\nProtocol: pi-subagents:v1\nCompletion ID: completion:sa_75d6d16a-0a45-4895-92f8-d53347597a49:30191a75-6f07-4675-8206-f2c0e310726d\nRun ID: run:sa_75d6d16a-0a45-4895-92f8-d53347597a49:cfe7f959-fde7-41d5-a5af-0429f7309edb\nGeneration: 1\nAgent ID: sa_75d6d16a-0a45-4895-92f8-d53347597a49\nAgent Path: /root/worker_fix_math\nRecipient Path: /root\nAgent: benchmark-worker\nTask: Fix only src/math.mjs so all tests in test/math.test.mjs pass. Do not edit tests or BENCHMARK.md. Run node --test test/math.test.mjs and report changed paths and check output.\nState: completed\nError:\n\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 0ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 56ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 59ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts module import: 25ms\n  $HOME/worksp\n… [truncated by pi-subagents]\nPayload:\nChanged path:\n- `src/math.mjs` — corrected `clamp` and `isEven`.\n\nCheck:\n- `node --test test/math.test.mjs`\n- 2 tests passed, 0 failed.",
+						"details": {
+							"protocol": "pi-subagents:v1",
+							"completionId": "completion:sa_75d6d16a-0a45-4895-92f8-d53347597a49:30191a75-6f07-4675-8206-f2c0e310726d",
+							"runId": "run:sa_75d6d16a-0a45-4895-92f8-d53347597a49:cfe7f959-fde7-41d5-a5af-0429f7309edb",
+							"generation": 1,
+							"agentId": "sa_75d6d16a-0a45-4895-92f8-d53347597a49",
+							"taskPath": "/root/worker_fix_math",
+							"recipientPath": "/root",
+							"agent": "benchmark-worker",
+							"task": "Fix only src/math.mjs so all tests in test/math.test.mjs pass. Do not edit tests or BENCHMARK.md. Run node --test test/math.test.mjs and report changed paths and check output.",
+							"state": "completed",
+							"transport": "subprocess",
+							"capabilityGrant": {
+								"version": "pi-subagents:capability-grant:v1",
+								"id": "aa770675953601dafa23b10f0b78b56990edb7627388281b11491158d6e1a6a7",
+								"executionPlanId": "1ca9fcdc6102490ac46c75c1f7be8c495b248a724a0a911d13645f95a3af37e4",
+								"taskGeneration": 1,
+								"effectiveTools": ["read", "grep", "find", "ls", "edit", "write", "bash"],
+								"issuedAt": 1787596531693,
+								"expiresAt": 1787596711693,
+								"state": "revoked",
+								"revokedAt": 1787596551477,
+								"revocationReason": "turn-settled"
+							},
+							"completionRequirement": {
+								"version": "pi-subagents:completion-requirement:v1",
+								"runId": "run:sa_75d6d16a-0a45-4895-92f8-d53347597a49:cfe7f959-fde7-41d5-a5af-0429f7309edb",
+								"generation": 1,
+								"state": "available",
+								"createdAt": 1787596531696,
+								"updatedAt": 1787596551477,
+								"completionId": "completion:sa_75d6d16a-0a45-4895-92f8-d53347597a49:30191a75-6f07-4675-8206-f2c0e310726d",
+								"terminalState": "completed"
+							}
+						}
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "bash",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "✔ clamp keeps values inside inclusive bounds (0.581966ms)\n✔ isEven classifies positive and negative integers (0.110181ms)\nℹ tests 2\nℹ suites 0\nℹ pass 2\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 41.449371\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "read",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "export function clamp(value, minimum, maximum) {\n\treturn Math.max(minimum, Math.min(maximum, value));\n}\n\nexport function isEven(value) {\n\treturn value % 2 === 0;\n}\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": []
+					}
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "toolResult",
+						"toolName": "subagent_await",
+						"isError": false,
+						"content": [
+							{
+								"type": "text",
+								"text": "Subagent /root/worker_fix_math settled as completed.\n\nChanged path:\n- `src/math.mjs` — corrected `clamp` and `isEven`.\n\nCheck:\n- `node --test test/math.test.mjs`\n- 2 tests passed, 0 failed."
+							}
+						],
+						"details": {
+							"agent": {
+								"id": "sa_75d6d16a-0a45-4895-92f8-d53347597a49",
+								"taskName": "worker_fix_math",
+								"taskPath": "/root/worker_fix_math",
+								"agent": "benchmark-worker",
+								"rootId": "sa_75d6d16a-0a45-4895-92f8-d53347597a49",
+								"depth": 0,
+								"children": [],
+								"state": "completed",
+								"createdAt": 1787596531694,
+								"updatedAt": 1787596551490,
+								"cwd": "/tmp/subagent-capability-pi-subagents-kOWPfJ",
+								"workspaceMode": "shared",
+								"thinkingLevel": "medium",
+								"timeoutMs": 120000,
+								"historyCount": 1,
+								"unreadMessages": 0,
+								"context": {
+									"turns": 1,
+									"sources": 1,
+									"bytes": 1051,
+									"truncated": false
+								},
+								"resultFormat": "text",
+								"completionRequirements": [
+									{
+										"version": "pi-subagents:completion-requirement:v1",
+										"runId": "run:sa_75d6d16a-0a45-4895-92f8-d53347597a49:cfe7f959-fde7-41d5-a5af-0429f7309edb",
+										"generation": 1,
+										"state": "visible",
+										"createdAt": 1787596531696,
+										"updatedAt": 1787596551490,
+										"completionId": "completion:sa_75d6d16a-0a45-4895-92f8-d53347597a49:30191a75-6f07-4675-8206-f2c0e310726d",
+										"terminalState": "completed"
+									}
+								],
+								"executionPlan": {
+									"version": "pi-subagents:execution-plan:v1",
+									"mode": "audit",
+									"agent": {
+										"name": "benchmark-worker",
+										"source": "user",
+										"capabilitiesKnown": false
+									},
+									"capabilityFit": "unknown",
+									"missingCapabilities": [],
+									"requestedCapabilities": [],
+									"declaredCapabilities": [],
+									"requestedTools": [],
+									"effectiveTools": ["read", "grep", "find", "ls", "edit", "write", "bash"],
+									"missingTools": [],
+									"overgrantedTools": [],
+									"resultFormat": "text",
+									"sideEffectPolicy": "mutating",
+									"resultFormatSupported": "unknown",
+									"target": {
+										"cwd": "/tmp/subagent-capability-pi-subagents-kOWPfJ",
+										"boundary": "current-workspace",
+										"trust": {
+											"kind": "session-untrusted",
+											"projectTrusted": false,
+											"sourcePath": "/tmp/subagent-capability-pi-subagents-kOWPfJ"
+										}
+									},
+									"workspaceMode": "shared",
+									"transport": "subprocess",
+									"model": "openai-codex/gpt-5.6-sol",
+									"thinkingLevel": "medium",
+									"timeoutMs": 120000,
+									"unsupportedGuarantees": [],
+									"warnings": ["agent-capabilities-unknown"],
+									"taskGeneration": 1,
+									"cancellationLineage": [],
+									"admission": {
+										"version": "pi-subagents:admission:v1",
+										"recommendation": "abstain-insufficient-evidence",
+										"reasonCodes": ["requirements-incomplete"],
+										"benefitHypothesis": "none",
+										"auditOnly": true
+									},
+									"id": "1ca9fcdc6102490ac46c75c1f7be8c495b248a724a0a911d13645f95a3af37e4"
+								},
+								"capabilityGrant": {
+									"version": "pi-subagents:capability-grant:v1",
+									"id": "aa770675953601dafa23b10f0b78b56990edb7627388281b11491158d6e1a6a7",
+									"executionPlanId": "1ca9fcdc6102490ac46c75c1f7be8c495b248a724a0a911d13645f95a3af37e4",
+									"taskGeneration": 1,
+									"effectiveTools": ["read", "grep", "find", "ls", "edit", "write", "bash"],
+									"issuedAt": 1787596531693,
+									"expiresAt": 1787596711693,
+									"state": "revoked",
+									"revokedAt": 1787596551477,
+									"revocationReason": "turn-settled"
+								},
+								"semanticCompatibility": {
+									"status": "compatible",
+									"changedComponents": []
+								},
+								"semanticSnapshotDigest": "3c6db55b2ceb2a1aab3fb2c8ec341b0d0e2b8fcec183ac8c5a3bea22af66a8d5",
+								"telemetry": {
+									"transport": "subprocess",
+									"phase": "settled",
+									"updatedAt": 1787596551490,
+									"timing": {
+										"queuedAt": 1787596531696,
+										"startedAt": 1787596531800,
+										"transportStartedAt": 1787596531800,
+										"promptAcceptedAt": 1787596531800,
+										"firstActivityAt": 1787596551477,
+										"settledAt": 1787596551477,
+										"completionDeliveredAt": 1787596551490
+									},
+									"provider": "openai-codex",
+									"model": "gpt-5.6-sol",
+									"thinkingLevel": "medium",
+									"usage": {
+										"input": 8038,
+										"output": 404,
+										"cacheRead": 9216,
+										"cacheWrite": 0,
+										"totalTokens": 17658,
+										"cost": 0.05691800000000001,
+										"turns": 6
+									}
+								},
+								"error": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 0ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 56ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 59ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts module import: 25ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts factory: 0ms\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 26ms\n-----------------------------------\n\n",
+								"target": {
+									"cwd": "/tmp/subagent-capability-pi-subagents-kOWPfJ",
+									"boundary": "current-workspace",
+									"trust": {
+										"kind": "session-untrusted",
+										"projectTrusted": false,
+										"sourcePath": "/tmp/subagent-capability-pi-subagents-kOWPfJ"
+									}
+								},
+								"policy": {
+									"inherited": ["environment"],
+									"overridden": ["cwd", "model", "thinkingLevel", "tools"],
+									"unsupported": ["approvalPolicy", "sandboxProfile", "providerHeaders"]
+								}
+							},
+							"timedOut": false,
+							"timeoutMs": 120000,
+							"output": "Changed path:\n- `src/math.mjs` — corrected `clamp` and `isEven`.\n\nCheck:\n- `node --test test/math.test.mjs`\n- 2 tests passed, 0 failed.",
+							"error": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 0ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 56ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 59ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts module import: 25ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/child-peer-bridge.ts factory: 0ms\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 26ms\n-----------------------------------\n\n"
+						}
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "turn_start"
+				},
+				{
+					"type": "message_end",
+					"message": {
+						"role": "assistant",
+						"content": [
+							{
+								"type": "text",
+								"text": "Changed only `src/math.mjs`:\n\n- `clamp`: clamps inclusively using `Math.max(minimum, Math.min(maximum, value))`.\n- `isEven`: checks `value % 2 === 0`.\n\nVerified `BENCHMARK.md` and `test/math.test.mjs` were not edited.\n\nWorker and independent check output for `node --test test/math.test.mjs`:\n\n- Tests: 2\n- Passed: 2\n- Failed: 0\n- Cancelled/skipped/todo: 0\n\nCAPABILITY_BENCHMARK_RESULT: {\"taskId\":\"worker-fix\",\"complete\":true}"
+							}
+						]
+					}
+				},
+				{
+					"type": "turn_end"
+				},
+				{
+					"type": "agent_end"
+				},
+				{
+					"type": "response",
+					"id": "capability_benchmark_3",
+					"command": "get_session_stats",
+					"success": true,
+					"data": {
+						"sessionId": "01a0350e-508e-74d8-8b81-5029e5d0dbfb",
+						"userMessages": 1,
+						"assistantMessages": 6,
+						"toolCalls": 6,
+						"toolResults": 6,
+						"totalMessages": 13,
+						"tokens": {
+							"input": 18014,
+							"output": 628,
+							"cacheRead": 70144,
+							"cacheWrite": 0,
+							"total": 88786
+						},
+						"cost": 0.143982,
+						"contextUsage": {
+							"tokens": 15563,
+							"contextWindow": 272000,
+							"percent": 5.721691176470588
+						}
+					}
+				}
+			],
+			"stderr": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 0ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 333ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 336ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/index.ts module import: 306ms\n  $HOME/workspace/pi-extensions/packages/pi-subagents/src/index.ts factory: 3ms\n  <inline:llama.cpp> factory: 0ms\n  TOTAL: 309ms\n-----------------------------------\n\n"
+		}
+	],
+	"summary": {
+		"version": "pi-extensions:subagent-capability-benchmark:v1",
+		"pairs": 4,
+		"costComparable": false,
+		"arms": {
+			"pi-subagents": {
+				"trials": 4,
+				"successes": 4,
+				"successRate": 1,
+				"meanEvidenceScore": 1,
+				"toolComplianceRate": 1,
+				"completionCoverage": 1,
+				"medianReadinessMs": 659.287,
+				"medianElapsedMs": 28475.658,
+				"parentVisibleCost": 0.508,
+				"outcomes": {
+					"completed": 4,
+					"invalid-output": 0,
+					"timed-out": 0,
+					"readiness-timeout": 0,
+					"process-error": 0,
+					"protocol-error": 0
+				}
+			},
+			"pi-subagents-v2": {
+				"trials": 4,
+				"successes": 4,
+				"successRate": 1,
+				"meanEvidenceScore": 1,
+				"toolComplianceRate": 1,
+				"completionCoverage": 1,
+				"medianReadinessMs": 249.315,
+				"medianElapsedMs": 24833.532,
+				"parentVisibleCost": 0.173,
+				"outcomes": {
+					"completed": 4,
+					"invalid-output": 0,
+					"timed-out": 0,
+					"readiness-timeout": 0,
+					"process-error": 0,
+					"protocol-error": 0
+				}
+			}
+		}
+	}
+}
