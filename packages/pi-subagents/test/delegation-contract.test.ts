@@ -31,6 +31,16 @@ test("delegation contract normalizes bounded request semantics", () => {
 	assert.equal(contract?.dependencies[0]?.artifactId, "design");
 	assert.deepEqual(contract?.requestedAuthority?.tools, ["read", "edit"]);
 	assert.equal(contract?.budget?.timeoutMs, 60_000);
+
+	const oversizedItem = normalizeDelegationContract({
+		version: "pi-subagents:delegation:v2",
+		level: "minimal",
+		taskId: "bounded-item",
+		objective: "Bound the evidence",
+		requiredEvidence: ["界".repeat(4_096)],
+	});
+	assert.ok(oversizedItem);
+	assert.ok(Buffer.byteLength(oversizedItem.requiredEvidence[0] ?? "", "utf8") <= 4 * 1024);
 });
 
 test("delegation contract rejects malformed versions, duplicate identifiers, and invalid bounds", () => {

@@ -5,6 +5,7 @@ import { DelegationContractSchema } from "./delegation-contract.js";
 import { MAX_CONFIGURABLE_PARALLEL_TASKS, MAX_SUBAGENT_TIMEOUT_MS } from "./limits.js";
 import { PANEL_PRESETS } from "./panel-presets.js";
 import { SUBAGENT_RESULT_FORMATS } from "./result-contract.js";
+import { grammarSafeToolObject } from "./tool-schema-compatibility.js";
 import { MAX_SUBAGENT_TOOL_CALLS, MAX_SUBAGENT_TURNS } from "./turn-budget.js";
 import { VerifiedExecutionContractSchema } from "./verified-execution-schema.js";
 
@@ -202,7 +203,7 @@ const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 	default: "user",
 });
 
-export const SubagentParams = Type.Object({
+export const SubagentParams = grammarSafeToolObject({
 	agent: Type.Optional(
 		Type.String({ description: "Name of the agent to invoke (for single mode)" }),
 	),
