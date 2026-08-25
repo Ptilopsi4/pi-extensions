@@ -18,8 +18,8 @@ const AGENT_WORKFLOW_GROUP = "agent-workflow";
 const root = mkdtempSync(join(tmpdir(), "plan-goal-coexistence-"));
 const goalSettingsPath = join(root, "pi-goal.json");
 const goalRpcSettingsPath = join(root, "pi-goal-rpc.json");
-writeFileSync(goalSettingsPath, '{"toolVisibility":"always"}\n');
-writeFileSync(goalRpcSettingsPath, '{"toolVisibility":"always","rpc":{"enabled":true}}\n');
+writeFileSync(goalSettingsPath, "{}\n");
+writeFileSync(goalRpcSettingsPath, '{"rpc":{"enabled":true}}\n');
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 type LoadOrder = "plan-first" | "goal-first";
@@ -107,7 +107,16 @@ function createFixture(
 		getEntries: () => branch,
 	};
 	const mock = createMockPi({
-		activeTools: ["read", "bash", "write", "goal_complete", "goal_blocked", "goal_wait"],
+		activeTools: [
+			"read",
+			"bash",
+			"write",
+			"goal_complete",
+			"goal_blocked",
+			"goal_wait",
+			"plan_mode_question",
+			"plan_mode_complete",
+		],
 		allTools: [
 			builtinTool("read"),
 			builtinTool("bash"),
@@ -115,6 +124,8 @@ function createFixture(
 			extensionTool("goal_complete"),
 			extensionTool("goal_blocked"),
 			extensionTool("goal_wait"),
+			extensionTool("plan_mode_question"),
+			extensionTool("plan_mode_complete"),
 		],
 		thinkingLevel: "low",
 	});
@@ -227,29 +238,16 @@ for (const loadOrder of ["plan-first", "goal-first"] as const) {
 }
 
 for (const loadOrder of ["plan-first", "goal-first"] as const) {
-	test(`${loadOrder} lazy Plan activation appends only Plan helpers`, async () => {
+	test(`${loadOrder} Plan activation preserves the stable helper envelope`, async () => {
 		const fixture = createFixture(loadOrder);
 		await startSession(fixture);
-		assert.deepEqual(fixture.mock.rawPi.getActiveTools(), [
-			"read",
-			"bash",
-			"write",
-			"goal_complete",
-			"goal_blocked",
-			"goal_wait",
-		]);
+		const stableTools = fixture.mock.rawPi.getActiveTools();
+		const writesBefore = fixture.activeToolWrites.length;
 
 		await startPlan(fixture);
-		assert.deepEqual(fixture.mock.rawPi.getActiveTools(), [
-			"read",
-			"bash",
-			"write",
-			"goal_complete",
-			"goal_blocked",
-			"goal_wait",
-			"plan_mode_question",
-			"plan_mode_complete",
-		]);
+
+		assert.deepEqual(fixture.mock.rawPi.getActiveTools(), stableTools);
+		assert.equal(fixture.activeToolWrites.length, writesBefore);
 	});
 }
 
@@ -416,6 +414,8 @@ for (const loadOrder of ["plan-first", "goal-first"] as const) {
 				"goal_complete",
 				"goal_blocked",
 				"goal_wait",
+				"plan_mode_question",
+				"plan_mode_complete",
 			]);
 		}
 	});
@@ -440,7 +440,9 @@ test("each workflow can acquire only after the other finishes cleanup", async ()
 });
 
 test("standalone Plan and Goal preserve representative lifecycle behavior", async () => {
-	const planMock = createMockPi({ activeTools: ["read", "write"] });
+	const planMock = createMockPi({
+		activeTools: ["read", "write", "plan_mode_question", "plan_mode_complete"],
+	});
 	planMode(planMock.pi, { readSettings: async () => ({ kind: "missing" as const }) });
 	const planContext = createMockContext({ mode: "tui", hasUI: true });
 	await emitLifecycle(planMock.events, "session_start", { reason: "startup" }, planContext.ctx);
