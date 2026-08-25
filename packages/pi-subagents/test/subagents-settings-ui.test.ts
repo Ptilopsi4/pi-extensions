@@ -160,7 +160,8 @@ test("disabled stateful settings do not advertise unavailable lifecycle tools", 
 		);
 		await command.handler("help", context.ctx);
 		assert.match(context.notifications.at(-1)?.message ?? "", /Start here/);
-		assert.match(context.notifications.at(-1)?.message ?? "", /Keep Pi available/);
+		assert.match(context.notifications.at(-1)?.message ?? "", /workflow.*tools.*blocking/i);
+		assert.doesNotMatch(context.notifications.at(-1)?.message ?? "", /Recommended/i);
 		assert.doesNotMatch(context.notifications.at(-1)?.message ?? "", /Usage path:/);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

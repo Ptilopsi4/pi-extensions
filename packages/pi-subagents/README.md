@@ -6,7 +6,7 @@ Delegate bounded research or implementation work to isolated specialist agents w
 
 Use the built-in `explorer` for read-only evidence and `worker` for a clearly owned implementation slice.
 
-The compatibility default exposes background and blocking methods, while **Keep Pi available (async)** is the recommended smaller surface for normal parallel work.
+The compatibility default exposes background and blocking methods, while **Keep Pi available (async)** is an optional smaller background-only surface.
 
 ## ✨ Features
 
@@ -46,18 +46,22 @@ An unbuilt checkout intentionally has no declared generated entrypoint.
 
 ## 🚀 Quick start
 
-For normal background use, run `/subagents`, choose **How subagents run**, select **Keep Pi available (async) · Recommended**, confirm the exact tool changes, and reload.
+Run `/subagents`, choose **How subagents run**, and review the tools registered by each workflow.
 
-This registers `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect` while keeping the main agent responsive.
+The compatibility default includes background agents and blocking compatibility methods.
+
+Select **Keep Pi available (async)** to register `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect` without the blocking methods.
+
+Confirm any change and reload to apply it.
 
 Default `next-turn` delivery is for work the current response does not require.
 When the final answer depends on background work, use `/subagents settings` → **Completion and privacy** to select **Continue automatically when work finishes**.
 That mode steers completions into active parent work before its next model call, or wakes an idle parent once when no user or extension input is pending.
 
-Choose **Background plus compatibility methods (async + sync)** only when an existing blocking `subagent` caller, supported `subagent_await` join, or synchronous read-only `subagent_consult` is still required.
+**Background plus compatibility methods (async + sync)** also provides the deprecated blocking `subagent`, supported `subagent_await` join, and synchronous read-only `subagent_consult`.
 The blocking `subagent` tool is deprecated for new work.
 
-Async-first delegation still requires useful parallel main-agent work, clear worker ownership, and a supported completion path.
+Background delegation still requires useful parallel main-agent work, clear worker ownership, and a supported completion path.
 
 ## 💬 Commands
 
@@ -105,7 +109,7 @@ Run `/subagents`, choose **How subagents run**, review the concrete tool changes
 | Workflow | Registered tools |
 | --- | --- |
 | **Background plus compatibility methods (async + sync)** (compatibility default) | `subagent`, `subagent_spawn`, `subagent_send`, `subagent_await`, `subagent_manage`, `subagent_mailbox`, `subagent_inspect`, and `subagent_consult` |
-| **Keep Pi available (async)** (recommended) | `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect` |
+| **Keep Pi available (async)** | `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect` |
 | **Compatibility blocking methods (sync)** | `subagent`, `subagent_inspect`, and `subagent_consult` |
 | **Subagents disabled** | `subagent_inspect` only; delegation is disabled |
 
@@ -756,7 +760,7 @@ It refuses to overwrite malformed or invalid settings.
 Supported Pi writers serialize the latest-document read and same-directory temporary-file rename through `pi-subagents.json.mutation-lock`.
 Editors and older extension versions do not participate in that lock, so avoid manual edits while a settings save is in progress.
 `blocking.enabled` defaults to `true`, so **Background plus compatibility methods (async + sync)** remains the compatibility default even though `subagent` is deprecated for new work.
-Set it to `false` for the recommended **Keep Pi available (async)** workflow.
+Set it to `false` for the **Keep Pi available (async)** workflow.
 `blocking.maxParallelTasks` defaults to `8` and accepts positive integers from `1` through `64`.
 It limits worker tasks in one blocking parallel call, while execution still starts at most four workers at once and treats an optional aggregator separately.
 `stateful.enabled` also defaults to `true`; its existing `false` value remains the blocking-only workflow.

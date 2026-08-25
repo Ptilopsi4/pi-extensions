@@ -51,7 +51,7 @@ Use custom verifier agents only when independent child verification is explicitl
 
 ## Tool-surface direction
 
-The current recommendation is the user-selected `async-only` workflow, while `all` remains the compatibility default.
+`all` remains the compatibility default, while `async-only` remains an optional smaller tool surface.
 
 `async-only` exposes `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect`.
 `all` additionally exposes supported `subagent_await` and `subagent_consult` plus deprecated blocking `subagent` for compatibility.
@@ -84,7 +84,7 @@ New implementation work should respond to demonstrated user needs rather than ex
 ## Current reference notes
 
 - The [completed main-agent-led guidance plan](../plans/archived/2026-08-17_pi-subagents-main-agent-led-delegation-guidance-plan.md) records the accepted delegation rubric and verification evidence.
-- The [completed async-first tool-surface plan](../plans/archived/2026-08-17_pi-subagents-async-first-tool-surface-plan.md) records the compatibility and recommendation decisions.
+- The [completed async-first tool-surface plan](../plans/archived/2026-08-17_pi-subagents-async-first-tool-surface-plan.md) records the earlier tool-surface decision and implementation evidence.
 - [`pi-subagents-capability-matrix.md`](pi-subagents-capability-matrix.md) records maintained capability, detached lifecycle, transport, trust, and runtime-ownership boundaries.
 - [`pi-subagents-rpc-v1.md`](pi-subagents-rpc-v1.md) records the persistent RPC transport contract.
 
