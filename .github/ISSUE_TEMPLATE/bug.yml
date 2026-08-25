@@ -11,7 +11,8 @@ body:
         Please search existing issues before submitting a new report.
         Remove API keys, tokens, credentials, and personal data from logs, configuration, and screenshots.
         Reproduce the issue with extension discovery disabled and only the affected extension loaded when possible.
-        Run `pi -ne -e npm:@narumitw/pi-statusline` and include the result in the reproduction steps.
+        Run `pi -ne -e SOURCE` with `SOURCE` replaced by the exact npm specifier or local extension path reported below.
+        Include the result in the reproduction steps.
 
   - type: input
     id: package
@@ -25,9 +26,9 @@ body:
   - type: input
     id: package-version
     attributes:
-      label: Package version and installation source
-      description: Include the exact version and how you installed or loaded the package.
-      placeholder: "For example: 1.2.3 from npm"
+      label: Package version and source
+      description: Include the exact version and npm specifier or local path used to load the package.
+      placeholder: "For example: 1.2.3 from npm:@scope/package@1.2.3"
     validations:
       required: true
 
