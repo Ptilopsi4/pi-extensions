@@ -162,7 +162,8 @@ test("bare subagents opens a current-session manager and keeps direct routes pre
 		assert.match(managerContext.notifications.at(-1)?.message ?? "", /User Settings/);
 		await command.handler("help", managerContext.ctx);
 		assert.match(managerContext.notifications.at(-1)?.message ?? "", /Start here/);
-		assert.match(managerContext.notifications.at(-1)?.message ?? "", /Keep Pi available/);
+		assert.match(managerContext.notifications.at(-1)?.message ?? "", /workflow.*tools.*blocking/i);
+		assert.doesNotMatch(managerContext.notifications.at(-1)?.message ?? "", /Recommended/i);
 		assert.match(
 			managerContext.notifications.at(-1)?.message ?? "",
 			/blocking subagent tool is deprecated/i,
@@ -479,8 +480,9 @@ test("delegation workflow preview applies async-only on confirmation and cancell
 				reloads++;
 			},
 			custom: async (factory: unknown) => {
-				if (applyCall >= 2) throw new Error("recommended async-only choice should reload");
-				const driven = driveCustomSelector(factory, ["\r"], 60);
+				if (applyCall >= 2) throw new Error("async-only choice should reload");
+				const inputs = applyCall === 0 ? ["\r"] : ["\u001b[B", "\r"];
+				const driven = driveCustomSelector(factory, inputs, 60);
 				applyRenders[applyCall++] = driven.renders.flat();
 				return driven.result;
 			},
@@ -494,15 +496,16 @@ test("delegation workflow preview applies async-only on confirmation and cancell
 			/How subagents run: Background plus compatibility methods\s+\(async \+ sync\)/,
 		);
 		const workflowText = applyRenders[1]?.join("\n") ?? "";
-		assert.match(workflowText, /Keep Pi available \(async\).*Recommended/i);
+		assert.match(workflowText, /Keep Pi available \(async\)/i);
 		assert.match(workflowText, /Background plus compatibility methods\s+\(async \+ sync\)/i);
 		assert.match(workflowText, /Compatibility blocking methods \(sync\)/i);
-		assert.match(
-			applyRenders[1]?.join("\n") ?? "",
-			/recommended[\s\S]*Pi available[\s\S]*background/i,
+		assert.doesNotMatch(workflowText, /Recommended/i);
+		assert.ok(
+			workflowText.lastIndexOf("Background plus compatibility methods") <
+				workflowText.lastIndexOf("Keep Pi available"),
 		);
 		assert.match(
-			applyRenders[1]?.join("\n") ?? "",
+			workflowText,
 			/results needed in the current answer[\s\S]*automatic\s+continuation[\s\S]*Settings/i,
 		);
 		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
@@ -527,7 +530,7 @@ test("delegation workflow preview applies async-only on confirmation and cancell
 					cancelCall === 0
 						? ["\r"]
 						: cancelCall === 1
-							? ["\r"]
+							? ["\u001b[B", "\r"]
 							: cancelCall === 2
 								? ["\u001b"]
 								: ["\u001b"];
@@ -568,7 +571,8 @@ test("configured workflow differences reload from the active tool surface", asyn
 			},
 			custom: async (factory: unknown) => {
 				if (call >= 2) throw new Error("workflow should reload after the choice screen");
-				const driven = driveCustomSelector(factory, ["\r"], 40);
+				const inputs = call === 0 ? ["\r"] : ["\u001b[B", "\r"];
+				const driven = driveCustomSelector(factory, inputs, 40);
 				renders[call++] = driven.renders.flat();
 				return driven.result;
 			},
@@ -670,6 +674,7 @@ test("config lifecycle aborts pending confirmations before stateful session hand
 					if (call === 0) {
 						harness.handleInput("tui.select.confirm");
 					} else {
+						harness.handleInput("tui.select.down");
 						harness.handleInput("tui.select.confirm");
 						await harness.waitForPending();
 					}
@@ -741,7 +746,7 @@ test("workflow changes block reload while subagents are saved for follow-up", as
 				reloads++;
 			},
 			custom: async (factory: unknown) => {
-				const inputs = call === 0 || call === 1 ? ["\r"] : ["\u001b"];
+				const inputs = call === 0 ? ["\r"] : call === 1 ? ["\u001b[B", "\r"] : ["\u001b"];
 				call++;
 				return driveCustomSelector(factory, inputs, 60).result;
 			},
@@ -781,7 +786,7 @@ test("delegation workflow save failure does not reload or claim application", as
 				reloads++;
 			},
 			custom: async (factory: unknown) => {
-				const inputs = call === 0 || call === 1 ? ["\r"] : ["\u001b"];
+				const inputs = call === 0 ? ["\r"] : call === 1 ? ["\u001b[B", "\r"] : ["\u001b"];
 				call++;
 				return driveCustomSelector(factory, inputs, 60).result;
 			},
