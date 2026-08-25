@@ -2,6 +2,12 @@
 
 This project-local Pi extension displays live prompt-cache diagnostics above the editor.
 Pi discovers it automatically after the project is trusted, and `/reload` activates source changes.
+The widget starts hidden in every session.
+
+## Command
+
+Run `/cache-hit-monitor` to show or hide the widget.
+The command accepts no arguments and is available in TUI and RPC modes.
 
 ## Displayed metrics
 
@@ -18,7 +24,7 @@ Pi discovers it automatically after the project is trusted, and `/reload` activa
 
 ## Runtime behavior
 
-The widget updates from `message_update` as soon as the provider reports usage and finalizes on `message_end`.
+While visible, the widget updates from `message_update` as soon as the provider reports usage and finalizes on `message_end`.
 Cache comparisons reset across compaction and branch-summary boundaries because those events create a new cache prefix epoch.
 Session totals continue to include usage records visible on the active branch.
 The extension rebuilds state after session start, compaction, and tree navigation.

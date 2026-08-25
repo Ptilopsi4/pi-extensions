@@ -9,7 +9,7 @@ import type {
 import type { Component } from "@earendil-works/pi-tui";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { test } from "vitest";
-import cacheHitMonitor, { renderCacheMonitor, WIDGET_KEY } from "./index.js";
+import cacheHitMonitor, { COMMAND_NAME, renderCacheMonitor, WIDGET_KEY } from "./index.js";
 import { createCacheMonitorView, createCacheSample } from "./metrics.js";
 
 const RATES: ModelCostRates = { input: 10, output: 20, cacheRead: 1, cacheWrite: 20 };
@@ -19,6 +19,7 @@ const THEME = {
 } as unknown as Theme;
 
 type Handler = (event: never, ctx: ExtensionContext) => unknown;
+type CommandHandler = (args: string, ctx: ExtensionContext) => unknown;
 type WidgetFactory = (_tui: never, theme: Theme) => Component;
 type WidgetRecord = [
 	string,
@@ -64,15 +65,24 @@ function messageEntry(message: AssistantMessage): SessionEntry {
 
 function createHarness() {
 	const handlers = new Map<string, Handler[]>();
+	const commands = new Map<string, CommandHandler>();
 	const pi = {
 		on(event: string, handler: Handler) {
 			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+		},
+		registerCommand(name: string, options: { handler: CommandHandler }) {
+			commands.set(name, options.handler);
 		},
 	} as unknown as ExtensionAPI;
 	cacheHitMonitor(pi);
 	return {
 		async emit(event: string, payload: Record<string, unknown>, ctx: ExtensionContext) {
 			for (const handler of handlers.get(event) ?? []) await handler(payload as never, ctx);
+		},
+		async command(args: string, ctx: ExtensionContext) {
+			const handler = commands.get(COMMAND_NAME);
+			assert.ok(handler);
+			await handler(args, ctx);
 		},
 	};
 }
@@ -83,6 +93,7 @@ function createContext(
 ) {
 	let entries = initialEntries;
 	const widgets: WidgetRecord[] = [];
+	const notifications: Array<[string, "info" | "warning" | "error" | undefined]> = [];
 	const sessionManager = {
 		getBranch: () => entries,
 	} as unknown as ExtensionContext["sessionManager"];
@@ -94,6 +105,9 @@ function createContext(
 			find: () => ({ cost: RATES }),
 		},
 		ui: {
+			notify(message: string, level?: "info" | "warning" | "error") {
+				notifications.push([message, level]);
+			},
 			setWidget(
 				key: string,
 				content: string[] | WidgetFactory | undefined,
@@ -105,6 +119,7 @@ function createContext(
 	} as unknown as ExtensionContext;
 	return {
 		ctx,
+		notifications,
 		widgets,
 		setEntries(next: SessionEntry[]) {
 			entries = next;
@@ -118,10 +133,14 @@ function renderWidget(record: WidgetRecord | undefined, width = 100): string[] |
 	return typeof content === "function" ? content(undefined as never, THEME).render(width) : content;
 }
 
-test("publishes waiting state, previews streaming usage, and finalizes detailed metrics", async () => {
+test("stays hidden by default, then previews and finalizes detailed metrics when shown", async () => {
 	const harness = createHarness();
 	const current = createContext();
 	await harness.emit("session_start", {}, current.ctx);
+	assert.equal(current.widgets.length, 0);
+
+	await harness.command("", current.ctx);
+	assert.deepEqual(current.notifications, [["Cache hit monitor shown.", "info"]]);
 	assert.deepEqual(renderWidget(current.widgets.at(-1))?.slice(1), [
 		"Prompt cache · waiting for provider usage",
 		"Hit = cacheRead / (input + cacheRead + cacheWrite). Live updates begin when usage is reported.",
@@ -146,10 +165,29 @@ test("publishes waiting state, previews streaming usage, and finalizes detailed 
 	assert.match(compared, /miss premium ~\$0\.0044/);
 });
 
+test("the command toggles the widget closed and rejects arguments", async () => {
+	const harness = createHarness();
+	const current = createContext("tui", [messageEntry(assistant(200, 800))]);
+	await harness.emit("session_start", {}, current.ctx);
+	await harness.command("", current.ctx);
+	assert.match(renderWidget(current.widgets.at(-1))?.join("\n") ?? "", /hit 80\.0%/);
+
+	await harness.command("", current.ctx);
+	assert.deepEqual(current.widgets.at(-1), [WIDGET_KEY, undefined, undefined]);
+	assert.deepEqual(current.notifications, [
+		["Cache hit monitor shown.", "info"],
+		["Cache hit monitor hidden.", "info"],
+	]);
+	await assert.rejects(() => harness.command("unexpected", current.ctx), {
+		message: `Usage: /${COMMAND_NAME}`,
+	});
+});
+
 test("clears a partial live preview if an agent run ends without a final message", async () => {
 	const harness = createHarness();
 	const current = createContext();
 	await harness.emit("session_start", {}, current.ctx);
+	await harness.command("", current.ctx);
 	await harness.emit("message_update", { message: assistant(200, 800) }, current.ctx);
 	assert.match(renderWidget(current.widgets.at(-1))?.join("\n") ?? "", /LIVE/);
 
@@ -166,6 +204,7 @@ test("restores active-branch history and resets comparison after compaction", as
 	const harness = createHarness();
 	const current = createContext("tui", [messageEntry(first)]);
 	await harness.emit("session_start", {}, current.ctx);
+	await harness.command("", current.ctx);
 	assert.match(renderWidget(current.widgets.at(-1))?.join("\n") ?? "", /request #1.*hit 80\.0%/s);
 
 	const afterCompaction = assistant(900, 100, 0, { timestamp: 4_000 });
@@ -188,6 +227,7 @@ test("ignores stale replacement-session events and clears only the owned widget"
 	const current = createContext();
 	await harness.emit("session_start", {}, previous.ctx);
 	await harness.emit("session_start", {}, current.ctx);
+	await harness.command("", current.ctx);
 	const currentCount = current.widgets.length;
 
 	await harness.emit("message_update", { message: assistant(100, 900) }, previous.ctx);
@@ -202,6 +242,8 @@ test("uses plain string widgets in RPC mode and remains silent without UI", asyn
 	const harness = createHarness();
 	const rpc = createContext("rpc", [messageEntry(assistant(200, 800))]);
 	await harness.emit("session_start", {}, rpc.ctx);
+	assert.equal(rpc.widgets.length, 0);
+	await harness.command("", rpc.ctx);
 	const rpcContent = rpc.widgets.at(-1)?.[1];
 	assert.ok(Array.isArray(rpcContent));
 	assert.match(rpcContent.join("\n"), /hit 80\.0%/);
@@ -209,6 +251,9 @@ test("uses plain string widgets in RPC mode and remains silent without UI", asyn
 	const json = createContext("json", [messageEntry(assistant(200, 800))]);
 	await harness.emit("session_start", {}, json.ctx);
 	assert.equal(json.widgets.length, 0);
+	await assert.rejects(() => harness.command("", json.ctx), {
+		message: `/${COMMAND_NAME} requires TUI or RPC mode.`,
+	});
 });
 
 test("renders every line within narrow widths and strips unsafe model text", () => {

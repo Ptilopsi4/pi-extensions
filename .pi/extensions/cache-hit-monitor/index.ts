@@ -11,6 +11,7 @@ import {
 	type MonitorLine,
 } from "./metrics.js";
 
+export const COMMAND_NAME = "cache-hit-monitor";
 export const WIDGET_KEY = "cache-hit-monitor";
 
 export default function cacheHitMonitor(pi: ExtensionAPI): void {
@@ -19,6 +20,7 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 	let currentEpoch = 0;
 	let streamingSample: CacheSample | undefined;
 	let publishedSignature: string | undefined;
+	let visible = false;
 
 	const ownsSession = (ctx: ExtensionContext): boolean => ctx.sessionManager === activeSession;
 
@@ -41,8 +43,13 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 			resolveCostRates(ctx, message.provider, message.model),
 		);
 
+	const clearWidget = (ctx: ExtensionContext): void => {
+		if (ctx.hasUI && ownsSession(ctx)) ctx.ui.setWidget(WIDGET_KEY, undefined);
+		publishedSignature = undefined;
+	};
+
 	const publish = (ctx: ExtensionContext): void => {
-		if (!ctx.hasUI || !ownsSession(ctx)) return;
+		if (!visible || !ctx.hasUI || !ownsSession(ctx)) return;
 		const view = createCacheMonitorView(finalizedSamples, streamingSample);
 		const lines = formatMonitorLines(view);
 		const signature = JSON.stringify(lines);
@@ -66,11 +73,31 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 		publishedSignature = signature;
 	};
 
+	pi.registerCommand(COMMAND_NAME, {
+		description: "Show or hide live prompt-cache diagnostics",
+		handler: async (args, ctx) => {
+			if (args.trim()) {
+				throw new Error(`Usage: /${COMMAND_NAME}`);
+			}
+			if (!ctx.hasUI) {
+				throw new Error(`/${COMMAND_NAME} requires TUI or RPC mode.`);
+			}
+			if (!ownsSession(ctx)) {
+				throw new Error(`/${COMMAND_NAME} is unavailable for a stale session.`);
+			}
+
+			visible = !visible;
+			if (visible) publish(ctx);
+			else clearWidget(ctx);
+			ctx.ui.notify(`Cache hit monitor ${visible ? "shown" : "hidden"}.`, "info");
+		},
+	});
+
 	pi.on("session_start", (_event, ctx) => {
 		activeSession = ctx.sessionManager;
+		visible = false;
 		publishedSignature = undefined;
 		restore(ctx);
-		publish(ctx);
 	});
 
 	pi.on("message_start", (event, ctx) => {
@@ -115,11 +142,11 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 
 	pi.on("session_shutdown", (_event, ctx) => {
 		if (!ownsSession(ctx)) return;
-		if (ctx.hasUI) ctx.ui.setWidget(WIDGET_KEY, undefined);
+		clearWidget(ctx);
 		activeSession = undefined;
 		finalizedSamples = [];
 		streamingSample = undefined;
-		publishedSignature = undefined;
+		visible = false;
 	});
 }
 
