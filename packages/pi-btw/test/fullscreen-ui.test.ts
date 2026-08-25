@@ -3,8 +3,12 @@ import {
 	type Component,
 	Container,
 	type Focusable,
+	getKeybindings,
+	KeybindingsManager,
+	setKeybindings,
 	type Terminal,
 	type TUI,
+	TUI_KEYBINDINGS,
 	TuiMainScreen,
 } from "@earendil-works/pi-tui";
 import { test } from "vitest";
@@ -417,6 +421,57 @@ test("Ctrl+C cancels the side flow when transcript search owns focus", async () 
 	} finally {
 		closeSide?.();
 		await observed;
+		harness.parent.stop();
+	}
+});
+
+test("Ctrl+C hard-cancels the side root before a remapped search close", async (t) => {
+	const previousKeybindings = getKeybindings();
+	t.onTestFinished(() => setKeybindings(previousKeybindings));
+	setKeybindings(
+		new KeybindingsManager(TUI_KEYBINDINGS, {
+			"tui.altScreen.searchClose": "ctrl+c",
+		}),
+	);
+	const harness = createInputHandoffHarness();
+	let sideTui: TUI | undefined;
+	let closeSide: (() => void) | undefined;
+	let sideCancelCount = 0;
+	const running = runBtwFullscreen(harness.ctx, (ctx) =>
+		ctx.ui.custom<"closed">((tui, _theme, _keybindings, done) => {
+			sideTui = tui;
+			closeSide = () => done("closed");
+			return {
+				focused: false,
+				render: () => ["side thread"],
+				handleInput(data: string) {
+					if (data !== "\u0003") return;
+					sideCancelCount += 1;
+					done("closed");
+				},
+				invalidate() {},
+			};
+		}),
+	);
+	try {
+		await flushAsyncWork();
+		assert.ok(sideTui);
+		const searchableTui = sideTui as TUI & {
+			openSearch(): void;
+			isOverlayFocused(): boolean;
+		};
+		searchableTui.openSearch();
+		assert.equal(searchableTui.isOverlayFocused(), true);
+
+		harness.terminal.send("\u0003");
+		harness.terminal.send("x");
+
+		assert.equal(sideCancelCount, 1);
+		assert.equal(await running, "closed");
+		assert.equal(harness.mainInput.text, "x");
+	} finally {
+		closeSide?.();
+		await running.catch(() => undefined);
 		harness.parent.stop();
 	}
 });
