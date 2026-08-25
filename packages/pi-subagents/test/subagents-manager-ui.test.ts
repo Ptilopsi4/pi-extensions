@@ -674,6 +674,7 @@ test("config lifecycle aborts pending confirmations before stateful session hand
 					if (call === 0) {
 						harness.handleInput("tui.select.confirm");
 					} else {
+						harness.handleInput("tui.select.down");
 						harness.handleInput("tui.select.confirm");
 						await harness.waitForPending();
 					}
@@ -745,7 +746,7 @@ test("workflow changes block reload while subagents are saved for follow-up", as
 				reloads++;
 			},
 			custom: async (factory: unknown) => {
-				const inputs = call === 0 || call === 1 ? ["\r"] : ["\u001b"];
+				const inputs = call === 0 ? ["\r"] : call === 1 ? ["\u001b[B", "\r"] : ["\u001b"];
 				call++;
 				return driveCustomSelector(factory, inputs, 60).result;
 			},
@@ -785,7 +786,7 @@ test("delegation workflow save failure does not reload or claim application", as
 				reloads++;
 			},
 			custom: async (factory: unknown) => {
-				const inputs = call === 0 || call === 1 ? ["\r"] : ["\u001b"];
+				const inputs = call === 0 ? ["\r"] : call === 1 ? ["\u001b[B", "\r"] : ["\u001b"];
 				call++;
 				return driveCustomSelector(factory, inputs, 60).result;
 			},
