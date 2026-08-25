@@ -117,10 +117,8 @@ export function supportsNativeDeferredToolLoading(model: ExtensionContext["model
 	if (model.api === "anthropic-messages") {
 		const configured = compatBoolean(model.compat, "supportsToolReferences");
 		if (configured !== undefined) return configured;
-		if (model.provider !== "anthropic" || model.id.toLowerCase().includes("haiku")) return false;
-		const version = model.id
-			.toLowerCase()
-			.match(/^claude-(?:opus|sonnet|fable)-(\d+)(?:-(\d+))?(?:-|$)/);
+		if (model.provider !== "anthropic" || model.id.includes("haiku")) return false;
+		const version = model.id.match(/^claude-(?:opus|sonnet|fable)-(\d+)(?:-(\d+))?(?:-|$)/);
 		if (!version) return false;
 		const major = Number(version[1]);
 		const minor = version[2] && version[2].length < 8 ? Number(version[2]) : 0;

@@ -209,6 +209,24 @@ test("chrome-devtools keeps Azure Responses eager when compat enables tool searc
 	});
 });
 
+test("chrome-devtools keeps uppercase Anthropic model IDs eager", async () => {
+	await withTempAgentDir(async () => {
+		const chromeDevtoolsModule = await importFreshChromeDevtools();
+		const model = {
+			api: "anthropic-messages",
+			provider: "anthropic",
+			id: "CLAUDE-SONNET-4-5",
+		};
+		const mock = createMockPi({ activeTools: ["other_tool", ...CAPABILITY_TOOLS] });
+		const { ctx } = createMockContext({ model });
+		chromeDevtoolsModule.default(mock.pi);
+
+		await mock.events.get("session_start")?.[0]?.({}, ctx);
+
+		assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL, ...CAPABILITY_TOOLS]);
+	});
+});
+
 test("chrome-devtools honors native Kimi deferred-tool support", async () => {
 	await withTempAgentDir(async () => {
 		const chromeDevtoolsModule = await importFreshChromeDevtools();
