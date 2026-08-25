@@ -94,6 +94,7 @@ export function collectCacheSamples(
 ): CollectedCacheSamples {
 	const samples: CacheSample[] = [];
 	const summaryRecords: CacheUsageRecord[] = [];
+	const cacheReportingProviders = new Set<string>();
 	let currentEpoch = 0;
 	for (const entry of entries) {
 		if (entry.type === "compaction" || entry.type === "branch_summary") {
@@ -107,8 +108,14 @@ export function collectCacheSamples(
 			entry.message,
 			currentEpoch,
 			resolveCostModel(entry.message.provider, entry.message.model),
+			cacheReportingProviders.has(entry.message.provider),
 		);
-		if (sample) samples.push(sample);
+		if (sample) {
+			if (sample.cacheRead > 0 || sample.cacheWrite > 0) {
+				cacheReportingProviders.add(sample.provider);
+			}
+			samples.push(sample);
+		}
 	}
 	return { samples, summaryRecords, currentEpoch };
 }
@@ -117,8 +124,9 @@ export function createCacheSample(
 	message: AssistantMessage,
 	epoch: number,
 	costModel?: Model<Api>,
+	cacheAccountingKnown = false,
 ): CacheSample | null {
-	const calculation = calculateCacheUsage(message.usage, costModel);
+	const calculation = calculateCacheUsage(message.usage, costModel, cacheAccountingKnown);
 	if (!calculation) return null;
 
 	return {
@@ -219,7 +227,8 @@ export function aggregateCacheSamples(
 	let savingsKnown = true;
 	let rebilledTokens = 0;
 	let estimatedMissPremium = 0;
-	let missPremiumKnown = false;
+	let hasRebilledTokens = false;
+	let missPremiumComplete = true;
 	let bestHitRatePercent: number | null = null;
 	let worstHitRatePercent: number | null = null;
 
@@ -254,10 +263,10 @@ export function aggregateCacheSamples(
 		const comparison = compareCacheSamples(previous, sample, previousIndex + 1);
 		if (!comparison) continue;
 		rebilledTokens += comparison.rebilledTokens;
-		if (comparison.estimatedMissPremium !== null) {
-			estimatedMissPremium += comparison.estimatedMissPremium;
-			missPremiumKnown = true;
-		}
+		if (comparison.rebilledTokens <= 0) continue;
+		hasRebilledTokens = true;
+		if (comparison.estimatedMissPremium === null) missPremiumComplete = false;
+		else estimatedMissPremium += comparison.estimatedMissPremium;
 	}
 
 	const requestCount = samples.length + additionalRecords.length;
@@ -272,7 +281,7 @@ export function aggregateCacheSamples(
 		promptCost: promptCostKnown ? promptCost : null,
 		estimatedSavings: requestCount > 0 && savingsKnown ? estimatedSavings : null,
 		rebilledTokens,
-		estimatedMissPremium: missPremiumKnown ? estimatedMissPremium : null,
+		estimatedMissPremium: hasRebilledTokens && missPremiumComplete ? estimatedMissPremium : null,
 		bestHitRatePercent,
 		worstHitRatePercent,
 	};
@@ -280,11 +289,21 @@ export function aggregateCacheSamples(
 
 export function formatMonitorLines(view: CacheMonitorView): MonitorLine[] {
 	if (!view.latest) {
+		if (view.session.requestCount > 0) {
+			return [
+				{ role: "title", text: "Prompt cache · summary usage only" },
+				formatSessionLine(view.session),
+				{
+					role: "dim",
+					text: "Latest request metrics are unavailable on this branch.",
+				},
+			];
+		}
 		return [
-			{ role: "title", text: "Prompt cache · waiting for provider usage" },
+			{ role: "title", text: "Prompt cache · waiting for provider cache usage" },
 			{
 				role: "dim",
-				text: "Hit = cacheRead / (input + cacheRead + cacheWrite). Live updates begin when usage is reported.",
+				text: "Hit = cacheRead / (input + cacheRead + cacheWrite). All-zero cache fields remain unknown until this provider reports cache activity.",
 			},
 		];
 	}
@@ -347,19 +366,7 @@ export function formatMonitorLines(view: CacheMonitorView): MonitorLine[] {
 				`miss premium ~${formatNullableMoney(comparison?.estimatedMissPremium ?? null)}`,
 			].join("  ·  "),
 		},
-		{
-			role: "muted",
-			text: [
-				`Session  ${session.requestCount} req`,
-				`hit ${formatNullablePercent(session.hitRatePercent)}`,
-				`read ${formatTokens(session.cacheRead)}`,
-				`uncached ${formatTokens(session.input)}`,
-				`write ${formatTokens(session.cacheWrite)}`,
-				`cost ${formatNullableMoney(session.promptCost)}`,
-				`saved ~${formatNullableMoney(session.estimatedSavings)}`,
-				`re-billed ${formatTokens(session.rebilledTokens)} (~${formatNullableMoney(session.estimatedMissPremium)})`,
-			].join("  ·  "),
-		},
+		formatSessionLine(session),
 		{
 			role: "dim",
 			text: `Trend old→new  ${view.trend.map(formatPercent).join(" → ")}`,
@@ -370,6 +377,22 @@ export function formatMonitorLines(view: CacheMonitorView): MonitorLine[] {
 		},
 	);
 	return lines;
+}
+
+function formatSessionLine(session: CacheAggregate): MonitorLine {
+	return {
+		role: "muted",
+		text: [
+			`Session  ${session.requestCount} req`,
+			`hit ${formatNullablePercent(session.hitRatePercent)}`,
+			`read ${formatTokens(session.cacheRead)}`,
+			`uncached ${formatTokens(session.input)}`,
+			`write ${formatTokens(session.cacheWrite)}`,
+			`cost ${formatNullableMoney(session.promptCost)}`,
+			`saved ~${formatNullableMoney(session.estimatedSavings)}`,
+			`re-billed ${formatTokens(session.rebilledTokens)} (~${formatNullableMoney(session.estimatedMissPremium)})`,
+		].join("  ·  "),
+	};
 }
 
 export function sanitizeDisplayLabel(value: string): string {
@@ -391,12 +414,18 @@ interface CacheUsageCalculation {
 	paidPromptUnitCost: number | null;
 }
 
-function calculateCacheUsage(usage: Usage, costModel?: Model<Api>): CacheUsageCalculation | null {
+function calculateCacheUsage(
+	usage: Usage,
+	costModel?: Model<Api>,
+	cacheAccountingKnown = false,
+): CacheUsageCalculation | null {
 	const input = finiteNumber(usage.input);
 	const cacheRead = finiteNumber(usage.cacheRead);
 	const cacheWrite = finiteNumber(usage.cacheWrite);
 	const promptTokens = input + cacheRead + cacheWrite;
-	if (promptTokens <= 0) return null;
+	if (promptTokens <= 0 || (cacheRead === 0 && cacheWrite === 0 && !cacheAccountingKnown)) {
+		return null;
+	}
 
 	const fallbackCosts = costModel
 		? calculateCost(costModel, normalizedUsageCopy(usage, input, cacheRead, cacheWrite))
@@ -413,7 +442,10 @@ function calculateCacheUsage(usage: Usage, costModel?: Model<Api>): CacheUsageCa
 		fallbackCosts?.cacheWrite,
 	);
 	const inputUnitCost = unitCost(input, inputCost);
-	const cacheReadUnitCost = unitCost(cacheRead, cacheReadCost);
+	const cacheReadUnitCost =
+		cacheRead > 0
+			? unitCost(cacheRead, cacheReadCost)
+			: effectiveCacheReadUnitCost(costModel, usage, input, cacheWrite);
 	const paidPromptUnitCost = unitCost(
 		input + cacheWrite,
 		sumKnownCosts([inputCost, cacheWriteCost]),
@@ -429,14 +461,32 @@ function calculateCacheUsage(usage: Usage, costModel?: Model<Api>): CacheUsageCa
 			uncachedRatePercent: (input / promptTokens) * 100,
 			promptCost: sumKnownCosts([inputCost, cacheReadCost, cacheWriteCost]),
 			estimatedSavings:
-				inputUnitCost !== null && cacheReadUnitCost !== null
-					? cacheRead * Math.max(0, inputUnitCost - cacheReadUnitCost)
-					: null,
+				cacheRead === 0
+					? 0
+					: inputUnitCost !== null && cacheReadUnitCost !== null
+						? cacheRead * Math.max(0, inputUnitCost - cacheReadUnitCost)
+						: null,
 		},
 		inputUnitCost,
 		cacheReadUnitCost,
 		paidPromptUnitCost,
 	};
+}
+
+function effectiveCacheReadUnitCost(
+	costModel: Model<Api> | undefined,
+	usage: Usage,
+	input: number,
+	cacheWrite: number,
+): number | null {
+	if (!costModel) return null;
+	const probeTokens = Math.min(1, input + cacheWrite);
+	if (probeTokens <= 0) return null;
+	const probeInput = Math.max(0, input - probeTokens);
+	const shiftedFromInput = input - probeInput;
+	const probeCacheWrite = Math.max(0, cacheWrite - (probeTokens - shiftedFromInput));
+	const probeUsage = normalizedUsageCopy(usage, probeInput, probeTokens, probeCacheWrite);
+	return calculateCost(costModel, probeUsage).cacheRead / probeTokens;
 }
 
 function normalizedUsageCopy(

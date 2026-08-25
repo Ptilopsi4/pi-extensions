@@ -20,6 +20,7 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 	let activeSession: ExtensionContext["sessionManager"] | undefined;
 	let finalizedSamples: CacheSample[] = [];
 	let summaryRecords: CacheUsageRecord[] = [];
+	const cacheReportingProviders = new Set<string>();
 	let currentEpoch = 0;
 	let streamingSample: CacheSample | undefined;
 	let publishedSignature: string | undefined;
@@ -36,6 +37,12 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 		);
 		finalizedSamples = restored.samples;
 		summaryRecords = restored.summaryRecords;
+		cacheReportingProviders.clear();
+		for (const sample of finalizedSamples) {
+			if (sample.cacheRead > 0 || sample.cacheWrite > 0) {
+				cacheReportingProviders.add(sample.provider);
+			}
+		}
 		currentEpoch = restored.currentEpoch;
 		streamingSample = undefined;
 	};
@@ -45,6 +52,7 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 			message,
 			currentEpoch,
 			resolveCostModel(ctx, message.provider, message.model),
+			cacheReportingProviders.has(message.provider),
 		);
 
 	const clearWidget = (ctx: ExtensionContext): void => {
@@ -120,6 +128,9 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 		if (!ownsSession(ctx) || event.message.role !== "assistant") return;
 		const sample = sampleMessage(event.message, ctx);
 		if (!sample || (streamingSample && cacheSamplesEqual(streamingSample, sample))) return;
+		if (sample.cacheRead > 0 || sample.cacheWrite > 0) {
+			cacheReportingProviders.add(sample.provider);
+		}
 		streamingSample = sample;
 		publish(ctx);
 	});
@@ -128,7 +139,12 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 		if (!ownsSession(ctx) || event.message.role !== "assistant") return;
 		const sample = sampleMessage(event.message, ctx);
 		streamingSample = undefined;
-		if (sample) finalizedSamples.push(sample);
+		if (sample) {
+			if (sample.cacheRead > 0 || sample.cacheWrite > 0) {
+				cacheReportingProviders.add(sample.provider);
+			}
+			finalizedSamples.push(sample);
+		}
 		publish(ctx);
 	});
 
@@ -156,6 +172,7 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 		activeSession = undefined;
 		finalizedSamples = [];
 		summaryRecords = [];
+		cacheReportingProviders.clear();
 		streamingSample = undefined;
 		visible = false;
 	});

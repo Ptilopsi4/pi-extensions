@@ -153,9 +153,9 @@ test("stays hidden by default, then previews and finalizes detailed metrics when
 
 	await harness.command("", current.ctx);
 	assert.deepEqual(current.notifications, [["Cache hit monitor shown.", "info"]]);
-	assert.deepEqual(renderWidget(current.widgets.at(-1))?.slice(1), [
-		"Prompt cache · waiting for provider usage",
-		"Hit = cacheRead / (input + cacheRead + cacheWrite). Live updates begin when usage is reported.",
+	assert.deepEqual(renderWidget(current.widgets.at(-1), 160)?.slice(1), [
+		"Prompt cache · waiting for provider cache usage",
+		"Hit = cacheRead / (input + cacheRead + cacheWrite). All-zero cache fields remain unknown until this provider reports cache activity.",
 	]);
 
 	const first = assistant(200, 800);
@@ -185,6 +185,31 @@ test("stays hidden by default, then previews and finalizes detailed metrics when
 	assert.match(compared, /loss 25\.5 pp/);
 	assert.match(compared, /re-billed 400 \(40\.0%\)/);
 	assert.match(compared, /miss premium ~\$0\.0044/);
+});
+
+test("does not display all-zero cache fields until the provider reports cache activity", async () => {
+	const harness = createHarness();
+	const current = createContext();
+	await harness.emit("session_start", {}, current.ctx);
+	await harness.command("", current.ctx);
+	const waitingCount = current.widgets.length;
+
+	await harness.emit("message_update", { message: assistant(1_000, 0) }, current.ctx);
+	assert.equal(current.widgets.length, waitingCount);
+	assert.match(renderWidget(current.widgets.at(-1))?.join("\n") ?? "", /waiting/);
+
+	const cached = assistant(200, 800);
+	await harness.emit("message_update", { message: cached }, current.ctx);
+	await harness.emit("message_end", { message: cached }, current.ctx);
+	await harness.emit(
+		"message_update",
+		{ message: assistant(1_000, 0, 0, { timestamp: 2_000 }) },
+		current.ctx,
+	);
+	const rendered = renderWidget(current.widgets.at(-1), 120)?.join("\n") ?? "";
+	assert.match(rendered, /hit 0\.0%/);
+	assert.match(rendered, /re-billed 1k \(100\.0%\)/);
+	assert.match(rendered, /miss premium ~\$0\.0090/);
 });
 
 test("the command toggles the widget closed and rejects arguments", async () => {
@@ -217,7 +242,7 @@ test("clears a partial live preview if an agent run ends without a final message
 	assert.doesNotMatch(renderWidget(current.widgets.at(-1))?.join("\n") ?? "", /LIVE/);
 	assert.match(
 		renderWidget(current.widgets.at(-1))?.join("\n") ?? "",
-		/waiting for provider usage/,
+		/waiting for provider cache usage/,
 	);
 });
 
@@ -253,6 +278,25 @@ test("restores active-branch history and resets comparison at the compaction bou
 	assert.match(rendered, /no comparable request in the current cache epoch/);
 	assert.match(rendered, /Session {2}3 req/);
 	assert.match(rendered, /re-billed\s+400/);
+});
+
+test("renders restored totals for a summary-only branch", async () => {
+	const summary = assistant(100, 900);
+	const harness = createHarness();
+	const current = createContext("tui", [
+		{
+			type: "branch_summary",
+			id: "branch-summary",
+			parentId: null,
+			usage: summary.usage,
+		} as SessionEntry,
+	]);
+	await harness.emit("session_start", {}, current.ctx);
+	await harness.command("", current.ctx);
+
+	const rendered = renderWidget(current.widgets.at(-1), 120)?.join("\n") ?? "";
+	assert.match(rendered, /summary usage only/);
+	assert.match(rendered, /Session {2}1 req.*hit 90\.0%/);
 });
 
 test("clears replacement UI and ignores stale replacement-session events", async () => {

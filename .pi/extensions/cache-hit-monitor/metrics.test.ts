@@ -93,6 +93,49 @@ test("calculates hit rate, downward loss, re-billed tokens, and estimated cost i
 	assert.equal(comparison.requestStartGapMs, 2_500);
 });
 
+test("requires provider cache evidence and prices a confirmed zero-read miss", () => {
+	const completeMiss = assistant(1_000, 0, 0, { timestamp: 2_000 });
+	completeMiss.usage.cost = {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		total: 0,
+	};
+	assert.equal(createCacheSample(completeMiss, 0, MODEL), null);
+
+	const tieredModel: Model<Api> = {
+		...MODEL,
+		cost: {
+			...RATES,
+			tiers: [
+				{
+					inputTokensAbove: 900,
+					input: 20,
+					output: 40,
+					cacheRead: 2,
+					cacheWrite: 30,
+				},
+			],
+		},
+	};
+	const previous = createCacheSample(assistant(200, 800, 0), 0, tieredModel);
+	const current = createCacheSample(completeMiss, 0, tieredModel, true);
+	assert.ok(previous && current);
+	assert.equal(current.hitRatePercent, 0);
+	assert.equal(current.estimatedSavings, 0);
+	assert.ok(Math.abs((current.cacheReadUnitCost ?? 0) - 0.000_002) < 0.000_000_001);
+	assert.ok(
+		Math.abs((compareCacheSamples(previous, current, 1)?.estimatedMissPremium ?? 0) - 0.018) <
+			0.000_000_1,
+	);
+	const rendered = formatMonitorLines(createCacheMonitorView([previous, current]))
+		.map(({ text }) => text)
+		.join("\n");
+	assert.match(rendered, /cache saved ~\$0\.0000/);
+	assert.match(rendered, /miss premium ~\$0\.018/);
+});
+
 test("uses weighted session totals and excludes cross-compaction comparisons", () => {
 	const first = createCacheSample(assistant(200, 800, 0), 0, MODEL);
 	const second = createCacheSample(assistant(400, 600, 100), 0, MODEL);
@@ -108,6 +151,25 @@ test("uses weighted session totals and excludes cross-compaction comparisons", (
 	assert.equal(aggregate.rebilledTokens, 400);
 	assert.ok(Math.abs((aggregate.estimatedMissPremium ?? 0) - 0.0044) < 0.000_000_1);
 	assert.equal(compareCacheSamples(second, afterCompaction, 2), null);
+});
+
+test("marks a session premium unknown when any nonzero miss lacks pricing", () => {
+	const first = createCacheSample(assistant(200, 800, 0), 0, MODEL);
+	const unpricedMessage = assistant(400, 600, 100, { timestamp: 2_000 });
+	unpricedMessage.usage.cost = {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		total: 0,
+	};
+	const unpriced = createCacheSample(unpricedMessage, 0);
+	const priced = createCacheSample(assistant(500, 500, 0, { timestamp: 3_000 }), 0, MODEL);
+	assert.ok(first && unpriced && priced);
+
+	const aggregate = aggregateCacheSamples([first, unpriced, priced]);
+	assert.ok(aggregate.rebilledTokens > 0);
+	assert.equal(aggregate.estimatedMissPremium, null);
 });
 
 test("reconstructs cache epochs and includes summarization usage in session totals", () => {
@@ -149,6 +211,52 @@ test("reconstructs cache epochs and includes summarization usage in session tota
 	assert.equal(view.session.cacheRead, 2_700);
 	assert.ok(Math.abs((view.session.promptCost ?? 0) - 0.0157) < 0.000_000_1);
 	assert.ok(Math.abs((view.session.estimatedSavings ?? 0) - 0.0243) < 0.000_000_1);
+});
+
+test("does not reconstruct all-zero usage as a miss without provider evidence", () => {
+	const supportedProviderMiss = assistant(1_000, 0, 0, {
+		provider: "test-provider",
+		timestamp: 2_000,
+	});
+	const unsupportedProviderUsage = assistant(1_000, 0, 0, {
+		provider: "other-provider",
+		timestamp: 3_000,
+	});
+	const restored = collectCacheSamples(
+		[
+			messageEntry(assistant(200, 800, 0)),
+			messageEntry(supportedProviderMiss),
+			messageEntry(unsupportedProviderUsage),
+		],
+		() => MODEL,
+	);
+
+	assert.deepEqual(
+		restored.samples.map(({ provider, hitRatePercent }) => [provider, hitRatePercent]),
+		[
+			["test-provider", 80],
+			["test-provider", 0],
+		],
+	);
+});
+
+test("renders session totals when a branch contains only summary usage", () => {
+	const summaryMessage = assistant(100, 900, 0);
+	const restored = collectCacheSamples([
+		{
+			type: "branch_summary",
+			id: "branch-summary",
+			parentId: null,
+			usage: summaryMessage.usage,
+		},
+	] as SessionEntry[]);
+	const lines = formatMonitorLines(
+		createCacheMonitorView([], undefined, { summaryRecords: restored.summaryRecords }),
+	).map(({ text }) => text);
+
+	assert.match(lines[0] ?? "", /summary usage only/);
+	assert.match(lines[1] ?? "", /Session {2}1 req.*hit 90\.0%.*read 900.*uncached 100/);
+	assert.match(lines[2] ?? "", /Latest request metrics are unavailable/);
 });
 
 test("suppresses a pre-boundary comparison until the active epoch receives usage", () => {
