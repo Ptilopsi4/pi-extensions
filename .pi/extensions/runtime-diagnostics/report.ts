@@ -89,7 +89,7 @@ export function createDiagnosticResponse(options: DiagnosticReportOptions) {
 		details.tools = {
 			state: runtime.tools,
 			catalog: toolCatalog,
-			knownProviderDefinitionBytes: sumNullable(
+			knownProviderDefinitionBytes: sumComplete(
 				toolCatalog.map(({ knownProviderDefinitionBytes }) => knownProviderDefinitionBytes),
 			),
 			definitionSizeBasis:
@@ -340,8 +340,8 @@ function createProviderReport(
 						) / completed.length
 					: null,
 			statusCounts: countStatuses(completed),
-			requestBytes: sumNullable(capture.records.map(({ requestBytes }) => requestBytes)),
-			toolDefinitionBytes: sumNullable(
+			requestBytes: sumComplete(capture.records.map(({ requestBytes }) => requestBytes)),
+			toolDefinitionBytes: sumComplete(
 				capture.records.map(({ toolDefinitionBytes }) => toolDefinitionBytes),
 			),
 		},
@@ -644,9 +644,14 @@ function providerVisibleNames(record: ProviderRequestDiagnostic): string[] {
 	return [...new Set([...record.topLevelToolNames, ...record.transcriptToolNames])].sort();
 }
 
-function sumNullable(values: readonly (number | null)[]): number | null {
-	const available = values.filter((value): value is number => value !== null);
-	return available.length > 0 ? available.reduce((total, value) => total + value, 0) : null;
+function sumComplete(values: readonly (number | null)[]): number | null {
+	if (values.length === 0) return null;
+	let total = 0;
+	for (const value of values) {
+		if (value === null) return null;
+		total += value;
+	}
+	return total;
 }
 
 function nullableDelta(from: number | null, to: number | null): number | null {

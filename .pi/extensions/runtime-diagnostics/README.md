@@ -71,9 +71,10 @@ A captured payload does not prove that the provider accepted or executed the exp
 Response latency ends when headers arrive and does not measure stream completion.
 The installed `google-generative-ai` and `google-vertex` adapters do not emit response-header telemetry, so their requests are marked `unsupported` rather than `pending`.
 Restored requests without retained response telemetry are marked `unavailable` because a future response cannot complete a historical capture.
+Retained-window byte totals are `null` when any included request has unknown legacy size data.
 Provider responses are matched to requests by event order because the hook exposes no request identifier.
 Failed HTTP attempts remain associated with the same request until a successful retry replaces them or `agent_end` ends the run.
-Unmatched request indexes are discarded at `agent_end` so a failed run cannot offset response attribution in a later run.
+Requests without response headers are marked `unavailable` at `agent_end`, and unmatched indexes are discarded so a failed run cannot offset later response attribution.
 Extension visibility includes only public tool and slash-command surfaces, so passive event-only extensions cannot be enumerated.
 Inactive tools include an honest generic explanation because Pi does not expose the configuration, filter, or deferred-loading reason.
 Per-tool definition sizes are lower bounds over the provider-visible name, description, and parameters because `ExtensionAPI.getAllTools()` does not expose `constrainedSampling`.

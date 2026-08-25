@@ -238,7 +238,7 @@ test("captures only sanitized provider metadata, byte counts, status, and header
 	});
 });
 
-test("extracts provider-visible tools from Google, Bedrock, and pi-messages payloads", () => {
+test("extracts provider-visible tools from installed adapter payload shapes", () => {
 	const googleTools = [
 		{
 			functionDeclarations: [
@@ -306,6 +306,31 @@ test("extracts provider-visible tools from Google, Bedrock, and pi-messages payl
 	assert.deepEqual(piMessages.topLevelToolNames, ["read", "write"]);
 	assert.equal(piMessages.toolDefinitionBytes, Buffer.byteLength(JSON.stringify(piMessageTools)));
 	assert.equal(piMessages.planModeMarkerPresent, true);
+
+	const immediateKimiTools = [{ type: "function", function: { name: "tool_search" } }];
+	const deferredKimiTools = [{ type: "function", function: { name: "calculate" } }];
+	const kimi = extractProviderRequestDiagnostic(
+		{
+			tools: immediateKimiTools,
+			messages: [
+				{ role: "tool", content: "Found a matching tool" },
+				{ role: "system", tools: deferredKimiTools },
+			],
+		},
+		{
+			requestIndex: 4,
+			capturedAt: 400,
+			sessionId: "session",
+			api: "openai-completions",
+		},
+	);
+	assert.deepEqual(kimi.topLevelToolNames, ["tool_search"]);
+	assert.deepEqual(kimi.transcriptToolNames, ["calculate"]);
+	assert.equal(
+		kimi.toolDefinitionBytes,
+		Buffer.byteLength(JSON.stringify(immediateKimiTools)) +
+			Buffer.byteLength(JSON.stringify(deferredKimiTools)),
+	);
 });
 
 test("strips every Unicode bidirectional formatting control", () => {
@@ -356,6 +381,37 @@ test("restores fork-sensitive controls and prunes the active reporting window", 
 	assert.equal(restored.records.length, 0);
 });
 
+test("reconstructs a long append-only history within the retained window", () => {
+	const entries: SessionEntry[] = [];
+	for (let requestIndex = 1; requestIndex <= 1_000; requestIndex += 1) {
+		const request = extractProviderRequestDiagnostic(
+			{ tools: [{ name: `tool-${requestIndex}` }] },
+			{
+				requestIndex,
+				capturedAt: requestIndex,
+				sessionId: "session",
+			},
+		);
+		entries.push(
+			customEntry(PROVIDER_REQUEST_ENTRY_TYPE, request),
+			customEntry(
+				PROVIDER_RESPONSE_ENTRY_TYPE,
+				createProviderResponseDiagnostic(request, 200, requestIndex + 1),
+			),
+		);
+	}
+
+	const restored = restoreCaptureState(entries, 2_000);
+	assert.equal(restored.records.length, 100);
+	assert.equal(restored.prunedRecordCount, 900);
+	assert.equal(restored.nextRequestIndex, 1_001);
+	assert.deepEqual(
+		restored.records.map(({ requestIndex }) => requestIndex),
+		Array.from({ length: 100 }, (_, index) => index + 901),
+	);
+	assert.ok(restored.records.every(({ response }) => response?.status === 200));
+});
+
 test("marks restored response-less captures unavailable instead of pending", async () => {
 	const harness = createHarness();
 	const legacyRequest = {
@@ -399,7 +455,12 @@ test("marks restored response-less captures unavailable instead of pending", asy
 	);
 	const provider = (shown.details as Record<string, unknown>).providerRequestCapture as {
 		recent: Array<{ responseTelemetry: string }>;
-		performance: { pendingRequestCount: number; unavailableRequestCount: number };
+		performance: {
+			pendingRequestCount: number;
+			unavailableRequestCount: number;
+			requestBytes: number | null;
+			toolDefinitionBytes: number | null;
+		};
 	};
 	assert.deepEqual(
 		provider.recent.map(({ responseTelemetry }) => responseTelemetry),
@@ -407,6 +468,8 @@ test("marks restored response-less captures unavailable instead of pending", asy
 	);
 	assert.equal(provider.performance.pendingRequestCount, 0);
 	assert.equal(provider.performance.unavailableRequestCount, 2);
+	assert.equal(provider.performance.requestBytes, null);
+	assert.equal(provider.performance.toolDefinitionBytes, null);
 	assert.ok(
 		(shown.findings as Array<{ code: string }>).some(
 			({ code }) => code === "response-telemetry-unavailable",
@@ -674,12 +737,18 @@ test("clears unmatched provider requests before attributing responses in a later
 				harness.context,
 			),
 	);
-	const records = (
-		(shown.details as Record<string, unknown>).providerRequestCapture as {
-			recent: Array<{ response: null | { status: number; responseHeaderLatencyMs: number } }>;
-		}
-	).recent;
+	const provider = (shown.details as Record<string, unknown>).providerRequestCapture as {
+		recent: Array<{
+			responseTelemetry: string;
+			response: null | { status: number; responseHeaderLatencyMs: number };
+		}>;
+		performance: { pendingRequestCount: number; unavailableRequestCount: number };
+	};
+	const records = provider.recent;
+	assert.equal(records[0].responseTelemetry, "unavailable");
 	assert.equal(records[0].response, null);
+	assert.equal(provider.performance.pendingRequestCount, 0);
+	assert.equal(provider.performance.unavailableRequestCount, 1);
 	assert.deepEqual(records[1].response, {
 		version: 1,
 		requestIndex: 2,

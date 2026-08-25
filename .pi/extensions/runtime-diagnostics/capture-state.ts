@@ -61,6 +61,7 @@ export function restoreCaptureState(
 	capturedAt: number,
 ): ProviderCaptureState {
 	const state = createCaptureState();
+	const requestsByIndex = new Map<number, ProviderRequestDiagnostic>();
 	let maximumRequestIndex = 0;
 	for (const entry of entries) {
 		if (entry.type !== "custom") continue;
@@ -69,12 +70,14 @@ export function restoreCaptureState(
 			if (!record) continue;
 			maximumRequestIndex = Math.max(maximumRequestIndex, record.requestIndex);
 			state.records.push(record);
+			requestsByIndex.set(record.requestIndex, record);
+			pruneRestoredCaptureState(state, record.capturedAt, requestsByIndex);
 			continue;
 		}
 		if (entry.customType === PROVIDER_RESPONSE_ENTRY_TYPE) {
 			const response = entry.data;
 			if (!isProviderResponseDiagnostic(response)) continue;
-			const request = state.records.find((record) => record.requestIndex === response.requestIndex);
+			const request = requestsByIndex.get(response.requestIndex);
 			if (request) attachProviderResponse(request, response);
 			continue;
 		}
@@ -83,11 +86,22 @@ export function restoreCaptureState(
 		if (!control) continue;
 		const policy = "policy" in control ? control.policy : state.policy;
 		applyControlToState(state, control.action, policy);
-		pruneCaptureState(state, control.capturedAt);
+		pruneRestoredCaptureState(state, control.capturedAt, requestsByIndex);
 	}
 	state.nextRequestIndex = maximumRequestIndex + 1;
 	pruneCaptureState(state, capturedAt);
 	return state;
+}
+
+export function finalizePendingRequests(state: ProviderCaptureState): void {
+	const pendingIndexes = new Set(state.pendingRequestIndexes);
+	for (const record of state.records) {
+		if (pendingIndexes.has(record.requestIndex) && record.responseTelemetry === "pending") {
+			record.responseTelemetry = "unavailable";
+			record.response = null;
+		}
+	}
+	state.pendingRequestIndexes = [];
 }
 
 export function createControlEntry(
@@ -116,6 +130,18 @@ export function pruneCaptureState(state: ProviderCaptureState, capturedAt: numbe
 		retainedIndexes.has(requestIndex),
 	);
 	state.prunedRecordCount += previousLength - state.records.length;
+}
+
+function pruneRestoredCaptureState(
+	state: ProviderCaptureState,
+	capturedAt: number,
+	requestsByIndex: Map<number, ProviderRequestDiagnostic>,
+): void {
+	pruneCaptureState(state, capturedAt);
+	const retainedRecords = new Set(state.records);
+	for (const [requestIndex, record] of requestsByIndex) {
+		if (!retainedRecords.has(record)) requestsByIndex.delete(requestIndex);
+	}
 }
 
 function applyControlToState(
