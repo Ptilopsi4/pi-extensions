@@ -425,9 +425,9 @@ function createFindings(
 		findings.push({
 			severity: "info",
 			code: "response-telemetry-unavailable",
-			message: "The restored provider request has no retained response telemetry.",
+			message: "No response-header telemetry is available for the latest provider request.",
 			recommendation:
-				"Capture a new provider request before interpreting HTTP status or response-header latency.",
+				"Reproduce the request before interpreting HTTP status or response-header latency; if telemetry remains unavailable, inspect provider connectivity and cancellation.",
 		});
 	}
 	if (latest.responseTelemetry === "unsupported") {

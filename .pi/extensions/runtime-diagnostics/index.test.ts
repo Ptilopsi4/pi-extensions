@@ -721,6 +721,27 @@ test("clears unmatched provider requests before attributing responses in a later
 	await harness.emit("before_provider_request", { payload: { tools: [{ name: "read" }] } });
 	await harness.emit("agent_end", { messages: [] });
 
+	const unavailable = parseToolResult(
+		await harness
+			.tool()
+			.execute(
+				"call-unavailable",
+				{ action: "show" },
+				new AbortController().signal,
+				undefined,
+				harness.context,
+			),
+	);
+	const unavailableFinding = (
+		unavailable.findings as Array<{ code: string; message: string }>
+	).find(({ code }) => code === "response-telemetry-unavailable");
+	assert.ok(unavailableFinding);
+	assert.equal(
+		unavailableFinding.message,
+		"No response-header telemetry is available for the latest provider request.",
+	);
+	assert.doesNotMatch(unavailableFinding.message, /restor/iu);
+
 	harness.setTime(3_000);
 	await harness.emit("before_provider_request", { payload: { tools: [{ name: "read" }] } });
 	harness.setTime(3_025);
