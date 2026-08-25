@@ -4,7 +4,7 @@
 	"description": "Pi extension that gives coding agents a persistent session todo widget.",
 	"type": "module",
 	"license": "MIT",
-	"private": true,
+	"private": false,
 	"keywords": [
 		"pi-package",
 		"pi-extension",
