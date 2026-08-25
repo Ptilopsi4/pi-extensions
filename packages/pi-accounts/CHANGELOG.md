@@ -1,5 +1,14 @@
 # @narumitw/pi-accounts
 
+## 0.49.9
+
+### Patch Changes
+
+- 71125e0: Pass a lifecycle-cancellable signal to provider-owned OAuth refresh so expiring account credentials refresh correctly with Pi 0.84.x.
+- Updated dependencies [78276b0]
+- Updated dependencies [dc9802e]
+  - @narumitw/pi-tui-kit@0.58.1
+
 ## 0.49.8
 
 ### Patch Changes

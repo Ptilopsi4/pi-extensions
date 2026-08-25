@@ -1,5 +1,14 @@
 # @narumitw/pi-subagents
 
+## 2.1.2
+
+### Patch Changes
+
+- 6dd7b9e: Persist restored todo, subagent guidance, and required-completion context boundaries as validated branch-local session metadata so reloads and tree navigation preserve stable model-visible prefixes.
+- Updated dependencies [78276b0]
+- Updated dependencies [dc9802e]
+  - @narumitw/pi-tui-kit@0.58.1
+
 ## 2.1.1
 
 ### Patch Changes
