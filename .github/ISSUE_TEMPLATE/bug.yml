@@ -10,7 +10,8 @@ body:
         Thanks for taking the time to report a bug.
         Please search existing issues before submitting a new report.
         Remove API keys, tokens, credentials, and personal data from logs, configuration, and screenshots.
-        When possible, reproduce the issue with extension discovery disabled and only the affected extension loaded.
+        Reproduce the issue with extension discovery disabled and only the affected extension loaded when possible.
+        Run `pi -ne -e npm:@narumitw/pi-statusline` and include the result in the reproduction steps.
 
   - type: input
     id: package
@@ -24,18 +25,11 @@ body:
   - type: input
     id: package-version
     attributes:
-      label: Package version
-      description: Which version of the affected package are you using?
-      placeholder: "For example: 1.2.3"
+      label: Package version and installation source
+      description: Include the exact version and how you installed or loaded the package.
+      placeholder: "For example: 1.2.3 from npm"
     validations:
       required: true
-
-  - type: input
-    id: installation-source
-    attributes:
-      label: Installation source
-      description: How did you install or load the package?
-      placeholder: "For example: npm, GitHub, or local checkout"
 
   - type: input
     id: pi-version
@@ -67,20 +61,14 @@ body:
     id: reproduction
     attributes:
       label: Steps to reproduce
-      description: Provide the smallest set of steps, configuration, or repository that reproduces the problem.
+      description: >-
+        Provide the smallest set of steps, configuration, or repository that reproduces the problem.
+        Include the extension isolation result, or explain why the check is not possible.
       placeholder: |
         1. Install ...
         2. Configure ...
         3. Run ...
         4. Observe ...
-    validations:
-      required: true
-
-  - type: textarea
-    id: isolation
-    attributes:
-      label: Extension isolation result
-      description: Run Pi with extension discovery disabled and only the affected extension loaded, for example `pi -ne -e npm:@narumitw/pi-statusline`. Describe the result, or explain why this check is not possible.
     validations:
       required: true
 
