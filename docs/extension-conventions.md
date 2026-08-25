@@ -120,10 +120,10 @@ These conventions preserve cache-eligible request prefixes but cannot guarantee 
   Provider-visible definitions include `name`, `description`, `parameters`, and `constrainedSampling`; runtime implementations, renderers, and labels do not.
   Remember that `promptSnippet` and `promptGuidelines` rebuild the system prompt even though they are not provider tool-definition fields.
   **Verification:** `Test` the effective system prompt, ordered active names, and normalized provider-visible definitions across consecutive ordinary requests when tool activation or metadata changes.
-- **MUST:** Use Pi's additive deferred-tool-loading path when dynamic loading is required and the selected model and provider support it.
-  Keep the loader active, add tools without removing active tools in the same transition, and normally omit `promptSnippet` and `promptGuidelines` from lazily activated tools.
-  Document fallback behavior because unsupported providers resend the complete active tool list and may invalidate the cached prefix.
-  **Verification:** `Test` additive activation at the loader tool result, `Review` fallback behavior, and run a provider `Smoke` when claiming native deferred loading for a custom model or proxy.
+- **MUST:** Lazy-load extension tools only through Pi's additive deferred-tool-loading path and only when the selected model and provider support Pi's native deferred protocol.
+  Keep the loader active, add tools without removing active tools in the same transition, and omit `promptSnippet` and `promptGuidelines` from lazily activated tools.
+  When native deferred loading is unsupported, expose the configured tools before the next model request and do not use Pi's fallback that resends the complete active tool list after a loader result.
+  **Verification:** `Test` native additive activation at the loader tool result and eager exposure for unsupported models, plus a provider `Smoke` when claiming native deferred loading for a custom model or proxy.
 - **MUST:** Do not rewrite provider message ordering or leading instructions in `before_provider_request` unless provider compatibility requires it.
   Document and test every intentional provider-prefix transition, and treat the first request after the transition as the baseline for the new prefix epoch.
   Correctness and provider compatibility take precedence over cache preservation.

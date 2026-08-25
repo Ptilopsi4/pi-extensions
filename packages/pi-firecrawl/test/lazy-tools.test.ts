@@ -3,8 +3,19 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test, vi } from "vitest";
-import { createMockContext, createMockPi } from "../../../test/support.js";
+import { createMockContext as createBaseMockContext, createMockPi } from "../../../test/support.js";
 import firecrawl from "../src/firecrawl.js";
+
+const NATIVE_DEFERRED_MODEL = {
+	api: "openai-responses",
+	provider: "openai",
+	id: "gpt-5.4",
+	compat: { supportsToolSearch: true },
+};
+
+function createMockContext(overrides: Record<string, unknown> = {}) {
+	return createBaseMockContext({ model: NATIVE_DEFERRED_MODEL, ...overrides });
+}
 
 const NEW_SETTINGS_FILE = "pi-firecrawl.json";
 const SCRAPE_TOOL = "firecrawl_scrape";
@@ -52,7 +63,11 @@ test("firecrawl registers deferred capability tools and one loader", () => {
 		"If FIRECRAWL_API_KEY is missing, report the configuration error instead of retrying repeatedly.",
 	]);
 	assert.ok(mock.commands.has("firecrawl"));
-	assert.deepEqual([...mock.events.keys()].sort(), ["session_shutdown", "session_start"]);
+	assert.deepEqual([...mock.events.keys()].sort(), [
+		"model_select",
+		"session_shutdown",
+		"session_start",
+	]);
 });
 
 test("firecrawl loader schema bounds task queries and result count", () => {
@@ -121,6 +136,49 @@ test("firecrawl loader additively loads crawl workflows without network access",
 		} finally {
 			globalThis.fetch = originalFetch;
 		}
+	});
+});
+
+test("firecrawl eagerly exposes available tools when native deferred loading is unsupported", async () => {
+	await withTempAgentDir(async () => {
+		const firecrawlModule = await importFreshFirecrawl();
+		const unsupportedModel = {
+			api: "openai-responses",
+			provider: "openai",
+			id: "gpt-5.3",
+			compat: { supportsToolSearch: false },
+		};
+		const nativeModel = {
+			api: "openai-responses",
+			provider: "openai",
+			id: "gpt-5.4",
+			compat: { supportsToolSearch: true },
+		};
+		const eager = createMockPi({ activeTools: ["other_tool", ...CAPABILITY_TOOLS] });
+		const eagerContext = createMockContext({ model: unsupportedModel }).ctx;
+		firecrawlModule.default(eager.pi);
+		await eager.events.get("session_start")?.[0]?.({}, eagerContext);
+		assert.deepEqual(eager.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL, ...CAPABILITY_TOOLS]);
+
+		const switched = createMockPi({ activeTools: ["other_tool", ...CAPABILITY_TOOLS] });
+		const nativeContext = createMockContext({ model: nativeModel }).ctx;
+		firecrawlModule.default(switched.pi);
+		await switched.events.get("session_start")?.[0]?.({}, nativeContext);
+		assert.deepEqual(switched.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL]);
+
+		await switched.events.get("model_select")?.[0]?.({ model: unsupportedModel }, nativeContext);
+		assert.deepEqual(switched.rawPi.getActiveTools(), [
+			"other_tool",
+			LOAD_TOOL,
+			...CAPABILITY_TOOLS,
+		]);
+
+		await switched.events.get("model_select")?.[0]?.({ model: nativeModel }, nativeContext);
+		assert.deepEqual(switched.rawPi.getActiveTools(), [
+			"other_tool",
+			LOAD_TOOL,
+			...CAPABILITY_TOOLS,
+		]);
 	});
 });
 
