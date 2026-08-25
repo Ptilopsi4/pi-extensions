@@ -21,6 +21,7 @@ import {
 	createOAuthInteraction,
 	loginWithOAuthUI,
 } from "../src/oauth.js";
+import { OAUTH_CREDENTIAL_SOURCE_CHANNEL } from "../src/oauth-credential-source.js";
 import { RuntimeAuthCoordinator } from "../src/runtime-auth.js";
 import { InMemoryAccountStorageBackend } from "../src/storage.js";
 
@@ -115,6 +116,22 @@ function runtimeHarness(mock: ReturnType<typeof createMockPi>) {
 		},
 	};
 	return { keys, registry, runtime };
+}
+
+function collectCredentialOffers(
+	mock: ReturnType<typeof createMockPi>,
+	session: object,
+	provider: string,
+): StoredOAuthCredential[] {
+	const offers: StoredOAuthCredential[] = [];
+	mock.eventBus.emit(OAUTH_CREDENTIAL_SOURCE_CHANNEL, {
+		session,
+		provider,
+		offer(candidate: StoredOAuthCredential) {
+			offers.push(candidate);
+		},
+	});
+	return offers;
 }
 
 function createInteractiveAccountContext(
@@ -940,6 +957,218 @@ test("login selects a provider default model only when the current model is unkn
 	await mock.commands.get("accounts")?.handler("ignored", ctx);
 
 	assert.equal(mock.setModels.length, 1);
+});
+
+test("credential source offers a refreshed active credential as defensive session-bound clones", async () => {
+	const store = new AccountStore(new InMemoryAccountStorageBackend());
+	await store.write({
+		version: 1,
+		providers: {
+			"github-copilot": {
+				active: "work",
+				accounts: {
+					work: {
+						...credential("expired", { availableModelIds: ["allowed"] }),
+						expires: 1,
+					},
+				},
+			},
+		},
+	});
+	const copilot = fakeProvider("github-copilot");
+	copilot.oauth.refresh = async (current) => ({
+		...current,
+		access: "access-refreshed",
+		expires: Date.now() + 60 * 60 * 1000,
+	});
+	const mock = createMockPi();
+	accountsExtension(mock.pi, {
+		store,
+		providers: [fakeProvider("openai-codex"), fakeProvider("anthropic"), copilot],
+	});
+	const { registry } = runtimeHarness(mock);
+	const sessionManager = {};
+	const { ctx } = createMockContext({
+		model: { provider: "github-copilot", id: "allowed" },
+		modelRegistry: registry,
+		sessionManager,
+	});
+
+	assert.deepEqual(collectCredentialOffers(mock, sessionManager, "github-copilot"), []);
+	await mock.events.get("session_start")?.[0]?.({}, ctx);
+
+	const first = collectCredentialOffers(mock, sessionManager, "github-copilot");
+	assert.equal(first.length, 1);
+	const firstOffer = first[0];
+	assert.ok(firstOffer);
+	assert.equal(firstOffer.access, "access-refreshed");
+	firstOffer.access = "caller-mutated";
+	(firstOffer.availableModelIds as string[]).push("caller-mutated");
+	const second = collectCredentialOffers(mock, sessionManager, "github-copilot");
+	assert.equal(second[0]?.access, "access-refreshed");
+	assert.deepEqual(second[0]?.availableModelIds, ["allowed"]);
+	assert.deepEqual(collectCredentialOffers(mock, {}, "github-copilot"), []);
+	assert.deepEqual(collectCredentialOffers(mock, sessionManager, "anthropic"), []);
+
+	assert.doesNotThrow(() => {
+		mock.eventBus.emit(OAUTH_CREDENTIAL_SOURCE_CHANNEL, {
+			session: sessionManager,
+			provider: "github-copilot",
+			offer() {
+				throw new Error("consumer rejected offer");
+			},
+		});
+	});
+	const malformed = Object.create(null) as Record<string, unknown>;
+	Object.defineProperty(malformed, "session", {
+		get() {
+			throw new Error("malformed request");
+		},
+	});
+	assert.doesNotThrow(() => mock.eventBus.emit(OAUTH_CREDENTIAL_SOURCE_CHANNEL, malformed));
+
+	await store.updateProvider("github-copilot", (state) => ({ ...state, active: undefined }));
+	await mock.events.get("model_select")?.[0]?.(
+		{ model: { provider: "github-copilot", id: "allowed" } },
+		ctx,
+	);
+	assert.deepEqual(collectCredentialOffers(mock, sessionManager, "github-copilot"), []);
+	await mock.events.get("session_shutdown")?.[0]?.({}, ctx);
+	assert.deepEqual(collectCredentialOffers(mock, sessionManager, "github-copilot"), []);
+});
+
+test("credential source suppresses pending, stale, failed-closed, and replaced activations", async () => {
+	const store = new AccountStore(new InMemoryAccountStorageBackend());
+	await store.write({
+		version: 1,
+		providers: {
+			"github-copilot": {
+				active: "first",
+				accounts: {
+					first: credential("first", { availableModelIds: ["allowed"] }),
+					second: credential("second", { availableModelIds: ["allowed"] }),
+				},
+			},
+		},
+	});
+	let releaseFirst!: () => void;
+	const firstBlocked = new Promise<void>((resolve) => {
+		releaseFirst = resolve;
+	});
+	let notifyFirst!: () => void;
+	const firstStarted = new Promise<void>((resolve) => {
+		notifyFirst = resolve;
+	});
+	const copilot = fakeProvider("github-copilot");
+	copilot.oauth.toAuth = async (current) => {
+		if (current.access === "access-first") {
+			notifyFirst();
+			await firstBlocked;
+		}
+		if (current.access === "access-failing") throw new Error("conversion failed");
+		return { apiKey: current.access };
+	};
+	const mock = createMockPi();
+	accountsExtension(mock.pi, {
+		store,
+		providers: [fakeProvider("openai-codex"), fakeProvider("anthropic"), copilot],
+	});
+	const { registry } = runtimeHarness(mock);
+	const sessionManager = {};
+	const { ctx } = createMockContext({
+		model: { provider: "github-copilot", id: "allowed" },
+		modelRegistry: registry,
+		sessionManager,
+	});
+
+	const older = mock.events.get("session_start")?.[0]?.({}, ctx);
+	await firstStarted;
+	assert.deepEqual(collectCredentialOffers(mock, sessionManager, "github-copilot"), []);
+	await store.updateProvider("github-copilot", (state) => ({ ...state, active: "second" }));
+	await mock.events.get("before_agent_start")?.[0]?.({}, ctx);
+	assert.equal(
+		collectCredentialOffers(mock, sessionManager, "github-copilot")[0]?.access,
+		"access-second",
+	);
+	releaseFirst();
+	await older;
+	assert.equal(
+		collectCredentialOffers(mock, sessionManager, "github-copilot")[0]?.access,
+		"access-second",
+	);
+
+	await store.updateProvider("github-copilot", (state) => ({
+		...state,
+		active: "failing",
+		accounts: { ...state.accounts, failing: credential("failing") },
+	}));
+	await mock.events.get("before_agent_start")?.[0]?.({}, ctx);
+	assert.deepEqual(collectCredentialOffers(mock, sessionManager, "github-copilot"), []);
+
+	const replacement = createMockContext({
+		model: { provider: "github-copilot", id: "allowed" },
+		modelRegistry: registry,
+		sessionManager: {},
+	}).ctx;
+	await mock.events.get("session_start")?.[0]?.({}, replacement);
+	assert.deepEqual(collectCredentialOffers(mock, sessionManager, "github-copilot"), []);
+});
+
+test("session replacement invalidates a pending credential offer before old work resumes", async () => {
+	const store = new AccountStore(new InMemoryAccountStorageBackend());
+	await store.write({
+		version: 1,
+		providers: {
+			"github-copilot": {
+				active: "work",
+				accounts: { work: credential("work") },
+			},
+		},
+	});
+	let releaseFirst!: () => void;
+	const firstBlocked = new Promise<void>((resolve) => {
+		releaseFirst = resolve;
+	});
+	let notifyFirst!: () => void;
+	const firstStarted = new Promise<void>((resolve) => {
+		notifyFirst = resolve;
+	});
+	let conversions = 0;
+	const copilot = fakeProvider("github-copilot");
+	copilot.oauth.toAuth = async (current) => {
+		conversions += 1;
+		if (conversions === 1) {
+			notifyFirst();
+			await firstBlocked;
+		}
+		return { apiKey: current.access };
+	};
+	const mock = createMockPi();
+	accountsExtension(mock.pi, {
+		store,
+		providers: [fakeProvider("openai-codex"), fakeProvider("anthropic"), copilot],
+	});
+	const { registry } = runtimeHarness(mock);
+	const oldSession = {};
+	const newSession = {};
+	const oldContext = createMockContext({ modelRegistry: registry, sessionManager: oldSession }).ctx;
+	const newContext = createMockContext({ modelRegistry: registry, sessionManager: newSession }).ctx;
+
+	const oldStart = mock.events.get("session_start")?.[0]?.({}, oldContext);
+	await firstStarted;
+	await mock.events.get("session_start")?.[0]?.({}, newContext);
+	assert.deepEqual(collectCredentialOffers(mock, oldSession, "github-copilot"), []);
+	assert.equal(
+		collectCredentialOffers(mock, newSession, "github-copilot")[0]?.access,
+		"access-work",
+	);
+	releaseFirst();
+	await oldStart;
+	assert.deepEqual(collectCredentialOffers(mock, oldSession, "github-copilot"), []);
+	assert.equal(
+		collectCredentialOffers(mock, newSession, "github-copilot")[0]?.access,
+		"access-work",
+	);
 });
 
 test("providers without account-specific overlays leave existing registrations untouched", async () => {
