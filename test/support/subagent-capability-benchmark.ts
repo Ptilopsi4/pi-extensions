@@ -2,11 +2,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export const SUBAGENT_CAPABILITY_BENCHMARK_VERSION =
-	"pi-extensions:subagent-capability-benchmark:v2" as const;
+	"pi-extensions:subagent-capability-benchmark:v3" as const;
 export const CAPABILITY_RESULT_PREFIX = "CAPABILITY_BENCHMARK_RESULT:";
-export const CAPABILITY_BENCHMARK_ARMS = ["parent-only", "v1-sync", "v1-async", "v2-job"] as const;
+export const CAPABILITY_BENCHMARK_ARMS = ["parent-only", "v1-sync", "v1-async", "v3-job"] as const;
 export const CAPABILITY_BENCHMARK_JOB_VERSIONS = ["v2", "v3"] as const;
-const CAPABILITY_BENCHMARK_V3_ARMS = ["parent-only", "v1-sync", "v1-async", "v3-job"] as const;
+const CAPABILITY_BENCHMARK_V2_ARMS = ["parent-only", "v1-sync", "v1-async", "v2-job"] as const;
 export const CAPABILITY_BENCHMARK_THINKING_LEVELS = [
 	"off",
 	"minimal",
@@ -20,7 +20,7 @@ export const CAPABILITY_BENCHMARK_THINKING_LEVELS = [
 export type CapabilityBenchmarkJobVersion = (typeof CAPABILITY_BENCHMARK_JOB_VERSIONS)[number];
 export type CapabilityBenchmarkArm =
 	| (typeof CAPABILITY_BENCHMARK_ARMS)[number]
-	| (typeof CAPABILITY_BENCHMARK_V3_ARMS)[number];
+	| (typeof CAPABILITY_BENCHMARK_V2_ARMS)[number];
 export type CapabilityBenchmarkThinkingLevel =
 	(typeof CAPABILITY_BENCHMARK_THINKING_LEVELS)[number];
 export type CapabilityBenchmarkOutcome =
@@ -288,7 +288,7 @@ export function capabilityBenchmarkVersion(
 export function capabilityBenchmarkArms(
 	jobVersion: CapabilityBenchmarkJobVersion,
 ): readonly CapabilityBenchmarkArm[] {
-	return jobVersion === "v2" ? CAPABILITY_BENCHMARK_ARMS : CAPABILITY_BENCHMARK_V3_ARMS;
+	return jobVersion === "v2" ? CAPABILITY_BENCHMARK_V2_ARMS : CAPABILITY_BENCHMARK_ARMS;
 }
 
 export function capabilityMatrix(jobVersion: CapabilityBenchmarkJobVersion) {
@@ -311,7 +311,7 @@ export function parseCapabilityBenchmarkArgs(args: readonly string[]): Capabilit
 	let piCommand = "pi";
 	let outputPath: string | undefined;
 	let workspace: string | undefined;
-	let jobVersion: CapabilityBenchmarkJobVersion = "v2";
+	let jobVersion: CapabilityBenchmarkJobVersion = "v3";
 	let v1Extension: string | undefined;
 	let v2Extension: string | undefined;
 	let v3Extension: string | undefined;
@@ -384,6 +384,9 @@ export function parseCapabilityBenchmarkArgs(args: readonly string[]): Capabilit
 	if (jobVersion === "v2" && v3Extension) {
 		throw new Error("--v3-extension requires --job-version v3");
 	}
+	if (jobVersion === "v2" && !v2Extension) {
+		throw new Error("--job-version v2 requires --v2-extension because v2 is historical");
+	}
 	if (jobVersion === "v3" && v2Extension) {
 		throw new Error("--v2-extension requires --job-version v2");
 	}
@@ -407,7 +410,7 @@ export function parseCapabilityBenchmarkArgs(args: readonly string[]): Capabilit
 
 export function createCapabilityTrialPlan(
 	repetitions: number,
-	jobVersion: CapabilityBenchmarkJobVersion = "v2",
+	jobVersion: CapabilityBenchmarkJobVersion = "v3",
 ): CapabilityTrialPlan[] {
 	const plan: CapabilityTrialPlan[] = [];
 	const arms = capabilityBenchmarkArms(jobVersion);
@@ -603,7 +606,7 @@ export function trialSucceeded(
 
 export function summarizeCapabilityBenchmark(
 	records: readonly CapabilityTrialRecord[],
-	jobVersion: CapabilityBenchmarkJobVersion = "v2",
+	jobVersion: CapabilityBenchmarkJobVersion = "v3",
 ) {
 	const arms = capabilityBenchmarkArms(jobVersion);
 	const summarize = (arm: CapabilityBenchmarkArm): CapabilityArmSummary => {
