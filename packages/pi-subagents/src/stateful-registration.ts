@@ -60,6 +60,7 @@ import {
 	validateManageParams,
 } from "./stateful-tool-params.js";
 import { MAX_TASK_NAME_LENGTH } from "./task-path.js";
+import { grammarSafeToolObject } from "./tool-schema-compatibility.js";
 import { MAX_SUBAGENT_TOOL_CALLS, MAX_SUBAGENT_TURNS } from "./turn-budget.js";
 import type { UsageRecordingController } from "./usage-recording.js";
 import type { WorkspaceManager } from "./workspace.js";
@@ -694,7 +695,7 @@ export function registerStatefulSubagents(
 		description: appendAgentCatalog(baseSpawnDescription(), agentCatalog),
 		promptSnippet: "Start a reusable detached subagent; completion is delivered asynchronously",
 		promptGuidelines: createSpawnPromptGuidelines(completionDelivery, blockingEnabled),
-		parameters: Type.Object({
+		parameters: grammarSafeToolObject({
 			agent: Type.String({ minLength: 1 }),
 			taskName: Type.Optional(
 				Type.String({
