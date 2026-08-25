@@ -151,7 +151,17 @@ test("stays hidden by default, then previews and finalizes detailed metrics when
 	const live = renderWidget(current.widgets.at(-1));
 	assert.match(live?.join("\n") ?? "", /LIVE.*hit 80\.0%/s);
 	const updateCount = current.widgets.length;
-	await harness.emit("message_update", { message: first, assistantMessageEvent: {} }, current.ctx);
+	const outputDelta = assistant(200, 800, 0, {
+		content: [{ type: "text", text: "more generated text" }],
+	});
+	outputDelta.usage.output = 20;
+	outputDelta.usage.totalTokens += 10;
+	outputDelta.usage.cost.output = (20 * RATES.output) / 1_000_000;
+	await harness.emit(
+		"message_update",
+		{ message: outputDelta, assistantMessageEvent: {} },
+		current.ctx,
+	);
 	assert.equal(current.widgets.length, updateCount);
 
 	await harness.emit("message_end", { message: first }, current.ctx);
@@ -199,34 +209,48 @@ test("clears a partial live preview if an agent run ends without a final message
 	);
 });
 
-test("restores active-branch history and resets comparison after compaction", async () => {
+test("restores active-branch history and resets comparison at the compaction boundary", async () => {
 	const first = assistant(200, 800);
+	const second = assistant(400, 600, 0, { timestamp: 2_000 });
 	const harness = createHarness();
-	const current = createContext("tui", [messageEntry(first)]);
+	const current = createContext("tui", [messageEntry(first), messageEntry(second)]);
 	await harness.emit("session_start", {}, current.ctx);
 	await harness.command("", current.ctx);
-	assert.match(renderWidget(current.widgets.at(-1))?.join("\n") ?? "", /request #1.*hit 80\.0%/s);
+	assert.match(renderWidget(current.widgets.at(-1))?.join("\n") ?? "", /Reuse vs #1/);
+
+	current.setEntries([
+		messageEntry(first),
+		messageEntry(second),
+		{ type: "compaction", id: "compact", parentId: null } as SessionEntry,
+	]);
+	await harness.emit("session_compact", {}, current.ctx);
+	let rendered = renderWidget(current.widgets.at(-1), 120)?.join("\n") ?? "";
+	assert.match(rendered, /request #2.*hit 60\.0%/s);
+	assert.match(rendered, /no comparable request in the current cache epoch/);
 
 	const afterCompaction = assistant(900, 100, 0, { timestamp: 4_000 });
 	current.setEntries([
 		messageEntry(first),
+		messageEntry(second),
 		{ type: "compaction", id: "compact", parentId: null } as SessionEntry,
 		messageEntry(afterCompaction),
 	]);
 	await harness.emit("session_compact", {}, current.ctx);
-	const rendered = renderWidget(current.widgets.at(-1), 120)?.join("\n") ?? "";
-	assert.match(rendered, /request #2.*hit 10\.0%/s);
+	rendered = renderWidget(current.widgets.at(-1), 120)?.join("\n") ?? "";
+	assert.match(rendered, /request #3.*hit 10\.0%/s);
 	assert.match(rendered, /no comparable request in the current cache epoch/);
-	assert.match(rendered, /Session {2}2 req/);
-	assert.match(rendered, /re-billed 0/);
+	assert.match(rendered, /Session {2}3 req/);
+	assert.match(rendered, /re-billed\s+400/);
 });
 
-test("ignores stale replacement-session events and clears only the owned widget", async () => {
+test("clears replacement UI and ignores stale replacement-session events", async () => {
 	const harness = createHarness();
 	const previous = createContext();
 	const current = createContext();
 	await harness.emit("session_start", {}, previous.ctx);
+	await harness.command("", previous.ctx);
 	await harness.emit("session_start", {}, current.ctx);
+	assert.deepEqual(current.widgets.at(-1), [WIDGET_KEY, undefined, undefined]);
 	await harness.command("", current.ctx);
 	const currentCount = current.widgets.length;
 

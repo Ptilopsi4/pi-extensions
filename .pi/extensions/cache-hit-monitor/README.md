@@ -19,7 +19,9 @@ The command accepts no arguments and is available in TUI and RPC modes.
 - `re-billed` estimates reusable-prefix tokens not covered by the current `cacheRead` count.
 - `cache saved` estimates the price difference between uncached input and cache-read pricing.
 - `miss premium` estimates the extra price of re-billed tokens compared with cache-read pricing.
+- `start gap` is the elapsed time between the previous and current provider request start timestamps.
 - `Session` reports weighted active-branch totals and does not average request percentages.
+- Session totals include provider usage reported by compaction and branch-summary calls.
 - `Trend` shows the latest eight request hit rates from oldest to newest.
 
 ## Runtime behavior
@@ -35,5 +37,5 @@ It does not add model-visible tools, messages, system instructions, or provider 
 
 All values depend on provider-reported Pi usage fields and can remain unavailable when a provider omits cache accounting.
 `re-billed` compares token counts and cannot prove which exact serialized prefix bytes the provider cached.
-Cost values are estimates based on reported usage costs or the matching Pi model rates, and subscription billing can differ.
+Cost values use reported usage costs with matching Pi model rates as component fallbacks, and subscription billing can differ.
 Cache writes are included in the repository-standard hit-rate denominator but are not labeled as uncached input.

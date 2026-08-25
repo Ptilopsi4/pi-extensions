@@ -78,7 +78,7 @@ test("calculates hit rate, downward loss, re-billed tokens, and estimated cost i
 	assert.ok(Math.abs((comparison.estimatedMissPremium ?? 0) - 0.0044) < 0.000_000_1);
 	assert.equal(comparison.promptTokenDelta, 100);
 	assert.equal(comparison.cacheReadDelta, -200);
-	assert.equal(comparison.idleMs, 2_500);
+	assert.equal(comparison.requestStartGapMs, 2_500);
 });
 
 test("uses weighted session totals and excludes cross-compaction comparisons", () => {
@@ -98,25 +98,91 @@ test("uses weighted session totals and excludes cross-compaction comparisons", (
 	assert.equal(compareCacheSamples(second, afterCompaction, 2), null);
 });
 
-test("reconstructs cache epochs from the active branch", () => {
+test("reconstructs cache epochs and includes summarization usage in session totals", () => {
+	const summaryMessage = assistant(100, 900, 0);
 	const entries = [
 		messageEntry(assistant(200, 800, 0)),
-		{ type: "compaction", id: "compact", parentId: null },
+		{
+			type: "compaction",
+			id: "compact",
+			parentId: null,
+			usage: summaryMessage.usage,
+		},
+		{
+			type: "branch_summary",
+			id: "branch-summary",
+			parentId: null,
+			usage: summaryMessage.usage,
+		},
 		messageEntry(assistant(900, 100, 0, { timestamp: 2_000 })),
 	] as SessionEntry[];
 	const restored = collectCacheSamples(entries, () => RATES);
 
-	assert.equal(restored.currentEpoch, 1);
+	assert.equal(restored.currentEpoch, 2);
+	assert.equal(restored.summaryRecords.length, 2);
 	assert.deepEqual(
 		restored.samples.map(({ epoch, hitRatePercent }) => [epoch, hitRatePercent]),
 		[
 			[0, 80],
-			[1, 10],
+			[2, 10],
 		],
 	);
-	const view = createCacheMonitorView(restored.samples);
+	const view = createCacheMonitorView(restored.samples, undefined, {
+		activeEpoch: restored.currentEpoch,
+		summaryRecords: restored.summaryRecords,
+	});
 	assert.equal(view.comparison, null);
-	assert.equal(view.session.requestCount, 2);
+	assert.equal(view.session.requestCount, 4);
+	assert.equal(view.session.input, 1_300);
+	assert.equal(view.session.cacheRead, 2_700);
+	assert.ok(Math.abs((view.session.promptCost ?? 0) - 0.0157) < 0.000_000_1);
+	assert.ok(Math.abs((view.session.estimatedSavings ?? 0) - 0.0243) < 0.000_000_1);
+});
+
+test("suppresses a pre-boundary comparison until the active epoch receives usage", () => {
+	const first = createCacheSample(assistant(200, 800, 0), 0, RATES);
+	const second = createCacheSample(assistant(400, 600, 0, { timestamp: 2_000 }), 0, RATES);
+	assert.ok(first && second);
+
+	assert.ok(createCacheMonitorView([first, second], undefined, { activeEpoch: 0 }).comparison);
+	assert.equal(
+		createCacheMonitorView([first, second], undefined, { activeEpoch: 1 }).comparison,
+		null,
+	);
+});
+
+test("keeps raw model identities for comparison and sanitizes only rendered labels", () => {
+	const sharedPrefix = "x".repeat(70);
+	const previous = createCacheSample(
+		assistant(200, 800, 0, { provider: `${sharedPrefix}a` }),
+		0,
+		RATES,
+	);
+	const current = createCacheSample(
+		assistant(200, 800, 0, { provider: `${sharedPrefix}b`, timestamp: 2_000 }),
+		0,
+		RATES,
+	);
+	assert.ok(previous && current);
+
+	assert.notEqual(previous.provider, current.provider);
+	assert.equal(sanitizeDisplayLabel(previous.provider), sanitizeDisplayLabel(current.provider));
+	assert.equal(compareCacheSamples(previous, current, 1)?.modelChanged, true);
+});
+
+test("uses model rates when reported prompt-cost components are unavailable", () => {
+	const message = assistant(200, 800, 100);
+	message.usage.cost = {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		total: 0,
+	};
+
+	const sample = createCacheSample(message, 0, RATES);
+	assert.ok(sample);
+	assert.ok(Math.abs((sample.promptCost ?? 0) - 0.0048) < 0.000_000_1);
 });
 
 test("formats a detailed live report with both rate and token loss", () => {
@@ -130,7 +196,10 @@ test("formats a detailed live report with both rate and token loss", () => {
 	assert.match(lines[0] ?? "", /Prompt cache · LIVE · request #2/);
 	assert.match(lines[1] ?? "", /hit 54\.5%.*Δ -25\.5 pp.*loss 25\.5 pp.*uncached 36\.4%/);
 	assert.match(lines[2] ?? "", /prompt 1\.1k.*read 600.*write 100.*uncached 400/);
-	assert.match(lines[3] ?? "", /eligible 1k.*re-billed 400 \(40\.0%\).*read Δ -200/);
+	assert.match(
+		lines[3] ?? "",
+		/eligible 1k.*re-billed 400 \(40\.0%\).*read Δ -200.*start gap 2\.5s/,
+	);
 	assert.match(lines[4] ?? "", /cache saved ~\$0\.0054.*miss premium ~\$0\.0044/);
 	assert.match(lines[5] ?? "", /Session {2}2 req.*re-billed 400/);
 	assert.match(lines[6] ?? "", /80\.0% → 54\.5%/);

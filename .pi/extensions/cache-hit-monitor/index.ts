@@ -4,6 +4,8 @@ import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works
 import {
 	type CacheMonitorView,
 	type CacheSample,
+	type CacheUsageRecord,
+	cacheSamplesEqual,
 	collectCacheSamples,
 	createCacheMonitorView,
 	createCacheSample,
@@ -17,6 +19,7 @@ export const WIDGET_KEY = "cache-hit-monitor";
 export default function cacheHitMonitor(pi: ExtensionAPI): void {
 	let activeSession: ExtensionContext["sessionManager"] | undefined;
 	let finalizedSamples: CacheSample[] = [];
+	let summaryRecords: CacheUsageRecord[] = [];
 	let currentEpoch = 0;
 	let streamingSample: CacheSample | undefined;
 	let publishedSignature: string | undefined;
@@ -32,6 +35,7 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 			resolveCostRates(ctx, provider, model),
 		);
 		finalizedSamples = restored.samples;
+		summaryRecords = restored.summaryRecords;
 		currentEpoch = restored.currentEpoch;
 		streamingSample = undefined;
 	};
@@ -50,7 +54,10 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 
 	const publish = (ctx: ExtensionContext): void => {
 		if (!visible || !ctx.hasUI || !ownsSession(ctx)) return;
-		const view = createCacheMonitorView(finalizedSamples, streamingSample);
+		const view = createCacheMonitorView(finalizedSamples, streamingSample, {
+			activeEpoch: currentEpoch,
+			summaryRecords,
+		});
 		const lines = formatMonitorLines(view);
 		const signature = JSON.stringify(lines);
 		if (signature === publishedSignature) return;
@@ -94,6 +101,9 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_start", (_event, ctx) => {
+		if (visible && activeSession !== ctx.sessionManager && ctx.hasUI) {
+			ctx.ui.setWidget(WIDGET_KEY, undefined);
+		}
 		activeSession = ctx.sessionManager;
 		visible = false;
 		publishedSignature = undefined;
@@ -109,7 +119,7 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 	pi.on("message_update", (event, ctx) => {
 		if (!ownsSession(ctx) || event.message.role !== "assistant") return;
 		const sample = sampleMessage(event.message, ctx);
-		if (!sample) return;
+		if (!sample || (streamingSample && cacheSamplesEqual(streamingSample, sample))) return;
 		streamingSample = sample;
 		publish(ctx);
 	});
@@ -145,6 +155,7 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 		clearWidget(ctx);
 		activeSession = undefined;
 		finalizedSamples = [];
+		summaryRecords = [];
 		streamingSample = undefined;
 		visible = false;
 	});

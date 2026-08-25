@@ -1,23 +1,26 @@
-import type { AssistantMessage, ModelCostRates } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ModelCostRates, Usage } from "@earendil-works/pi-ai";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 
 const TREND_SAMPLE_COUNT = 8;
 const MAX_LABEL_LENGTH = 60;
 
-export interface CacheSample {
-	epoch: number;
-	timestamp: number;
-	provider: string;
-	model: string;
+export interface CacheUsageRecord {
 	input: number;
 	cacheRead: number;
 	cacheWrite: number;
 	promptTokens: number;
 	hitRatePercent: number;
 	uncachedRatePercent: number;
-	promptCost: number;
+	promptCost: number | null;
 	estimatedSavings: number | null;
+}
+
+export interface CacheSample extends CacheUsageRecord {
+	epoch: number;
+	timestamp: number;
+	provider: string;
+	model: string;
 	inputUnitCost: number | null;
 	cacheReadUnitCost: number | null;
 	paidPromptUnitCost: number | null;
@@ -34,7 +37,7 @@ export interface CacheComparison {
 	rebilledPercent: number | null;
 	estimatedMissPremium: number | null;
 	modelChanged: boolean;
-	idleMs: number;
+	requestStartGapMs: number;
 }
 
 export interface CacheAggregate {
@@ -44,7 +47,7 @@ export interface CacheAggregate {
 	cacheWrite: number;
 	promptTokens: number;
 	hitRatePercent: number | null;
-	promptCost: number;
+	promptCost: number | null;
 	estimatedSavings: number | null;
 	rebilledTokens: number;
 	estimatedMissPremium: number | null;
@@ -68,7 +71,13 @@ export interface MonitorLine {
 
 export interface CollectedCacheSamples {
 	samples: CacheSample[];
+	summaryRecords: CacheUsageRecord[];
 	currentEpoch: number;
+}
+
+export interface CacheMonitorViewOptions {
+	activeEpoch?: number;
+	summaryRecords?: readonly CacheUsageRecord[];
 }
 
 type CostRateResolver = (provider: string, model: string) => ModelCostRates | undefined;
@@ -78,9 +87,12 @@ export function collectCacheSamples(
 	resolveCostRates: CostRateResolver = () => undefined,
 ): CollectedCacheSamples {
 	const samples: CacheSample[] = [];
+	const summaryRecords: CacheUsageRecord[] = [];
 	let currentEpoch = 0;
 	for (const entry of entries) {
 		if (entry.type === "compaction" || entry.type === "branch_summary") {
+			const summaryRecord = entry.usage ? createCacheUsageRecord(entry.usage) : null;
+			if (summaryRecord) summaryRecords.push(summaryRecord);
 			currentEpoch += 1;
 			continue;
 		}
@@ -92,7 +104,7 @@ export function collectCacheSamples(
 		);
 		if (sample) samples.push(sample);
 	}
-	return { samples, currentEpoch };
+	return { samples, summaryRecords, currentEpoch };
 }
 
 export function createCacheSample(
@@ -100,57 +112,80 @@ export function createCacheSample(
 	epoch: number,
 	costRates?: ModelCostRates,
 ): CacheSample | null {
-	const input = finiteNumber(message.usage.input);
-	const cacheRead = finiteNumber(message.usage.cacheRead);
-	const cacheWrite = finiteNumber(message.usage.cacheWrite);
-	const promptTokens = input + cacheRead + cacheWrite;
-	if (promptTokens <= 0) return null;
+	const usageRecord = createCacheUsageRecord(message.usage, costRates);
+	if (!usageRecord) return null;
 
-	const inputCost = finiteNumber(message.usage.cost?.input);
-	const cacheReadCost = finiteNumber(message.usage.cost?.cacheRead);
-	const cacheWriteCost = finiteNumber(message.usage.cost?.cacheWrite);
-	const inputUnitCost = unitCost(input, inputCost, costRates?.input);
-	const cacheReadUnitCost = unitCost(cacheRead, cacheReadCost, costRates?.cacheRead);
-	const paidPromptTokens = input + cacheWrite;
-	const paidPromptCost = inputCost + cacheWriteCost;
-	const paidPromptUnitCost = unitCost(
-		paidPromptTokens,
-		paidPromptCost,
-		costRates ? weightedPaidRate(input, cacheWrite, costRates) : undefined,
+	const inputUnitCost = unitCost(
+		usageRecord.input,
+		finiteNumber(message.usage.cost?.input),
+		costRates?.input,
 	);
-	const pricingKnown = costRates !== undefined || inputCost + cacheReadCost + cacheWriteCost > 0;
+	const cacheReadUnitCost = unitCost(
+		usageRecord.cacheRead,
+		finiteNumber(message.usage.cost?.cacheRead),
+		costRates?.cacheRead,
+	);
+	const paidPromptTokens = usageRecord.input + usageRecord.cacheWrite;
+	const paidPromptCost = sumKnownCosts([
+		componentCost(usageRecord.input, finiteNumber(message.usage.cost?.input), costRates?.input),
+		componentCost(
+			usageRecord.cacheWrite,
+			finiteNumber(message.usage.cost?.cacheWrite),
+			costRates?.cacheWrite,
+		),
+	]);
+	const paidPromptUnitCost =
+		paidPromptCost === null
+			? null
+			: unitCost(
+					paidPromptTokens,
+					paidPromptCost,
+					costRates
+						? weightedPaidRate(usageRecord.input, usageRecord.cacheWrite, costRates)
+						: undefined,
+				);
 
 	return {
+		...usageRecord,
 		epoch,
 		timestamp: finiteNumber(message.timestamp),
-		provider: sanitizeDisplayLabel(message.provider),
-		model: sanitizeDisplayLabel(message.model),
-		input,
-		cacheRead,
-		cacheWrite,
-		promptTokens,
-		hitRatePercent: (cacheRead / promptTokens) * 100,
-		uncachedRatePercent: (input / promptTokens) * 100,
-		promptCost: inputCost + cacheReadCost + cacheWriteCost,
-		estimatedSavings:
-			pricingKnown && inputUnitCost !== null && cacheReadUnitCost !== null
-				? cacheRead * Math.max(0, inputUnitCost - cacheReadUnitCost)
-				: null,
+		provider: message.provider,
+		model: message.model,
 		inputUnitCost,
 		cacheReadUnitCost,
 		paidPromptUnitCost,
 	};
 }
 
+export function cacheSamplesEqual(left: CacheSample, right: CacheSample): boolean {
+	return (
+		left.epoch === right.epoch &&
+		left.timestamp === right.timestamp &&
+		left.provider === right.provider &&
+		left.model === right.model &&
+		left.input === right.input &&
+		left.cacheRead === right.cacheRead &&
+		left.cacheWrite === right.cacheWrite &&
+		left.promptCost === right.promptCost &&
+		left.estimatedSavings === right.estimatedSavings &&
+		left.inputUnitCost === right.inputUnitCost &&
+		left.cacheReadUnitCost === right.cacheReadUnitCost &&
+		left.paidPromptUnitCost === right.paidPromptUnitCost
+	);
+}
+
 export function createCacheMonitorView(
 	finalizedSamples: readonly CacheSample[],
 	streamingSample?: CacheSample,
+	options: CacheMonitorViewOptions = {},
 ): CacheMonitorView {
 	const samples = streamingSample ? [...finalizedSamples, streamingSample] : [...finalizedSamples];
 	const latest = samples.at(-1) ?? null;
-	const previousIndex = latest
-		? findPreviousComparableIndex(samples, samples.length - 1, latest.epoch)
-		: -1;
+	const activeEpoch = options.activeEpoch ?? latest?.epoch;
+	const previousIndex =
+		latest && latest.epoch === activeEpoch
+			? findPreviousComparableIndex(samples, samples.length - 1, latest.epoch)
+			: -1;
 	const previous = previousIndex >= 0 ? samples[previousIndex] : undefined;
 
 	return {
@@ -159,7 +194,7 @@ export function createCacheMonitorView(
 		latest,
 		comparison:
 			latest && previous ? compareCacheSamples(previous, latest, previousIndex + 1) : null,
-		session: aggregateCacheSamples(samples),
+		session: aggregateCacheSamples(samples, options.summaryRecords),
 		trend: samples.slice(-TREND_SAMPLE_COUNT).map((sample) => sample.hitRatePercent),
 	};
 }
@@ -191,43 +226,51 @@ export function compareCacheSamples(
 			reusablePrefixTokens > 0 ? (rebilledTokens / reusablePrefixTokens) * 100 : null,
 		estimatedMissPremium: unitPremium === null ? null : rebilledTokens * unitPremium,
 		modelChanged: previous.provider !== current.provider || previous.model !== current.model,
-		idleMs: Math.max(0, current.timestamp - previous.timestamp),
+		requestStartGapMs: Math.max(0, current.timestamp - previous.timestamp),
 	};
 }
 
-export function aggregateCacheSamples(samples: readonly CacheSample[]): CacheAggregate {
+export function aggregateCacheSamples(
+	samples: readonly CacheSample[],
+	additionalRecords: readonly CacheUsageRecord[] = [],
+): CacheAggregate {
 	let input = 0;
 	let cacheRead = 0;
 	let cacheWrite = 0;
 	let promptCost = 0;
+	let promptCostKnown = true;
 	let estimatedSavings = 0;
-	let savingsKnown = false;
+	let savingsKnown = true;
 	let rebilledTokens = 0;
 	let estimatedMissPremium = 0;
 	let missPremiumKnown = false;
 	let bestHitRatePercent: number | null = null;
 	let worstHitRatePercent: number | null = null;
 
+	const addUsage = (record: CacheUsageRecord): void => {
+		input += record.input;
+		cacheRead += record.cacheRead;
+		cacheWrite += record.cacheWrite;
+		if (record.promptCost === null) promptCostKnown = false;
+		else promptCost += record.promptCost;
+		if (record.estimatedSavings === null) savingsKnown = false;
+		else estimatedSavings += record.estimatedSavings;
+		bestHitRatePercent = Math.max(
+			bestHitRatePercent ?? record.hitRatePercent,
+			record.hitRatePercent,
+		);
+		worstHitRatePercent = Math.min(
+			worstHitRatePercent ?? record.hitRatePercent,
+			record.hitRatePercent,
+		);
+	};
+
+	for (const sample of samples) addUsage(sample);
+	for (const record of additionalRecords) addUsage(record);
+
 	for (let index = 0; index < samples.length; index += 1) {
 		const sample = samples[index];
 		if (!sample) continue;
-		input += sample.input;
-		cacheRead += sample.cacheRead;
-		cacheWrite += sample.cacheWrite;
-		promptCost += sample.promptCost;
-		if (sample.estimatedSavings !== null) {
-			estimatedSavings += sample.estimatedSavings;
-			savingsKnown = true;
-		}
-		bestHitRatePercent = Math.max(
-			bestHitRatePercent ?? sample.hitRatePercent,
-			sample.hitRatePercent,
-		);
-		worstHitRatePercent = Math.min(
-			worstHitRatePercent ?? sample.hitRatePercent,
-			sample.hitRatePercent,
-		);
-
 		const previousIndex = findPreviousComparableIndex(samples, index, sample.epoch);
 		if (previousIndex < 0) continue;
 		const previous = samples[previousIndex];
@@ -241,16 +284,17 @@ export function aggregateCacheSamples(samples: readonly CacheSample[]): CacheAgg
 		}
 	}
 
+	const requestCount = samples.length + additionalRecords.length;
 	const promptTokens = input + cacheRead + cacheWrite;
 	return {
-		requestCount: samples.length,
+		requestCount,
 		input,
 		cacheRead,
 		cacheWrite,
 		promptTokens,
 		hitRatePercent: promptTokens > 0 ? (cacheRead / promptTokens) * 100 : null,
-		promptCost,
-		estimatedSavings: savingsKnown ? estimatedSavings : null,
+		promptCost: promptCostKnown ? promptCost : null,
+		estimatedSavings: requestCount > 0 && savingsKnown ? estimatedSavings : null,
 		rebilledTokens,
 		estimatedMissPremium: missPremiumKnown ? estimatedMissPremium : null,
 		bestHitRatePercent,
@@ -276,7 +320,7 @@ export function formatMonitorLines(view: CacheMonitorView): MonitorLine[] {
 	const lines: MonitorLine[] = [
 		{
 			role: "title",
-			text: `Prompt cache${live} · request #${view.requestNumber} · ${latest.provider}/${latest.model}`,
+			text: `Prompt cache${live} · request #${view.requestNumber} · ${sanitizeDisplayLabel(latest.provider)}/${sanitizeDisplayLabel(latest.model)}`,
 		},
 		{
 			role: latest.hitRatePercent >= 80 ? "good" : latest.hitRatePercent >= 50 ? "warning" : "bad",
@@ -308,7 +352,7 @@ export function formatMonitorLines(view: CacheMonitorView): MonitorLine[] {
 				`re-billed ${formatTokens(comparison.rebilledTokens)} (${formatNullablePercent(comparison.rebilledPercent)})`,
 				`read Δ ${formatSignedTokens(comparison.cacheReadDelta)}`,
 				comparison.modelChanged ? "model changed" : "same model",
-				`idle ${formatDuration(comparison.idleMs)}`,
+				`start gap ${formatDuration(comparison.requestStartGapMs)}`,
 			].join("  ·  "),
 		});
 	} else {
@@ -322,7 +366,7 @@ export function formatMonitorLines(view: CacheMonitorView): MonitorLine[] {
 		{
 			role: "muted",
 			text: [
-				`Cost  prompt ${formatMoney(latest.promptCost)}`,
+				`Cost  prompt ${formatNullableMoney(latest.promptCost)}`,
 				`cache saved ~${formatNullableMoney(latest.estimatedSavings)}`,
 				`miss premium ~${formatNullableMoney(comparison?.estimatedMissPremium ?? null)}`,
 			].join("  ·  "),
@@ -335,6 +379,8 @@ export function formatMonitorLines(view: CacheMonitorView): MonitorLine[] {
 				`read ${formatTokens(session.cacheRead)}`,
 				`uncached ${formatTokens(session.input)}`,
 				`write ${formatTokens(session.cacheWrite)}`,
+				`cost ${formatNullableMoney(session.promptCost)}`,
+				`saved ~${formatNullableMoney(session.estimatedSavings)}`,
 				`re-billed ${formatTokens(session.rebilledTokens)} (~${formatNullableMoney(session.estimatedMissPremium)})`,
 			].join("  ·  "),
 		},
@@ -362,6 +408,38 @@ export function sanitizeDisplayLabel(value: string): string {
 		: stripped;
 }
 
+function createCacheUsageRecord(usage: Usage, costRates?: ModelCostRates): CacheUsageRecord | null {
+	const input = finiteNumber(usage.input);
+	const cacheRead = finiteNumber(usage.cacheRead);
+	const cacheWrite = finiteNumber(usage.cacheWrite);
+	const promptTokens = input + cacheRead + cacheWrite;
+	if (promptTokens <= 0) return null;
+
+	const inputCost = finiteNumber(usage.cost?.input);
+	const cacheReadCost = finiteNumber(usage.cost?.cacheRead);
+	const cacheWriteCost = finiteNumber(usage.cost?.cacheWrite);
+	const inputUnitCost = unitCost(input, inputCost, costRates?.input);
+	const cacheReadUnitCost = unitCost(cacheRead, cacheReadCost, costRates?.cacheRead);
+
+	return {
+		input,
+		cacheRead,
+		cacheWrite,
+		promptTokens,
+		hitRatePercent: (cacheRead / promptTokens) * 100,
+		uncachedRatePercent: (input / promptTokens) * 100,
+		promptCost: sumKnownCosts([
+			componentCost(input, inputCost, costRates?.input),
+			componentCost(cacheRead, cacheReadCost, costRates?.cacheRead),
+			componentCost(cacheWrite, cacheWriteCost, costRates?.cacheWrite),
+		]),
+		estimatedSavings:
+			inputUnitCost !== null && cacheReadUnitCost !== null
+				? cacheRead * Math.max(0, inputUnitCost - cacheReadUnitCost)
+				: null,
+	};
+}
+
 function findPreviousComparableIndex(
 	samples: readonly CacheSample[],
 	currentIndex: number,
@@ -380,6 +458,18 @@ function weightedPaidRate(input: number, cacheWrite: number, rates: ModelCostRat
 	const tokens = input + cacheWrite;
 	if (tokens <= 0) return rates.input;
 	return (input * rates.input + cacheWrite * rates.cacheWrite) / tokens;
+}
+
+function componentCost(tokens: number, reportedCost: number, fallbackRate?: number): number | null {
+	if (tokens <= 0) return 0;
+	if (reportedCost > 0) return reportedCost;
+	return fallbackRate === undefined ? null : (tokens * fallbackRate) / 1_000_000;
+}
+
+function sumKnownCosts(costs: readonly (number | null)[]): number | null {
+	return costs.every((cost) => cost !== null)
+		? costs.reduce<number>((total, cost) => total + (cost ?? 0), 0)
+		: null;
 }
 
 function unitCost(tokens: number, cost: number, fallbackRate?: number): number | null {
