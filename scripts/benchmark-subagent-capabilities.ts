@@ -52,7 +52,7 @@ Options:
   --pi <command>                 Pi executable (default: pi)
   --workspace <path>             Source repository root (default: current repository)
   --v1-extension <path>          pi-subagents entrypoint override
-  --v2-extension <path>          pi-subagents-v2 entrypoint override
+  --v3-extension <path>          pi-subagents-v3 entrypoint override
   --run                          Execute live-provider trials; otherwise preview only
   --resume                       Continue missing trials from a compatible output file
 `;
@@ -70,7 +70,7 @@ const extensions: Record<CapabilityBenchmarkArm, string | undefined> = {
 	"parent-only": undefined,
 	"v1-sync": v1Extension,
 	"v1-async": v1Extension,
-	"v2-job": path.resolve(root, options.v2Extension ?? "packages/pi-subagents-v2/src/index.ts"),
+	"v3-job": path.resolve(root, options.v3Extension ?? "packages/pi-subagents-v3/src/index.ts"),
 };
 const plan = createCapabilityTrialPlan(options.repetitions);
 const configuration = {
@@ -94,7 +94,7 @@ const configuration = {
 	},
 	comparability: {
 		quality: "diagnostic matched-task comparison; provider seeds unavailable",
-		cost: "not comparable because arms use different call counts and v2 omits nested child usage",
+		cost: "not comparable because arms use different call counts and v3 omits nested child usage",
 		equalInferenceBudget: false,
 		toolSurface:
 			"arm-specific names and surface size are product differences and cannot be blinded",

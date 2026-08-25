@@ -2,9 +2,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export const SUBAGENT_CAPABILITY_BENCHMARK_VERSION =
-	"pi-extensions:subagent-capability-benchmark:v2" as const;
+	"pi-extensions:subagent-capability-benchmark:v3" as const;
 export const CAPABILITY_RESULT_PREFIX = "CAPABILITY_BENCHMARK_RESULT:";
-export const CAPABILITY_BENCHMARK_ARMS = ["parent-only", "v1-sync", "v1-async", "v2-job"] as const;
+export const CAPABILITY_BENCHMARK_ARMS = ["parent-only", "v1-sync", "v1-async", "v3-job"] as const;
 export const CAPABILITY_BENCHMARK_THINKING_LEVELS = [
 	"off",
 	"minimal",
@@ -155,7 +155,7 @@ export interface CapabilityBenchmarkOptions {
 	resume: boolean;
 	workspace?: string;
 	v1Extension?: string;
-	v2Extension?: string;
+	v3Extension?: string;
 }
 
 export interface CapabilityTrialPlan {
@@ -219,56 +219,56 @@ export const CAPABILITY_MATRIX = [
 	{
 		capability: "Bounded background start, inspect, cancel, wait, and read-only consult",
 		v1: "supported",
-		v2: "supported",
+		v3: "supported",
 		evidence: "Both package READMEs and lifecycle tool tests",
 	},
 	{
 		capability: "One terminal asynchronous completion with stale-result suppression",
 		v1: "supported",
-		v2: "supported",
+		v3: "supported",
 		evidence: "completion-delivery and SubagentRuntime tests",
 	},
 	{
 		capability: "Retained follow-up conversation and queue-only mailbox",
 		v1: "supported",
-		v2: "intentionally omitted",
-		evidence: "pi-subagents capability matrix; pi-subagents-v2 limitations",
+		v3: "intentionally omitted",
+		evidence: "pi-subagents capability matrix; pi-subagents-v3 limitations",
 	},
 	{
 		capability: "Blocking chain, fan-in, panel, workflow DAG, and managed verification",
 		v1: "supported",
-		v2: "intentionally omitted",
-		evidence: "pi-subagents execution and workflow tests; pi-subagents-v2 limitations",
+		v3: "intentionally omitted",
+		evidence: "pi-subagents execution and workflow tests; pi-subagents-v3 limitations",
 	},
 	{
 		capability: "Subprocess, in-process, RPC, and automatic transport selection",
 		v1: "supported",
-		v2: "subprocess only",
-		evidence: "pi-subagents transport tests; pi-subagents-v2 process runtime",
+		v3: "subprocess only",
+		evidence: "pi-subagents transport tests; pi-subagents-v3 process runtime",
 	},
 	{
 		capability: "Durable logical history across reload and explicit semantic revalidation",
 		v1: "supported",
-		v2: "intentionally omitted",
-		evidence: "pi-subagents persistence tests; pi-subagents-v2 retention limits",
+		v3: "intentionally omitted",
+		evidence: "pi-subagents persistence tests; pi-subagents-v3 retention limits",
 	},
 	{
 		capability: "Automatic idle-parent wake for required completion",
 		v1: "opt-in supported",
-		v2: "not supported",
-		evidence: "pi-subagents auto-resume tests; pi-subagents-v2 limitations",
+		v3: "not supported",
+		evidence: "pi-subagents auto-resume tests; pi-subagents-v3 limitations",
 	},
 	{
 		capability: "Contracts, structured-v2 outcomes, capability grants, and exact-tree acceptance",
 		v1: "supported",
-		v2: "intentionally omitted",
-		evidence: "pi-subagents contract and verified-execution tests; pi-subagents-v2 limitations",
+		v3: "intentionally omitted",
+		evidence: "pi-subagents contract and verified-execution tests; pi-subagents-v3 limitations",
 	},
 	{
 		capability: "Extension-owned settings, status, diagnostics, and local usage recording",
 		v1: "supported",
-		v2: "intentionally omitted",
-		evidence: "pi-subagents settings and inspection tests; v2 registers no commands",
+		v3: "intentionally omitted",
+		evidence: "pi-subagents settings and inspection tests; v3 registers no commands",
 	},
 ] as const;
 
@@ -282,7 +282,7 @@ export function parseCapabilityBenchmarkArgs(args: readonly string[]): Capabilit
 	let outputPath: string | undefined;
 	let workspace: string | undefined;
 	let v1Extension: string | undefined;
-	let v2Extension: string | undefined;
+	let v3Extension: string | undefined;
 	let run = false;
 	let resume = false;
 
@@ -330,8 +330,8 @@ export function parseCapabilityBenchmarkArgs(args: readonly string[]): Capabilit
 			case "--v1-extension":
 				v1Extension = value;
 				break;
-			case "--v2-extension":
-				v2Extension = value;
+			case "--v3-extension":
+				v3Extension = value;
 				break;
 			default:
 				throw new Error(`Unknown benchmark argument: ${argument}`);
@@ -352,7 +352,7 @@ export function parseCapabilityBenchmarkArgs(args: readonly string[]): Capabilit
 		...(outputPath ? { outputPath } : {}),
 		...(workspace ? { workspace } : {}),
 		...(v1Extension ? { v1Extension } : {}),
-		...(v2Extension ? { v2Extension } : {}),
+		...(v3Extension ? { v3Extension } : {}),
 	};
 }
 
@@ -412,7 +412,7 @@ export function buildCapabilityPrompt(
 		const names =
 			arm === "v1-async"
 				? { start: "subagent_spawn", wait: "subagent_await" }
-				: { start: "subagent-v2-start", wait: "subagent-v2-wait" };
+				: { start: "subagent-v3-start", wait: "subagent-v3-wait" };
 		steps.push(
 			`Start exactly ${task.requiredStartCount} background job(s) with ${names.start}.`,
 			`Use ${agent}, thinkingLevel ${thinkingLevel}, and timeoutMs 120000.`,
@@ -459,10 +459,10 @@ export function analyzeCapabilityEvents(
 			if (toolName === "subagent") {
 				sync++;
 				if (arm === "v1-sync") completionIndex = index;
-			} else if (toolName === (arm === "v1-async" ? "subagent_spawn" : "subagent-v2-start")) {
+			} else if (toolName === (arm === "v1-async" ? "subagent_spawn" : "subagent-v3-start")) {
 				start++;
 			} else if (
-				toolName === (arm === "v1-async" ? "subagent_await" : "subagent-v2-wait") &&
+				toolName === (arm === "v1-async" ? "subagent_await" : "subagent-v3-wait") &&
 				!isTimedOutResult(message.details)
 			) {
 				wait++;
@@ -511,7 +511,7 @@ function expectedToolCounts(
 	task: CapabilityTask,
 ): { sync: number; start: number; wait: number } {
 	if (arm === "v1-sync") return { sync: 1, start: 0, wait: 0 };
-	if (arm === "v1-async" || arm === "v2-job") {
+	if (arm === "v1-async" || arm === "v3-job") {
 		return {
 			sync: 0,
 			start: task.requiredStartCount,

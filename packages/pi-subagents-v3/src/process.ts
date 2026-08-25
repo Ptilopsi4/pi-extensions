@@ -277,7 +277,7 @@ async function executeProcess(
 }
 
 async function writePrompt(prompt: string): Promise<{ directory: string; filePath: string }> {
-	const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-subagent-v2-"));
+	const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-subagent-v3-"));
 	const filePath = path.join(directory, "agent.md");
 	try {
 		await fs.promises.writeFile(filePath, prompt, { encoding: "utf8", mode: 0o600 });

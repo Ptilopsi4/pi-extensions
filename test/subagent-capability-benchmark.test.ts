@@ -99,16 +99,16 @@ test("trial plan rotates all four arms across every matched workload", () => {
 			["single-research", "parent-only"],
 			["single-research", "v1-sync"],
 			["single-research", "v1-async"],
-			["single-research", "v2-job"],
+			["single-research", "v3-job"],
 			["parallel-research", "v1-sync"],
 			["parallel-research", "v1-async"],
-			["parallel-research", "v2-job"],
+			["parallel-research", "v3-job"],
 			["parallel-research", "parent-only"],
 			["security-review", "v1-async"],
-			["security-review", "v2-job"],
+			["security-review", "v3-job"],
 			["security-review", "parent-only"],
 			["security-review", "v1-sync"],
-			["worker-fix", "v2-job"],
+			["worker-fix", "v3-job"],
 			["worker-fix", "parent-only"],
 			["worker-fix", "v1-sync"],
 			["worker-fix", "v1-async"],
@@ -139,8 +139,8 @@ test("arm prompts require direct, blocking, detached, and bounded-job topologies
 		/subagent_spawn[\s\S]*subagent_await/,
 	);
 	assert.match(
-		buildCapabilityPrompt("v2-job", single, "low"),
-		/subagent-v2-start[\s\S]*subagent-v2-wait/,
+		buildCapabilityPrompt("v3-job", single, "low"),
+		/subagent-v3-start[\s\S]*subagent-v3-wait/,
 	);
 	assert.doesNotMatch(buildCapabilityPrompt("v1-sync", CAPABILITY_TASKS[2], "low"), /consult/iu);
 });
@@ -160,10 +160,10 @@ test("event analysis enforces each arm topology and completion order", () => {
 			],
 		],
 		[
-			"v2-job",
+			"v3-job",
 			[
-				toolResult("subagent-v2-start"),
-				toolResult("subagent-v2-wait", { state: "completed", timedOut: false }),
+				toolResult("subagent-v3-start"),
+				toolResult("subagent-v3-wait", { state: "completed", timedOut: false }),
 				assistant(final),
 			],
 		],
@@ -196,10 +196,10 @@ test("event analysis enforces each arm topology and completion order", () => {
 test("wait timeouts and incomplete parallel joins fail topology compliance", () => {
 	const task = CAPABILITY_TASKS[1];
 	const events = [
-		toolResult("subagent-v2-start"),
-		toolResult("subagent-v2-start"),
-		toolResult("subagent-v2-wait", { state: "completed", timedOut: false }),
-		toolResult("subagent-v2-wait", { state: "running", timedOut: true }),
+		toolResult("subagent-v3-start"),
+		toolResult("subagent-v3-start"),
+		toolResult("subagent-v3-wait", { state: "completed", timedOut: false }),
+		toolResult("subagent-v3-wait", { state: "running", timedOut: true }),
 		assistant(
 			[
 				"src/protocol.ts PROTOCOL_VERSION job-v3 MAX_FRAME_BYTES 49152",
@@ -208,7 +208,7 @@ test("wait timeouts and incomplete parallel joins fail topology compliance", () 
 			].join("\n"),
 		),
 	];
-	const analysis = analyzeCapabilityEvents("v2-job", task, events);
+	const analysis = analyzeCapabilityEvents("v3-job", task, events);
 	assert.equal(analysis.toolCounts.wait, 1);
 	assert.equal(analysis.toolCompliance, false);
 	assert.equal(analysis.completionObserved, false);
@@ -258,7 +258,7 @@ test("persisted event projection keeps evidence and removes reasoning payloads",
 		projectCapabilityEvents([
 			{ type: "message_update", delta: "private streaming detail" },
 			{ type: "message_end", message: { role: "user", content: "prompt duplicate" } },
-			toolResult("subagent-v2-wait", { state: "completed" }),
+			toolResult("subagent-v3-wait", { state: "completed" }),
 			{
 				type: "message_end",
 				message: {
@@ -279,7 +279,7 @@ test("persisted event projection keeps evidence and removes reasoning payloads",
 			},
 		]),
 		[
-			toolResult("subagent-v2-wait", { state: "completed" }),
+			toolResult("subagent-v3-wait", { state: "completed" }),
 			assistant("final evidence"),
 			{ type: "turn_end" },
 			{
@@ -346,7 +346,7 @@ test("summary keeps four arms, quality, latency, and budget limitations separate
 	assert.equal(summary.equalInferenceBudget, false);
 	assert.equal(summary.pairedInstances, 1);
 	assert.equal(summary.arms["parent-only"].successRate, 1);
-	assert.equal(summary.arms["v2-job"].successRate, 0);
+	assert.equal(summary.arms["v3-job"].successRate, 0);
 });
 
 test("manual runner executes all four RPC arms and cleans temporary directories", async () => {
@@ -360,12 +360,12 @@ test("manual runner executes all four RPC arms and cleans temporary directories"
 			'import fs from "node:fs";',
 			'import readline from "node:readline";',
 			'const extensionIndex=process.argv.indexOf("-e");const extension=extensionIndex>=0?process.argv[extensionIndex+1]||"":"";',
-			'const settings=extension&&!extension.includes("v2")?JSON.parse(fs.readFileSync(process.env.PI_CODING_AGENT_DIR+"/pi-subagents.json","utf8")):undefined;',
-			'const runtimeArm=!extension?"parent-only":extension.includes("v2")?"v2-job":settings.stateful.enabled?"v1-async":"v1-sync";',
+			'const settings=extension&&!extension.includes("v3")?JSON.parse(fs.readFileSync(process.env.PI_CODING_AGENT_DIR+"/pi-subagents.json","utf8")):undefined;',
+			'const runtimeArm=!extension?"parent-only":extension.includes("v3")?"v3-job":settings.stateful.enabled?"v1-async":"v1-sync";',
 			'const send=(value)=>process.stdout.write(JSON.stringify(value)+"\\n");',
 			"const lines=readline.createInterface({input:process.stdin});",
 			'const final=(taskId)=>["src/queue.ts RETRY_ATTEMPTS 4","src/delivery.ts COMPLETION_CHANNEL steer","src/shutdown.ts stop-delivery abort-children await-streams","src/protocol.ts PROTOCOL_VERSION job-v3 MAX_FRAME_BYTES 49152","src/retention.ts MAX_TERMINAL_JOBS 32 RETENTION_HOURS 24","src/review.ts startsWith owner path.join traversal slice(0, 8) token","src/math.mjs clamp pass isEven pass","node --test test/math.test.mjs pass","CAPABILITY_BENCHMARK_RESULT: "+JSON.stringify({taskId,complete:true})].join("\\n");',
-			'lines.on("line",(line)=>{const request=JSON.parse(line);if(request.type==="get_state"){send({id:request.id,type:"response",success:true,data:{}});return;}if(request.type==="get_session_stats"){send({id:request.id,type:"response",success:true,data:{cost:0.01}});return;}if(request.type!=="prompt")return;const arm=/Arm: ([a-z0-9-]+)/.exec(request.message)?.[1]||"unknown";if(arm!==runtimeArm){send({id:request.id,type:"response",success:false,error:"wrong runtime arm"});return;}send({id:request.id,type:"response",success:true,data:{}});const taskId=/Task ID: ([a-z-]+)/.exec(request.message)?.[1]||"unknown";const count=taskId==="parallel-research"?2:1;const tool=(name)=>send({type:"message_end",message:{role:"toolResult",toolName:name,isError:false,details:{state:"completed",timedOut:false},content:[]}});if(arm==="v1-sync")tool("subagent");if(arm==="v1-async"){for(let index=0;index<count;index++)tool("subagent_spawn");for(let index=0;index<count;index++)tool("subagent_await");}if(arm==="v2-job"){for(let index=0;index<count;index++)tool("subagent-v2-start");for(let index=0;index<count;index++)tool("subagent-v2-wait");}if(taskId==="worker-fix")fs.writeFileSync("src/math.mjs","export function clamp(value, minimum, maximum) { return Math.min(maximum, Math.max(minimum, value)); }\\nexport function isEven(value) { return value % 2 === 0; }\\n");send({type:"message_end",message:{role:"assistant",content:[{type:"text",text:final(taskId)}]}});});',
+			'lines.on("line",(line)=>{const request=JSON.parse(line);if(request.type==="get_state"){send({id:request.id,type:"response",success:true,data:{}});return;}if(request.type==="get_session_stats"){send({id:request.id,type:"response",success:true,data:{cost:0.01}});return;}if(request.type!=="prompt")return;const arm=/Arm: ([a-z0-9-]+)/.exec(request.message)?.[1]||"unknown";if(arm!==runtimeArm){send({id:request.id,type:"response",success:false,error:"wrong runtime arm"});return;}send({id:request.id,type:"response",success:true,data:{}});const taskId=/Task ID: ([a-z-]+)/.exec(request.message)?.[1]||"unknown";const count=taskId==="parallel-research"?2:1;const tool=(name)=>send({type:"message_end",message:{role:"toolResult",toolName:name,isError:false,details:{state:"completed",timedOut:false},content:[]}});if(arm==="v1-sync")tool("subagent");if(arm==="v1-async"){for(let index=0;index<count;index++)tool("subagent_spawn");for(let index=0;index<count;index++)tool("subagent_await");}if(arm==="v3-job"){for(let index=0;index<count;index++)tool("subagent-v3-start");for(let index=0;index<count;index++)tool("subagent-v3-wait");}if(taskId==="worker-fix")fs.writeFileSync("src/math.mjs","export function clamp(value, minimum, maximum) { return Math.min(maximum, Math.max(minimum, value)); }\\nexport function isEven(value) { return value % 2 === 0; }\\n");send({type:"message_end",message:{role:"assistant",content:[{type:"text",text:final(taskId)}]}});});',
 		].join("\n"),
 		{ mode: 0o700 },
 	);

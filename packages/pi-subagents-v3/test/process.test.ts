@@ -21,7 +21,7 @@ let directory: string;
 let previousPackageDirectory: string | undefined;
 
 beforeEach(() => {
-	directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-v2-process-"));
+	directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-v3-process-"));
 	previousPackageDirectory = process.env.PI_PACKAGE_DIR;
 });
 
