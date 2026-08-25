@@ -97,6 +97,42 @@ conventions below.
 Use `StringEnum` from `@earendil-works/pi-ai` for string-valued tool schema enums so tools remain
 compatible with Google providers. Give tools explicit names in descriptions and prompt metadata.
 
+### Prompt-cache stability
+
+Pi's model context consists of the system prompt, ordered messages, and ordered active tool definitions, although each provider adapter serializes those parts differently.
+The `context` hook receives `AgentMessage[]` before Pi converts messages for the provider, while `before_provider_request` receives the final provider-specific payload.
+These conventions preserve cache-eligible request prefixes but cannot guarantee a provider-reported cache hit.
+
+- **MUST:** Preserve the serialized model-visible content and order of the existing request prefix during ordinary turns within one prefix epoch, and append new context at the conversation tail unless correctness requires an explicit transition.
+  Do not prepend, insert, reorder, rewrite, or remove existing messages merely to expose current extension state.
+  **Verification:** `Test` consecutive ordinary requests for extensions that transform model-visible context, plus `Review` of every changed `context` hook.
+- **MUST:** Keep `context` transformations idempotent and preserve the serialized content and order of untouched model-visible messages rather than their JavaScript object identity.
+  Deduplicate extension-owned synthetic messages by a stable type and version.
+  **Verification:** `Test` repeated transformation of the same logical context and `Review` of deduplication keys.
+- **MUST:** Keep mutable counters, timestamps, progress, budgets, status, random identifiers, and equivalent volatile state out of leading system instructions and earlier conversation messages.
+  Append model-required per-turn state in a new message or tool result, and persist non-model state with `pi.appendEntry()` or tool-result `details`.
+  **Verification:** `Review` of state publication paths and `Test` when mutable state contributes model-visible content.
+- **MUST:** Append a durable model contract once when it becomes active instead of recreating it before existing conversation history on every request.
+  If compaction removes a required contract, restore exactly one deterministic canonical message after leading compaction or branch summaries and only when an equivalent retained message is absent.
+  Keep mutable accounting out of that canonical contract.
+  **Verification:** `Test` activation and idempotence plus applicable reload, resume, branch, and compaction restoration paths for deterministic content and exactly one retained contract.
+- **MUST:** Keep ordered active tool names and provider-visible definitions stable within each prefix epoch.
+  Provider-visible definitions include `name`, `description`, `parameters`, and `constrainedSampling`; runtime implementations, renderers, and labels do not.
+  Remember that `promptSnippet` and `promptGuidelines` rebuild the system prompt even though they are not provider tool-definition fields.
+  **Verification:** `Test` the effective system prompt, ordered active names, and normalized provider-visible definitions across consecutive ordinary requests when tool activation or metadata changes.
+- **MUST:** Use Pi's additive deferred-tool-loading path when dynamic loading is required and the selected model and provider support it.
+  Keep the loader active, add tools without removing active tools in the same transition, and normally omit `promptSnippet` and `promptGuidelines` from lazily activated tools.
+  Document fallback behavior because unsupported providers resend the complete active tool list and may invalidate the cached prefix.
+  **Verification:** `Test` additive activation at the loader tool result, `Review` fallback behavior, and run a provider `Smoke` when claiming native deferred loading for a custom model or proxy.
+- **MUST:** Do not rewrite provider message ordering or leading instructions in `before_provider_request` unless provider compatibility requires it.
+  Document and test every intentional provider-prefix transition, and treat the first request after the transition as the baseline for the new prefix epoch.
+  Correctness and provider compatibility take precedence over cache preservation.
+  **Verification:** `Review` every changed provider-payload hook and `Test` the documented transition plus subsequent ordinary-request stability.
+- **MUST:** Compare normalized cache-sensitive provider input in cache-contract tests rather than extension runtime objects or the complete transport payload.
+  Compare the effective system prompt, ordered active tool names, provider-visible tool fields, and serialized model-visible message prefix.
+  Exclude tool implementations, renderers, object identity, usage accounting, session-entry details, request identifiers, transport controls, and other non-model metadata.
+  **Verification:** `Review` the normalization boundary and `Test` that each later ordinary request retains the earlier normalized message sequence as an exact prefix.
+
 ### TUI and non-interactive modes
 
 - **MUST:** Call `ctx.ui.custom()` only in TUI mode. Guard it with `ctx.mode === "tui"`, and use
@@ -315,6 +351,7 @@ fragile regular expressions. Until then, label the real verification method hone
       input, preserve safety checks, and test each claimed execution mode.
 - [ ] Follow `docs/extension-settings.md` for every user or project setting.
 - [ ] Bound tool output, cancellation, state persistence, and file mutation where applicable.
+- [ ] Keep the model-visible request prefix stable, or document and test each intentional prefix transition when the extension changes prompts, context, or active tools.
 - [ ] Document installation, behavior, settings, security, limitations, and source responsibilities.
 - [ ] Add deterministic tests, run `npm run check`, and run `npm test`.
 - [ ] Inspect `npm pack --workspace <name> --dry-run --json` and load the declared entrypoint with Pi.
@@ -326,6 +363,7 @@ fragile regular expressions. Until then, label the real verification method hone
 - [ ] Apply every relevant MUST and review SHOULD deviations near their owning package.
 - [ ] For command-surface changes, preserve established routes or explicitly own an approved breaking
       migration, and test every claimed execution mode.
+- [ ] For prompt-cache-sensitive changes, identify each prefix epoch and compare normalized provider-facing inputs across ordinary requests and applicable restoration boundaries.
 - [ ] Update focused tests and run the verification method named by each relevant MUST.
 - [ ] Run `npm run check` and `npm test`; add pack or Pi runtime smokes when metadata or loading changed.
 - [ ] Report any skipped check, accepted exception, or follow-up validator opportunity in the change

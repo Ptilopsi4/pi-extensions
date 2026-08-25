@@ -106,9 +106,10 @@ Run commands from the repository root unless a command says otherwise.
 ## Runtime and lifecycle constraints
 
 - Do not call Pi action methods such as `getThinkingLevel()` during extension factory load; defer them until `session_start` or later.
-- Keep the active tool list and tool definitions stable across extension mode transitions to preserve the provider's cached prompt prefix.
+- Preserve the serialized model-visible system prompt, ordered active tool definitions, and existing message prefix across ordinary turns; append new context at the conversation tail and document and test every intentional prefix transition.
+- Keep active tool names, order, and provider-visible definitions stable within each prefix epoch; use Pi's additive deferred-tool-loading path instead of replacing the active set when dynamic loading is required.
 - Treat `agent_end` as a run boundary and `agent_settled` as the idle boundary for retries, final cleanup, and next-item activation.
-- Treat `pi.appendEntry()` as branch persistence only; inject compaction-sensitive model contracts through one canonical `context` hook block after the original handoff disappears.
+- Persist non-model state with `pi.appendEntry()` or tool-result `details`; inject a required compaction-sensitive model contract through one deterministic, deduplicated `context` hook block only after the original handoff disappears.
 - Key headless session-owned resources by `sessionManager`, not `ctx.ui`, because headless runners can share one no-op UI object.
 
 ## TUI and rendering safety
