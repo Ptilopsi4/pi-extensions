@@ -37,5 +37,5 @@ It does not add model-visible tools, messages, system instructions, or provider 
 
 All values depend on provider-reported Pi usage fields and can remain unavailable when a provider omits cache accounting.
 `re-billed` compares token counts and cannot prove which exact serialized prefix bytes the provider cached.
-Cost values use reported usage costs with matching Pi model rates as component fallbacks, and subscription billing can differ.
+Cost values use reported usage costs with Pi's effective model tiers and cache-write retention pricing as component fallbacks, and subscription billing can differ.
 Cache writes are included in the repository-standard hit-rate denominator but are not labeled as uncached input.

@@ -27,12 +27,12 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 
 	const ownsSession = (ctx: ExtensionContext): boolean => ctx.sessionManager === activeSession;
 
-	const resolveCostRates = (ctx: ExtensionContext, provider: string, model: string) =>
-		ctx.modelRegistry.find(provider, model)?.cost;
+	const resolveCostModel = (ctx: ExtensionContext, provider: string, model: string) =>
+		ctx.modelRegistry.find(provider, model);
 
 	const restore = (ctx: ExtensionContext): void => {
 		const restored = collectCacheSamples(ctx.sessionManager.getBranch(), (provider, model) =>
-			resolveCostRates(ctx, provider, model),
+			resolveCostModel(ctx, provider, model),
 		);
 		finalizedSamples = restored.samples;
 		summaryRecords = restored.summaryRecords;
@@ -44,7 +44,7 @@ export default function cacheHitMonitor(pi: ExtensionAPI): void {
 		createCacheSample(
 			message,
 			currentEpoch,
-			resolveCostRates(ctx, message.provider, message.model),
+			resolveCostModel(ctx, message.provider, message.model),
 		);
 
 	const clearWidget = (ctx: ExtensionContext): void => {

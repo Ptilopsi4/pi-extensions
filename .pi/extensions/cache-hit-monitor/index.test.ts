@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { AssistantMessage, ModelCostRates } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Model, ModelCostRates } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
@@ -13,6 +13,18 @@ import cacheHitMonitor, { COMMAND_NAME, renderCacheMonitor, WIDGET_KEY } from ".
 import { createCacheMonitorView, createCacheSample } from "./metrics.js";
 
 const RATES: ModelCostRates = { input: 10, output: 20, cacheRead: 1, cacheWrite: 20 };
+const MODEL: Model<Api> = {
+	id: "test-model",
+	name: "Test model",
+	api: "openai-responses",
+	provider: "test-provider",
+	baseUrl: "https://example.test",
+	reasoning: false,
+	input: ["text"],
+	cost: RATES,
+	contextWindow: 200_000,
+	maxTokens: 10_000,
+};
 const THEME = {
 	fg: (_role: string, text: string) => text,
 	bold: (text: string) => text,
@@ -102,7 +114,7 @@ function createContext(
 		hasUI: mode === "tui" || mode === "rpc",
 		sessionManager,
 		modelRegistry: {
-			find: () => ({ cost: RATES }),
+			find: () => MODEL,
 		},
 		ui: {
 			notify(message: string, level?: "info" | "warning" | "error") {
@@ -287,7 +299,7 @@ test("renders every line within narrow widths and strips unsafe model text", () 
 			model: "model\n\u202eunsafe",
 		}),
 		0,
-		RATES,
+		MODEL,
 	);
 	assert.ok(sample);
 	const lines = renderCacheMonitor(createCacheMonitorView([sample]), THEME, 32);

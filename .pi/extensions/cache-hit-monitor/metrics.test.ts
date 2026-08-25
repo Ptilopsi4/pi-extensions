@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { AssistantMessage, ModelCostRates } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Model, ModelCostRates } from "@earendil-works/pi-ai";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { test } from "vitest";
 import {
@@ -17,6 +17,18 @@ const RATES: ModelCostRates = {
 	output: 20,
 	cacheRead: 1,
 	cacheWrite: 20,
+};
+const MODEL: Model<Api> = {
+	id: "test-model",
+	name: "Test model",
+	api: "openai-responses",
+	provider: "test-provider",
+	baseUrl: "https://example.test",
+	reasoning: false,
+	input: ["text"],
+	cost: RATES,
+	contextWindow: 200_000,
+	maxTokens: 10_000,
 };
 
 function assistant(
@@ -61,8 +73,8 @@ function messageEntry(message: AssistantMessage): SessionEntry {
 }
 
 test("calculates hit rate, downward loss, re-billed tokens, and estimated cost impact", () => {
-	const previous = createCacheSample(assistant(200, 800, 0), 0, RATES);
-	const current = createCacheSample(assistant(400, 600, 100, { timestamp: 3_500 }), 0, RATES);
+	const previous = createCacheSample(assistant(200, 800, 0), 0, MODEL);
+	const current = createCacheSample(assistant(400, 600, 100, { timestamp: 3_500 }), 0, MODEL);
 	assert.ok(previous);
 	assert.ok(current);
 
@@ -82,9 +94,9 @@ test("calculates hit rate, downward loss, re-billed tokens, and estimated cost i
 });
 
 test("uses weighted session totals and excludes cross-compaction comparisons", () => {
-	const first = createCacheSample(assistant(200, 800, 0), 0, RATES);
-	const second = createCacheSample(assistant(400, 600, 100), 0, RATES);
-	const afterCompaction = createCacheSample(assistant(900, 100, 0), 1, RATES);
+	const first = createCacheSample(assistant(200, 800, 0), 0, MODEL);
+	const second = createCacheSample(assistant(400, 600, 100), 0, MODEL);
+	const afterCompaction = createCacheSample(assistant(900, 100, 0), 1, MODEL);
 	assert.ok(first && second && afterCompaction);
 
 	const aggregate = aggregateCacheSamples([first, second, afterCompaction]);
@@ -116,7 +128,7 @@ test("reconstructs cache epochs and includes summarization usage in session tota
 		},
 		messageEntry(assistant(900, 100, 0, { timestamp: 2_000 })),
 	] as SessionEntry[];
-	const restored = collectCacheSamples(entries, () => RATES);
+	const restored = collectCacheSamples(entries, () => MODEL);
 
 	assert.equal(restored.currentEpoch, 2);
 	assert.equal(restored.summaryRecords.length, 2);
@@ -140,8 +152,8 @@ test("reconstructs cache epochs and includes summarization usage in session tota
 });
 
 test("suppresses a pre-boundary comparison until the active epoch receives usage", () => {
-	const first = createCacheSample(assistant(200, 800, 0), 0, RATES);
-	const second = createCacheSample(assistant(400, 600, 0, { timestamp: 2_000 }), 0, RATES);
+	const first = createCacheSample(assistant(200, 800, 0), 0, MODEL);
+	const second = createCacheSample(assistant(400, 600, 0, { timestamp: 2_000 }), 0, MODEL);
 	assert.ok(first && second);
 
 	assert.ok(createCacheMonitorView([first, second], undefined, { activeEpoch: 0 }).comparison);
@@ -156,12 +168,12 @@ test("keeps raw model identities for comparison and sanitizes only rendered labe
 	const previous = createCacheSample(
 		assistant(200, 800, 0, { provider: `${sharedPrefix}a` }),
 		0,
-		RATES,
+		MODEL,
 	);
 	const current = createCacheSample(
 		assistant(200, 800, 0, { provider: `${sharedPrefix}b`, timestamp: 2_000 }),
 		0,
-		RATES,
+		MODEL,
 	);
 	assert.ok(previous && current);
 
@@ -180,14 +192,66 @@ test("uses model rates when reported prompt-cost components are unavailable", ()
 		total: 0,
 	};
 
-	const sample = createCacheSample(message, 0, RATES);
+	const sample = createCacheSample(message, 0, MODEL);
 	assert.ok(sample);
 	assert.ok(Math.abs((sample.promptCost ?? 0) - 0.0048) < 0.000_000_1);
 });
 
+test("applies Pi pricing tiers and one-hour cache-write rates to fallbacks", () => {
+	const tieredModel: Model<Api> = {
+		...MODEL,
+		cost: {
+			...RATES,
+			tiers: [
+				{
+					inputTokensAbove: 1_000,
+					input: 20,
+					output: 40,
+					cacheRead: 2,
+					cacheWrite: 30,
+				},
+			],
+		},
+	};
+	const previousMessage = assistant(200, 1_000, 0);
+	previousMessage.usage.cost = {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		total: 0,
+	};
+	const currentMessage = assistant(200, 800, 200, { timestamp: 2_000 });
+	currentMessage.usage.cacheWrite1h = 100;
+	currentMessage.usage.cost = {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		total: 0,
+	};
+
+	const previous = createCacheSample(previousMessage, 0, tieredModel);
+	const current = createCacheSample(currentMessage, 0, tieredModel);
+	assert.ok(previous && current);
+	assert.deepEqual(currentMessage.usage.cost, {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		total: 0,
+	});
+	assert.ok(Math.abs((current.promptCost ?? 0) - 0.0126) < 0.000_000_1);
+	assert.ok(Math.abs((current.estimatedSavings ?? 0) - 0.0144) < 0.000_000_1);
+	assert.ok(
+		Math.abs((compareCacheSamples(previous, current, 1)?.estimatedMissPremium ?? 0) - 0.0102) <
+			0.000_000_1,
+	);
+});
+
 test("formats a detailed live report with both rate and token loss", () => {
-	const previous = createCacheSample(assistant(200, 800, 0), 0, RATES);
-	const current = createCacheSample(assistant(400, 600, 100, { timestamp: 3_500 }), 0, RATES);
+	const previous = createCacheSample(assistant(200, 800, 0), 0, MODEL);
+	const current = createCacheSample(assistant(400, 600, 100, { timestamp: 3_500 }), 0, MODEL);
 	assert.ok(previous && current);
 	const lines = formatMonitorLines(createCacheMonitorView([previous], current)).map(
 		({ text }) => text,
