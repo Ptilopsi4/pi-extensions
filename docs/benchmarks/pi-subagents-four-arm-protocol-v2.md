@@ -17,7 +17,7 @@ Synchronous read-only consultation remains a separate capability comparison beca
 | `v1-async` | `pi-subagents` compatibility surface | Use `subagent_spawn` once per child and `subagent_await` once per child. |
 | `v2-job` | `pi-subagents-v2` | Use `subagent-v2-start` once per child and `subagent-v2-wait` once per child. |
 
-The v1 async arm needs the compatibility surface because the recommended async-only surface intentionally omits blocking `subagent_await`.
+The v1 async arm needs the compatibility surface because the async-only surface intentionally omits blocking `subagent_await`.
 
 The larger visible v1 async tool surface is a product difference that Pi cannot hide for one benchmark trial.
 

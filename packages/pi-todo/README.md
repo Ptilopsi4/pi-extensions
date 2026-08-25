@@ -32,11 +32,14 @@ Try from npm without installing permanently:
 pi -e npm:@narumitw/pi-todo
 ```
 
-Load this package directly from a repository checkout:
+Build and load this package directly from a repository checkout:
 
 ```bash
+npm --workspace @narumitw/pi-todo run build
 pi --no-extensions -e ./packages/pi-todo
 ```
+
+The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 
 Pi extensions run with the user's permissions, so install only trusted code.
 
@@ -106,11 +109,16 @@ Terminal escape sequences, control characters, and bidirectional display control
 
 ```text
 packages/pi-todo/
+├── dist/
+│   └── index.ts              # Generated Jiti runtime entrypoint
+├── scripts/
+│   └── build-runtime.mjs     # Deterministic runtime builder and validator
 ├── src/
-│   ├── index.ts          # Thin Pi extension entrypoint
-│   └── todo-widget.ts    # Tool, lifecycle, state reconstruction, and rendering
+│   ├── index.ts              # Thin authoritative extension forwarder
+│   └── todo-widget.ts        # Tool, lifecycle, state reconstruction, and rendering
 ├── test/
-│   └── todo-widget.test.ts
+│   ├── build-runtime.test.ts # Build, boundary, and Jiti loader coverage
+│   └── todo-widget.test.ts   # Extension behavior coverage
 ├── LICENSE
 ├── README.md
 ├── package.json
@@ -122,7 +130,7 @@ The package exposes its Pi extension through `package.json`:
 ```json
 {
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": ["./dist/index.ts"]
   }
 }
 ```

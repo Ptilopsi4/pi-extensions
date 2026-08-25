@@ -1251,7 +1251,9 @@ Downgrading is safe: older extension versions ignore this separate state directo
 packages/pi-subagents/
 ├── dist/                         # Generated split TypeScript runtime loaded through Pi's Jiti loader
 ├── docs/
-│   └── async-runtime-protocol.md # Required-run state machine and unavailable core guarantees
+│   ├── async-runtime-protocol.md # Required-run state machine and unavailable core guarantees
+│   ├── implementation-notes/     # Current direction, capabilities, and RPC contract
+│   └── pi-subagents-diagrams.md  # Maintained architecture and workflow diagrams
 ├── scripts/
 │   └── build-runtime.mjs         # Deterministic bundler and eager-boundary validator
 ├── src/
