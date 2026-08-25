@@ -115,6 +115,14 @@ const configuration = {
 	})),
 	capabilityMatrix: capabilityMatrix(options.jobVersion),
 	order: plan,
+	resumeFingerprint: {
+		extensions: Object.fromEntries(
+			Object.entries(extensions).map(([arm, value]) => [
+				arm,
+				value ? createHash("sha256").update(path.resolve(value)).digest("hex") : null,
+			]),
+		),
+	},
 	environment: {
 		node: process.version,
 		platform: process.platform,
@@ -211,6 +219,8 @@ function loadResumeRecords(
 		timeoutMs: number;
 		readinessTimeoutMs: number;
 		order: CapabilityTrialPlan[];
+		resumeFingerprint: { extensions: Record<string, string | null> };
+		environment: { extensions: Record<string, string | null> };
 	},
 	plan: readonly CapabilityTrialPlan[],
 ): CapabilityTrialRecord[] {
@@ -236,6 +246,19 @@ function loadResumeRecords(
 		if (parsed[key] !== expected[key]) {
 			throw new Error(`Cannot resume benchmark output with different ${key}`);
 		}
+	}
+	const parsedEnvironment = isRecord(parsed.environment) ? parsed.environment : undefined;
+	const parsedExtensions = parsedEnvironment?.extensions;
+	const parsedFingerprint = isRecord(parsed.resumeFingerprint)
+		? parsed.resumeFingerprint.extensions
+		: undefined;
+	if (
+		!isRecord(parsedExtensions) ||
+		JSON.stringify(parsedExtensions) !== JSON.stringify(expected.environment.extensions) ||
+		!isRecord(parsedFingerprint) ||
+		JSON.stringify(parsedFingerprint) !== JSON.stringify(expected.resumeFingerprint.extensions)
+	) {
+		throw new Error("Cannot resume benchmark output with different extension identities");
 	}
 	if (JSON.stringify(parsed.order) !== JSON.stringify(expected.order)) {
 		throw new Error("Cannot resume benchmark output with a different trial order");

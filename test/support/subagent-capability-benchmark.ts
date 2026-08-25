@@ -501,8 +501,12 @@ export function analyzeCapabilityEvents(
 	for (const [index, value] of events.entries()) {
 		if (!isRecord(value) || value.type !== "message_end" || !isRecord(value.message)) continue;
 		const message = value.message;
-		if (message.role === "toolResult" && message.isError !== true) {
+		if (message.role === "toolResult") {
 			const toolName = typeof message.toolName === "string" ? message.toolName : "";
+			if (message.isError === true) {
+				if (toolName.startsWith("subagent")) unexpected++;
+				continue;
+			}
 			if (toolName === "subagent") {
 				sync++;
 				if (arm === "v1-sync") completionIndex = index;

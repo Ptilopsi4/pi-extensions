@@ -80,6 +80,34 @@ console.log(message("completed evidence"));
 	assert.match(partial.error ?? "", /child failed/);
 });
 
+test("runChild requires a normal terminal result and preserves incomplete evidence", async () => {
+	installFakePi(`
+const task = process.argv.at(-1) || "";
+const message = (text, stopReason) => JSON.stringify({
+  type: "message_end",
+  message: { role: "assistant", content: [{ type: "text", text }], stopReason }
+});
+if (task.includes("length")) console.log(message("cut-off evidence", "length"));
+else if (task.includes("nonterminal")) console.log(message("intermediate evidence", "toolUse"));
+else console.log("{malformed");
+`);
+	const lengthLimited = await runChild(childRequest({ task: "length" }));
+	assert.equal(lengthLimited.state, "partial");
+	assert.equal(lengthLimited.result, "cut-off evidence");
+	assert.match(lengthLimited.error ?? "", /model limit/i);
+	assert.match(lengthLimited.limitations.join("\n"), /model output limit/i);
+
+	const nonterminal = await runChild(childRequest({ task: "nonterminal" }));
+	assert.equal(nonterminal.state, "partial");
+	assert.equal(nonterminal.result, "intermediate evidence");
+	assert.match(nonterminal.error ?? "", /without a terminal assistant result/i);
+
+	const missing = await runChild(childRequest({ task: "missing" }));
+	assert.equal(missing.state, "failed");
+	assert.match(missing.error ?? "", /without a terminal assistant result/i);
+	assert.match(missing.limitations.join("\n"), /malformed/i);
+});
+
 test("runChild bounds child result text below the complete tool-output budget", async () => {
 	installFakePi(`
 const text = "x".repeat(40 * 1024);

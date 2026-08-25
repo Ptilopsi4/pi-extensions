@@ -109,7 +109,7 @@ just benchmark-subagent-capabilities \
   --output /tmp/pi-subagents-four-arm-v3.json
 ```
 
-Resume rejects a changed protocol version, model, thinking level, repetition count, deadline, readiness deadline, or trial order.
+Resume rejects a changed protocol version, model, thinking level, repetition count, deadline, readiness deadline, trial order, or selected extension entrypoint identity.
 
 Run five repetitions only after reviewing provider budget and the diagnostic result:
 
