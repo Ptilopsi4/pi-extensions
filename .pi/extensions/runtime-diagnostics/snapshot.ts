@@ -1,4 +1,8 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join, parse } from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { sanitizeDiagnosticText } from "./text.js";
 
 export const RUNTIME_ENTRY_TYPE = "pi-debug:runtime-snapshot";
 const MAX_TOOL_NAMES = 200;
@@ -53,6 +57,29 @@ export interface ToolState {
 	omittedCount: number;
 }
 
+export interface ToolCatalogEntry {
+	name: string;
+	active: boolean;
+	inactiveReason: string | null;
+	definitionBytes: number | null;
+	source: {
+		path: string;
+		source: string;
+		scope: string;
+		origin: string;
+	};
+}
+
+export interface ExtensionSurface {
+	path: string;
+	source: string;
+	scope: string;
+	origin: string;
+	version: string | null;
+	tools: string[];
+	commands: string[];
+}
+
 export interface RuntimeDiagnosticReport {
 	capturedAt: number;
 	sessionId: string;
@@ -60,6 +87,12 @@ export interface RuntimeDiagnosticReport {
 		provider: string | null;
 		model: string | null;
 		thinkingLevel: string;
+	};
+	environment: {
+		piCodingAgentVersion: string | null;
+		nodeVersion: string;
+		platform: string;
+		architecture: string;
 	};
 	cache: {
 		requestCount: number;
@@ -72,6 +105,7 @@ export interface RuntimeDiagnosticReport {
 		recent: ResponseCacheSample[];
 	};
 	tools: ToolState;
+	toolCatalog: ToolCatalogEntry[];
 	extensions: {
 		visibility: string;
 		visibleCount: number;
@@ -80,15 +114,6 @@ export interface RuntimeDiagnosticReport {
 	};
 	issues: string[];
 	recentRuntimeRecords: RuntimeSnapshot[];
-}
-
-interface ExtensionSurface {
-	path: string;
-	source: string;
-	scope: string;
-	origin: string;
-	tools: string[];
-	commands: string[];
 }
 
 interface ResponseIdentity {
@@ -108,10 +133,10 @@ export function createRuntimeSnapshot(
 		version: 1,
 		capturedAt,
 		reason,
-		sessionId: ctx.sessionManager.getSessionId(),
-		provider: ctx.model?.provider ?? null,
-		model: ctx.model?.id ?? null,
-		thinkingLevel: pi.getThinkingLevel(),
+		sessionId: sanitizeDiagnosticText(ctx.sessionManager.getSessionId(), 128),
+		provider: ctx.model?.provider ? sanitizeDiagnosticText(ctx.model.provider, 128) : null,
+		model: ctx.model?.id ? sanitizeDiagnosticText(ctx.model.id, 256) : null,
+		thinkingLevel: sanitizeDiagnosticText(pi.getThinkingLevel(), 32),
 		cache: response
 			? createCacheSample(response.usage, capturedAt, response.provider, response.model)
 			: null,
@@ -135,6 +160,8 @@ export function createRuntimeReport(
 ): RuntimeDiagnosticReport {
 	const entries = ctx.sessionManager.getBranch();
 	const tools = collectToolState(pi);
+	const toolCatalog = collectToolCatalog(pi);
+	const extensions = collectExtensionSurfaces(pi);
 	const issues: string[] = [];
 	if (!ctx.model) issues.push("No active model is available in the extension context.");
 	if (tools.unknownActive.length > 0) {
@@ -142,20 +169,48 @@ export function createRuntimeReport(
 			`Active tools missing from the configured catalog: ${tools.unknownActive.join(", ")}.`,
 		);
 	}
+	for (const duplicate of duplicateNames(toolCatalog.map(({ name }) => name))) {
+		issues.push(`The configured tool catalog exposes the duplicate name ${duplicate}.`);
+	}
+	for (const duplicate of duplicateSurfaceNames(extensions.surfaces, "tools")) {
+		issues.push(`Multiple visible extension surfaces expose the tool ${duplicate}.`);
+	}
+	for (const duplicate of duplicateSurfaceNames(extensions.surfaces, "commands")) {
+		issues.push(`Multiple visible extension surfaces expose the command ${duplicate}.`);
+	}
 
 	return {
 		capturedAt,
-		sessionId: ctx.sessionManager.getSessionId(),
+		sessionId: sanitizeDiagnosticText(ctx.sessionManager.getSessionId(), 128),
 		current: {
-			provider: ctx.model?.provider ?? null,
-			model: ctx.model?.id ?? null,
-			thinkingLevel: pi.getThinkingLevel(),
+			provider: ctx.model?.provider ? sanitizeDiagnosticText(ctx.model.provider, 128) : null,
+			model: ctx.model?.id ? sanitizeDiagnosticText(ctx.model.id, 256) : null,
+			thinkingLevel: sanitizeDiagnosticText(pi.getThinkingLevel(), 32),
+		},
+		environment: {
+			piCodingAgentVersion: resolvePiCodingAgentVersion(),
+			nodeVersion: sanitizeDiagnosticText(process.version, 64),
+			platform: sanitizeDiagnosticText(process.platform, 32),
+			architecture: sanitizeDiagnosticText(process.arch, 32),
 		},
 		cache: collectCacheMetrics(entries),
 		tools,
-		extensions: collectExtensionSurfaces(pi),
+		toolCatalog,
+		extensions,
 		issues,
 		recentRuntimeRecords: collectRuntimeRecords(entries),
+	};
+}
+
+export function compareRuntimeSnapshots(from: RuntimeSnapshot, to: RuntimeSnapshot) {
+	return {
+		fromCapturedAt: from.capturedAt,
+		toCapturedAt: to.capturedAt,
+		providerChanged: from.provider !== to.provider,
+		modelChanged: from.model !== to.model,
+		thinkingLevelChanged: from.thinkingLevel !== to.thinkingLevel,
+		activeTools: diffNames(from.tools.active, to.tools.active),
+		inactiveTools: diffNames(from.tools.inactive, to.tools.inactive),
 	};
 }
 
@@ -163,12 +218,14 @@ function collectToolState(pi: ExtensionAPI): ToolState {
 	const configured = [...pi.getAllTools()].sort((left, right) =>
 		left.name.localeCompare(right.name),
 	);
-	const configuredNames = new Set(configured.map(({ name }) => name));
-	const activeNames = [...new Set(pi.getActiveTools())].sort((left, right) =>
-		left.localeCompare(right),
-	);
+	const configuredNames = new Set(configured.map(({ name }) => sanitizeDiagnosticText(name, 128)));
+	const activeNames = [...new Set(pi.getActiveTools())]
+		.map((name) => sanitizeDiagnosticText(name, 128))
+		.sort((left, right) => left.localeCompare(right));
 	const knownActive = activeNames.filter((name) => configuredNames.has(name));
-	const inactive = configured.map(({ name }) => name).filter((name) => !activeNames.includes(name));
+	const inactive = configured
+		.map(({ name }) => sanitizeDiagnosticText(name, 128))
+		.filter((name) => !activeNames.includes(name));
 	const unknownActive = activeNames.filter((name) => !configuredNames.has(name));
 	const visible = [...knownActive, ...inactive].slice(0, MAX_TOOL_NAMES);
 	const visibleSet = new Set(visible);
@@ -182,6 +239,30 @@ function collectToolState(pi: ExtensionAPI): ToolState {
 		unknownActive,
 		omittedCount: Math.max(0, knownActive.length + inactive.length - visible.length),
 	};
+}
+
+function collectToolCatalog(pi: ExtensionAPI): ToolCatalogEntry[] {
+	const active = new Set(pi.getActiveTools());
+	return [...pi.getAllTools()]
+		.sort((left, right) => left.name.localeCompare(right.name))
+		.slice(0, MAX_TOOL_NAMES)
+		.map((tool) => {
+			const isActive = active.has(tool.name);
+			return {
+				name: sanitizeDiagnosticText(tool.name, 128),
+				active: isActive,
+				inactiveReason: isActive
+					? null
+					: "Registered but not active; Pi does not expose whether configuration, filtering, or deferred loading caused this state.",
+				definitionBytes: jsonByteLength({
+					name: tool.name,
+					description: tool.description,
+					parameters: tool.parameters,
+					promptGuidelines: tool.promptGuidelines,
+				}),
+				source: sanitizeSourceInfo(tool.sourceInfo),
+			};
+		});
 }
 
 function collectCacheMetrics(entries: readonly SessionEntry[]): RuntimeDiagnosticReport["cache"] {
@@ -227,8 +308,8 @@ function createCacheSample(
 	const promptTokens = input + cacheRead + cacheWrite;
 	return {
 		capturedAt,
-		provider: provider ?? null,
-		model: model ?? null,
+		provider: provider ? sanitizeDiagnosticText(provider, 128) : null,
+		model: model ? sanitizeDiagnosticText(model, 256) : null,
 		input,
 		cacheRead,
 		cacheWrite,
@@ -255,16 +336,16 @@ function collectExtensionSurfaces(pi: ExtensionAPI): RuntimeDiagnosticReport["ex
 		kind: "tools" | "commands",
 		name: string,
 	) => {
-		const key = `${sourceInfo.path}\u0000${sourceInfo.source}`;
+		const sanitizedSource = sanitizeSourceInfo(sourceInfo);
+		const key = `${sanitizedSource.path}\u0000${sanitizedSource.source}`;
 		const surface = surfaces.get(key) ?? {
-			path: sourceInfo.path,
-			source: sourceInfo.source,
-			scope: sourceInfo.scope,
-			origin: sourceInfo.origin,
+			...sanitizedSource,
+			version:
+				sourceInfo.origin === "package" ? resolveOwningPackageVersion(sourceInfo.path) : null,
 			tools: [],
 			commands: [],
 		};
-		surface[kind].push(name);
+		surface[kind].push(sanitizeDiagnosticText(name, 128));
 		surfaces.set(key, surface);
 	};
 
@@ -293,6 +374,90 @@ function collectExtensionSurfaces(pi: ExtensionAPI): RuntimeDiagnosticReport["ex
 	};
 }
 
+function sanitizeSourceInfo(sourceInfo: {
+	path: string;
+	source: string;
+	scope: string;
+	origin: string;
+}) {
+	return {
+		path: sanitizeDiagnosticText(sourceInfo.path, 1024),
+		source: sanitizeDiagnosticText(sourceInfo.source, 256),
+		scope: sanitizeDiagnosticText(sourceInfo.scope, 32),
+		origin: sanitizeDiagnosticText(sourceInfo.origin, 32),
+	};
+}
+
+let cachedPiVersion: string | null | undefined;
+
+function resolvePiCodingAgentVersion(): string | null {
+	if (cachedPiVersion !== undefined) return cachedPiVersion;
+	try {
+		const entryPath = createRequire(import.meta.url).resolve("@earendil-works/pi-coding-agent");
+		cachedPiVersion = findPackageVersion(entryPath, "@earendil-works/pi-coding-agent");
+	} catch {
+		cachedPiVersion = null;
+	}
+	return cachedPiVersion;
+}
+
+const packageVersionCache = new Map<string, string | null>();
+
+function resolveOwningPackageVersion(sourcePath: string): string | null {
+	if (packageVersionCache.has(sourcePath)) return packageVersionCache.get(sourcePath) ?? null;
+	const version = findPackageVersion(sourcePath);
+	packageVersionCache.set(sourcePath, version);
+	return version;
+}
+
+function findPackageVersion(startPath: string, expectedName?: string): string | null {
+	let directory = dirname(startPath);
+	const root = parse(directory).root;
+	for (let depth = 0; depth < 8 && directory !== root; depth += 1) {
+		try {
+			const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8")) as {
+				name?: unknown;
+				version?: unknown;
+			};
+			if (
+				typeof manifest.version === "string" &&
+				(!expectedName || manifest.name === expectedName)
+			) {
+				return sanitizeDiagnosticText(manifest.version, 64);
+			}
+		} catch {
+			// Continue toward the filesystem root until an owning manifest is found.
+		}
+		directory = dirname(directory);
+	}
+	return null;
+}
+
+function duplicateSurfaceNames(
+	surfaces: readonly ExtensionSurface[],
+	kind: "tools" | "commands",
+): string[] {
+	return duplicateNames(surfaces.flatMap((surface) => surface[kind]));
+}
+
+function duplicateNames(names: readonly string[]): string[] {
+	const counts = new Map<string, number>();
+	for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+	return [...counts.entries()]
+		.filter(([, count]) => count > 1)
+		.map(([name]) => name)
+		.sort();
+}
+
+function diffNames(from: readonly string[], to: readonly string[]) {
+	const previous = new Set(from);
+	const current = new Set(to);
+	return {
+		added: to.filter((name) => !previous.has(name)),
+		removed: from.filter((name) => !current.has(name)),
+	};
+}
+
 function isRuntimeSnapshot(value: unknown): value is RuntimeSnapshot {
 	if (!isRecord(value)) return false;
 	return (
@@ -302,6 +467,14 @@ function isRuntimeSnapshot(value: unknown): value is RuntimeSnapshot {
 		typeof value.sessionId === "string" &&
 		isRecord(value.tools)
 	);
+}
+
+function jsonByteLength(value: unknown): number | null {
+	try {
+		return Buffer.byteLength(JSON.stringify(value), "utf8");
+	} catch {
+		return null;
+	}
 }
 
 function finiteNumber(value: unknown): number {
