@@ -164,7 +164,10 @@ test("starts in the background, delivers one completion, and returns terminal ou
 		result: "Grounded result",
 	});
 	assert.equal(mock.sentMessages.length, 1);
-	assert.equal(mock.sentMessages[0]?.message.customType, "pi-subagents-v3-completion");
+	assert.equal(
+		(mock.sentMessages[0]?.message as { customType?: unknown } | undefined)?.customType,
+		"pi-subagents-v3-completion",
+	);
 	assert.deepEqual(mock.sentMessages[0]?.options, { deliverAs: "steer" });
 	const completedInspection = await inspect.execute(
 		"inspect-completed",
