@@ -147,6 +147,23 @@ These conventions preserve cache-eligible request prefixes but cannot guarantee 
   **Verification:** `Test` for rendering, input, user cancellation, and disposal behavior plus
   `Review` against Pi's TUI contract.
 
+#### Shared terminal handoffs
+
+Use this section only when specialized UI temporarily transfers one terminal between a parent TUI and an extension-owned TUI.
+Prefer Pi-owned `ctx.ui` flows and one TUI when they can preserve the required state, interaction, and lifecycle behavior.
+
+- **MUST:** Make shared-terminal handoff cleanup idempotent after normal completion, hard cancellation, partial initialization, disposal, and cleanup failure.
+  Retain and operate on extension-owned overlay handles without closing, hiding, or reordering unrelated overlays.
+  **Verification:** `Test` each applicable completion and failure path with repeated cleanup and an unrelated parent overlay mounted, plus `Review` of every stop, start, focus, and overlay transition.
+- **MUST:** A hard-cancel handoff must synchronously invoke the owning root flow's cancel or close path independently of nested overlay focus before restoring input ownership.
+  The outgoing TUI must consume the triggering input so it cannot reach a stale or unrelated focused component.
+  **Verification:** `Test` hard cancellation with the root component focused and again with at least one nested overlay focused, and assert that the owning flow settles in each case.
+- **MUST:** After a handoff begins, subsequent input from the same terminal batch must reach the restored TUI through its normal input pipeline instead of being dropped or delivered to the stopped TUI.
+  **Verification:** `Test` one synchronous input batch containing the handoff key followed by printable input, and assert that the restored editor receives the printable input.
+
+- **SHOULD:** Prefer terminal ownership transfer to buffering and replaying terminal input.
+  Avoid replaying input directly to a focused component because that bypasses normal TUI listeners, focus routing, key-release filtering, shortcuts, and render scheduling unless Pi exposes and documents an input-injection API for that purpose.
+
 Use the callback-provided theme and keybindings. For standard action, detail, settings, and
 multi-select flows, new extensions **SHOULD** declare screens and actions with
 `@narumitw/pi-tui-kit` instead of implementing another menu loop. Keep domain state,
@@ -364,6 +381,7 @@ fragile regular expressions. Until then, label the real verification method hone
 - [ ] For command-surface changes, preserve established routes or explicitly own an approved breaking
       migration, and test every claimed execution mode.
 - [ ] For prompt-cache-sensitive changes, identify each prefix epoch and compare normalized provider-facing inputs across ordinary requests and applicable restoration boundaries.
+- [ ] For shared-terminal handoffs, test hard cancellation under root and nested-overlay focus, same-batch follow-up input, repeated cleanup, and unrelated parent overlays.
 - [ ] Update focused tests and run the verification method named by each relevant MUST.
 - [ ] Run `npm run check` and `npm test`; add pack or Pi runtime smokes when metadata or loading changed.
 - [ ] Report any skipped check, accepted exception, or follow-up validator opportunity in the change
