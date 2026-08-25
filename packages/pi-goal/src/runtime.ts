@@ -8,6 +8,13 @@ import {
 } from "./accounting.js";
 import { formatError, notifyTerminal, safeGoalMenuText, truncateNotification } from "./errors.js";
 import {
+	createGoalContextContract,
+	createInactiveGoalContextContract,
+	hasGoalContextContract,
+	hasGoalContextContractHistory,
+	hasInactiveGoalContextContract,
+} from "./goal-contract.js";
+import {
 	appendGoalPromptMarker,
 	extractContinuationMarker,
 	extractGoalPromptMarker,
@@ -695,6 +702,7 @@ export class GoalRuntime {
 		if (terminalReason !== undefined) this.setTerminalReason(this.activeGoal.id, terminalReason);
 		const stoppedGoal = this.activeGoal;
 		this.persistGoal(stoppedGoal);
+		this.ensureInactiveGoalContextContract(ctx);
 		if (this.activeGoal?.id === stoppedGoal.id && this.activeGoal.status === stoppedGoal.status) {
 			this.updateStatus(ctx, stoppedGoal);
 			this.releaseWorkflow();
@@ -958,6 +966,37 @@ export class GoalRuntime {
 		this.claimedGoalPromptMarkers.clear();
 		this.cancelledGoalPromptMarkers.clear();
 		this.pendingNonGoalInputs = [];
+	}
+
+	ensureGoalContextContract(ctx: StatusContext, goal: ActiveGoal) {
+		const contract = this.goalContextContractForPrompt(ctx, goal);
+		if (contract) this.pi.sendMessage(contract, { triggerTurn: false });
+	}
+
+	ensureInactiveGoalContextContract(ctx: StatusContext) {
+		const contract = this.goalContextContractForPrompt(ctx);
+		if (contract) this.pi.sendMessage(contract, { triggerTurn: false });
+	}
+
+	goalContextContractForPrompt(ctx: StatusContext, goal?: ActiveGoal) {
+		const { contextEntries, historyEntries } = goalContractEntries(ctx);
+		if (goal) {
+			return hasGoalContextContract(contextEntries, goal)
+				? undefined
+				: createGoalContextContract(goal);
+		}
+		const hasHistory =
+			hasGoalContextContractHistory(contextEntries) ||
+			hasGoalContextContractHistory(historyEntries);
+		if (!hasHistory || hasInactiveGoalContextContract(contextEntries)) return undefined;
+		return createInactiveGoalContextContract();
+	}
+
+	hasGoalContextContractHistory(ctx: StatusContext) {
+		const { contextEntries, historyEntries } = goalContractEntries(ctx);
+		return (
+			hasGoalContextContractHistory(contextEntries) || hasGoalContextContractHistory(historyEntries)
+		);
 	}
 
 	async sendOwnedGoalPrompt(
@@ -1224,6 +1263,7 @@ export class GoalRuntime {
 		this.activeGoal = undefined;
 		this.legacyQueueState = undefined;
 		this.clearPersistedGoal(ctx.cwd, clearedGoal, reason);
+		this.ensureInactiveGoalContextContract(ctx);
 		ctx.ui.setStatus(STATUS_KEY, undefined);
 		if (releaseWorkflow) this.releaseWorkflow();
 		// Do not relock toolPolicy: after first activation, keep tools visible for the
@@ -1553,6 +1593,25 @@ function inputFingerprint(prompt: unknown) {
 	return createHash("sha256")
 		.update(typeof prompt === "string" ? prompt : "", "utf8")
 		.digest("hex");
+}
+
+function goalContractEntries(ctx: StatusContext) {
+	const sessionManager = ctx.sessionManager as
+		| {
+				buildContextEntries?: () => unknown[];
+				buildSessionContext?: () => { messages?: unknown[] };
+				getBranch?: () => unknown[];
+				getEntries?: () => unknown[];
+		  }
+		| undefined;
+	const historyEntries = sessionManager?.getBranch?.() ?? sessionManager?.getEntries?.() ?? [];
+	return {
+		contextEntries:
+			sessionManager?.buildSessionContext?.().messages ??
+			sessionManager?.buildContextEntries?.() ??
+			historyEntries,
+		historyEntries,
+	};
 }
 
 async function sendPrompt(
