@@ -6,8 +6,6 @@ import { type RuntimeDependencies, SubagentRuntime } from "./runtime.js";
 import type { AgentDefinition, ChildResult } from "./types.js";
 
 const MAX_TASK_BYTES = 50 * 1024;
-const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
-const MAX_WAIT_TIMEOUT_MS = 300_000;
 const MAX_INSPECTED_AGENTS = 32;
 const MAX_INSPECT_DESCRIPTION_BYTES = 240;
 
@@ -32,15 +30,12 @@ const CancelParameters = Type.Object({
 
 const WaitParameters = Type.Object({
 	jobId: Type.String({ description: "Job to wait for." }),
-	timeoutMs: Type.Optional(
-		Type.Integer({
-			description: "Maximum caller wait time in milliseconds. This does not cancel the job.",
-			minimum: 1,
-			maximum: MAX_WAIT_TIMEOUT_MS,
-			default: DEFAULT_WAIT_TIMEOUT_MS,
-		}),
+	timeout: Type.Optional(
+		Type.Number({ description: "Timeout in seconds (optional, no default timeout)" }),
 	),
 });
+
+type WaitArguments = Static<typeof WaitParameters>;
 
 const ConsultParameters = Type.Object({
 	agent: Type.String({ description: "Configured subagent name." }),
@@ -143,8 +138,9 @@ export function registerSubagentTools(
 			"Wait for one job to become terminal. A wait timeout or caller cancellation stops only this wait and never cancels the job.",
 		promptSnippet: "Wait for one subagent job to become terminal",
 		parameters: WaitParameters,
+		prepareArguments: prepareWaitArguments,
 		async execute(_toolCallId, params, signal) {
-			const timeoutMs = validateWaitTimeout(params.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS);
+			const timeoutMs = resolveTimeoutMs(params.timeout);
 			const result = await runtime.wait(requiredString(params.jobId, "jobId"), timeoutMs, signal);
 			return toolResult(result);
 		},
@@ -241,21 +237,21 @@ function validateTask(value: string, toolName: string): string {
 }
 
 function prepareExecutionArguments(args: unknown): ExecutionArguments {
-	if (!args || typeof args !== "object" || !Object.hasOwn(args, "timeoutMs")) {
-		return args as ExecutionArguments;
-	}
-	const { timeoutMs, ...prepared } = args as Record<string, unknown>;
-	if (prepared.timeout === undefined && typeof timeoutMs === "number") {
-		return { ...prepared, timeout: timeoutMs / 1000 } as ExecutionArguments;
-	}
-	return prepared as unknown as ExecutionArguments;
+	return prepareTimeoutArguments(args) as ExecutionArguments;
 }
 
-function validateWaitTimeout(value: number): number {
-	if (!Number.isSafeInteger(value) || value < 1 || value > MAX_WAIT_TIMEOUT_MS) {
-		throw new Error(`subagent-v2-wait timeoutMs must be between 1 and ${MAX_WAIT_TIMEOUT_MS}.`);
+function prepareWaitArguments(args: unknown): WaitArguments {
+	return prepareTimeoutArguments(args) as WaitArguments;
+}
+
+function prepareTimeoutArguments(args: unknown): Record<string, unknown> {
+	if (!args || typeof args !== "object") return args as Record<string, unknown>;
+	if (!Object.hasOwn(args, "timeoutMs")) return args as Record<string, unknown>;
+	const { timeoutMs, ...prepared } = args as Record<string, unknown>;
+	if (prepared.timeout === undefined && typeof timeoutMs === "number") {
+		return { ...prepared, timeout: timeoutMs / 1000 };
 	}
-	return value;
+	return prepared;
 }
 
 function requiredString(value: unknown, field: string): string {

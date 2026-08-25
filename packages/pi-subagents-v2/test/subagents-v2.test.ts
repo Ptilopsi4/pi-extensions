@@ -67,7 +67,11 @@ test("registers only the five minimal subagent-v2 tools with bounded schemas", (
 		"Timeout in seconds (optional, no default timeout)",
 	);
 	assert.equal(tools[0]?.parameters.properties?.timeoutMs, undefined);
-	assert.equal(tools[3]?.parameters.properties?.timeoutMs?.maximum, 300_000);
+	assert.equal(
+		tools[3]?.parameters.properties?.timeout?.description,
+		"Timeout in seconds (optional, no default timeout)",
+	);
+	assert.equal(tools[3]?.parameters.properties?.timeoutMs, undefined);
 	assert.deepEqual(
 		tools[0]?.prepareArguments?.({ agent: "worker", task: "old", timeoutMs: 1500 }),
 		{
@@ -76,6 +80,10 @@ test("registers only the five minimal subagent-v2 tools with bounded schemas", (
 			timeout: 1.5,
 		},
 	);
+	assert.deepEqual(tools[3]?.prepareArguments?.({ jobId: "job_old", timeoutMs: 30_000 }), {
+		jobId: "job_old",
+		timeout: 30,
+	});
 	assert.deepEqual(Object.keys(tools[1]?.parameters.properties ?? {}), []);
 	assert.match(tools[4]?.description ?? "", /read-only/i);
 	assert.deepEqual([...mock.commands.keys()], []);
@@ -148,13 +156,7 @@ test("starts in the background, delivers one completion, and returns terminal ou
 		limitations: [],
 		truncated: false,
 	});
-	const terminal = await wait.execute(
-		"wait",
-		{ jobId, timeoutMs: 1000 },
-		undefined,
-		undefined,
-		context.ctx,
-	);
+	const terminal = await wait.execute("wait", { jobId }, undefined, undefined, context.ctx);
 	assert.deepEqual(terminal.details, {
 		jobId,
 		state: "completed",
@@ -209,7 +211,7 @@ test("wait timeout leaves the job active and cancellation rejects a stale late r
 	await Promise.resolve();
 	const waited = await tool(mock, "subagent-v2-wait").execute(
 		"wait",
-		{ jobId, timeoutMs: 1 },
+		{ jobId, timeout: 0.001 },
 		undefined,
 		undefined,
 		context.ctx,

@@ -60,14 +60,16 @@ Use `subagent-v2-wait` only when that result becomes necessary for the next acti
 | `subagent-v2-start` | `agent`, `task`, optional `timeout` | Start one background job and return its `jobId` immediately. |
 | `subagent-v2-inspect` | none | List bounded available-agent and retained-job metadata. |
 | `subagent-v2-cancel` | `jobId` | Idempotently cancel one queued or running job. |
-| `subagent-v2-wait` | `jobId`, optional `timeoutMs` | Wait up to 300 seconds for one job without cancelling it. |
+| `subagent-v2-wait` | `jobId`, optional `timeout` | Wait for one job without cancelling it. |
 | `subagent-v2-consult` | `agent`, `task`, optional `timeout` | Run one synchronous ephemeral read-only consultation. |
 
 Execution timeouts use seconds, accept finite numbers greater than zero through 2,147,483.647, and have no default.
 
 Omitting `timeout` lets the child run until it exits, is cancelled, the session shuts down, or the Pi process exits.
 
-Wait timeouts accept 1 through 300,000 milliseconds and default to 30 seconds.
+Wait timeouts use the same optional seconds format and have no default.
+
+Omitting `timeout` from `subagent-v2-wait` waits until the job becomes terminal or the caller cancels the wait.
 
 Tasks are limited to 50 KiB of UTF-8 text.
 

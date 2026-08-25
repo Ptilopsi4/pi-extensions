@@ -145,7 +145,7 @@ export class SubagentRuntime {
 
 	async wait(
 		jobId: string,
-		timeoutMs: number,
+		timeoutMs: number | undefined,
 		signal?: AbortSignal,
 	): Promise<{
 		jobId: string;
@@ -162,10 +162,14 @@ export class SubagentRuntime {
 		let onAbort: (() => void) | undefined;
 		const outcome = await Promise.race([
 			job.terminal.then(() => "terminal" as const),
-			new Promise<"timeout">((resolve) => {
-				timeout = setTimeout(() => resolve("timeout"), timeoutMs);
-				timeout.unref();
-			}),
+			...(timeoutMs !== undefined
+				? [
+						new Promise<"timeout">((resolve) => {
+							timeout = setTimeout(() => resolve("timeout"), timeoutMs);
+							timeout.unref();
+						}),
+					]
+				: []),
 			...(signal
 				? [
 						new Promise<"aborted">((resolve) => {

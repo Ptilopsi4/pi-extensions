@@ -78,6 +78,12 @@ Keep fan-in synthesis in the main agent because the runtime does not provide agg
 
 Use `subagent-v2-wait` only when a specific job result is required for the next action and useful overlapping main-agent work is complete.
 
+Set `subagent-v2-wait.timeout` in seconds only when the caller needs a bounded wait.
+
+Wait timeouts accept positive finite numbers and have no default.
+
+Omitting `timeout` waits until the job becomes terminal or the caller cancels the wait.
+
 A wait timeout stops only the caller's wait.
 
 A wait timeout does not cancel, close, or shorten the job's optional execution deadline.

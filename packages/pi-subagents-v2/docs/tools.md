@@ -23,7 +23,7 @@ No parameters.
 | Parameter | Type | Required | Constraint / default |
 | --- | --- | --- | --- |
 | `jobId` | `string` | Yes | Job ID to wait for. |
-| `timeoutMs` | `integer` | No | `1`–`300,000`; defaults to `30,000` and does not cancel the job. |
+| `timeout` | `number` | No | Seconds; `> 0` through `2,147,483.647`; no default and does not cancel the job. |
 
 ## `subagent-v2-consult`
 
