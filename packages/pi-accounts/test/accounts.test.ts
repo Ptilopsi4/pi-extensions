@@ -1079,6 +1079,115 @@ test("unsafe provider endpoints and malformed model metadata fail closed", async
 	}
 });
 
+test("expired credentials refresh with a concrete signal and activate", async () => {
+	const store = new AccountStore(new InMemoryAccountStorageBackend());
+	await store.write({
+		version: 1,
+		providers: {
+			anthropic: {
+				active: "work",
+				accounts: { work: { ...credential("expired"), expires: 1 } },
+			},
+		},
+	});
+	const provider = fakeProvider("anthropic");
+	let refreshSignal: AbortSignal | undefined;
+	provider.oauth.refresh = async (current, signal) => {
+		refreshSignal = signal;
+		if (!signal) throw new Error("Missing OAuth refresh signal");
+		return {
+			...current,
+			access: "access-refreshed",
+			expires: Date.now() + 60 * 60 * 1000,
+		};
+	};
+	const mock = createMockPi();
+	const coordinator = new RuntimeAuthCoordinator(mock.pi, provider);
+	const { registry, keys } = runtimeHarness(mock);
+	const { ctx } = createMockContext({ modelRegistry: registry });
+
+	const result = await coordinator.ensureActive(ctx, store);
+
+	assert.deepEqual(result, {
+		status: "active",
+		providerId: "anthropic",
+		accountName: "work",
+	});
+	assert.ok(refreshSignal instanceof AbortSignal);
+	assert.equal(refreshSignal.aborted, false);
+	assert.equal(
+		(await store.readProviderAsync("anthropic")).accounts.work?.access,
+		"access-refreshed",
+	);
+	assert.equal(keys.get("anthropic"), "access-refreshed");
+});
+
+test("refresh invalidation rejects stale credentials and rotates the signal", async () => {
+	const store = new AccountStore(new InMemoryAccountStorageBackend());
+	await store.write({
+		version: 1,
+		providers: {
+			anthropic: {
+				active: "work",
+				accounts: { work: { ...credential("expired"), expires: 1 } },
+			},
+		},
+	});
+	let notifyStarted!: () => void;
+	const started = new Promise<void>((resolve) => {
+		notifyStarted = resolve;
+	});
+	let releaseFirst!: () => void;
+	const firstRelease = new Promise<void>((resolve) => {
+		releaseFirst = resolve;
+	});
+	const signals: Array<AbortSignal | undefined> = [];
+	const provider = fakeProvider("anthropic");
+	provider.oauth.refresh = async (current, signal) => {
+		signals.push(signal);
+		if (signals.length === 1) {
+			notifyStarted();
+			await firstRelease;
+			return {
+				...current,
+				access: "access-stale",
+				expires: Date.now() + 60 * 60 * 1000,
+			};
+		}
+		return {
+			...current,
+			access: "access-fresh",
+			expires: Date.now() + 60 * 60 * 1000,
+		};
+	};
+	const mock = createMockPi();
+	const coordinator = new RuntimeAuthCoordinator(mock.pi, provider);
+	const { registry, keys } = runtimeHarness(mock);
+	const { ctx } = createMockContext({ modelRegistry: registry });
+
+	const staleActivation = coordinator.ensureActive(ctx, store);
+	await started;
+	coordinator.invalidate(ctx);
+	releaseFirst();
+	const staleResult = await staleActivation;
+	const freshResult = await coordinator.ensureActive(ctx, store);
+
+	assert.equal(staleResult.status, "inactive");
+	assert.deepEqual(freshResult, {
+		status: "active",
+		providerId: "anthropic",
+		accountName: "work",
+	});
+	assert.equal(signals.length, 2);
+	assert.ok(signals[0] instanceof AbortSignal);
+	assert.equal(signals[0].aborted, true);
+	assert.ok(signals[1] instanceof AbortSignal);
+	assert.equal(signals[1].aborted, false);
+	assert.notEqual(signals[0], signals[1]);
+	assert.equal((await store.readProviderAsync("anthropic")).accounts.work?.access, "access-fresh");
+	assert.equal(keys.get("anthropic"), "access-fresh");
+});
+
 test("invalid refreshed credentials fail closed instead of escaping storage validation", async () => {
 	const store = new AccountStore(new InMemoryAccountStorageBackend());
 	await store.write({

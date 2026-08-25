@@ -47,6 +47,7 @@ export class RuntimeAuthCoordinator {
 	private readonly controller: RuntimeApiKeyController;
 	private readonly overlay: RuntimeProviderOverlay;
 	private availableModelIds: ReadonlySet<string> | undefined;
+	private refreshController = new AbortController();
 
 	constructor(
 		pi: ExtensionAPI,
@@ -64,6 +65,7 @@ export class RuntimeAuthCoordinator {
 	): Promise<EnsureActiveProviderAuthResult> {
 		const operation = this.overlay.beginOperation();
 		const runtimeOverride = this.controller.begin(ctx);
+		const refreshSignal = this.refreshController.signal;
 		let state: ProviderAccountState;
 		try {
 			state = await store.readProviderAsync(this.provider.id);
@@ -116,7 +118,9 @@ export class RuntimeAuthCoordinator {
 					credential = latestCredential;
 					if (latestCredential.expires > now + REFRESH_SKEW_MS) return latest;
 					try {
-						const refreshed = await this.provider.oauth.refresh(latestCredential);
+						refreshSignal.throwIfAborted();
+						const refreshed = await this.provider.oauth.refresh(latestCredential, refreshSignal);
+						refreshSignal.throwIfAborted();
 						credential = refreshed;
 						return {
 							...latest,
@@ -218,6 +222,8 @@ export class RuntimeAuthCoordinator {
 	invalidate(ctx: ExtensionContext): void {
 		this.overlay.beginOperation();
 		this.controller.invalidate(ctx);
+		this.refreshController.abort(new DOMException("Account refresh invalidated", "AbortError"));
+		this.refreshController = new AbortController();
 	}
 
 	async clear(ctx: ExtensionContext): Promise<void> {
