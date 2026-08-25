@@ -190,11 +190,66 @@ export function pendingRequiredCompletionCount(
 export function reconcileRequiredCompletionContext(
 	messages: ContextEvent["messages"],
 	agents: readonly ManagedAgent[],
+	restorationPredecessors: readonly string[] = [],
 ): ContextEvent["messages"] {
-	const withoutPrior = messages.filter(
-		(message) =>
-			message.role !== "custom" || message.customType !== COMPLETION_REQUIREMENT_CONTEXT_TYPE,
-	);
+	const existing = messages.filter(isRequiredCompletionContextMessage);
+	const withoutPrior = messages.filter((message) => !isRequiredCompletionContextMessage(message));
+	const state = modelRequirementState(agents);
+	if (state.records.length === 0) {
+		return existing.length === 0 ? messages : withoutPrior;
+	}
+	const summaryBoundary = leadingSummaryBoundary(withoutPrior);
+	const content =
+		summaryBoundary > 0 && !hasModelVisibleRequirementState(withoutPrior, state.records)
+			? requiredCompletionContextContent(state.records, state.omittedCancelled)
+			: undefined;
+	let insertionBoundary = summaryBoundary;
+	while (insertionBoundary < withoutPrior.length) {
+		const predecessor = withoutPrior[insertionBoundary];
+		if (
+			predecessor?.role !== "custom" ||
+			!restorationPredecessors.includes(predecessor.customType)
+		) {
+			break;
+		}
+		insertionBoundary += 1;
+	}
+	if (
+		content !== undefined &&
+		existing.length === 1 &&
+		messages[insertionBoundary] === existing[0] &&
+		existing[0]?.content === content &&
+		hasCompletionRequirementContextVersion(existing[0])
+	) {
+		return messages;
+	}
+	if (existing.length === 0 && content === undefined) return messages;
+	if (content === undefined) return withoutPrior;
+	return [
+		...withoutPrior.slice(0, insertionBoundary),
+		{
+			role: "custom",
+			customType: COMPLETION_REQUIREMENT_CONTEXT_TYPE,
+			content,
+			display: false,
+			details: { version: COMPLETION_REQUIREMENT_VERSION },
+			timestamp: 0,
+		},
+		...withoutPrior.slice(insertionBoundary),
+	];
+}
+
+interface ModelRequirementRecord {
+	state: CompletionRequirementState;
+	runId: string;
+	generation: number;
+	terminalState: AgentLifecycleState | undefined;
+}
+
+function modelRequirementState(agents: readonly ManagedAgent[]): {
+	records: ModelRequirementRecord[];
+	omittedCancelled: number;
+} {
 	const allRecords = agents
 		.flatMap((agent) =>
 			(agent.completionRequirements ?? []).map((requirement) => ({
@@ -211,11 +266,31 @@ export function reconcileRequiredCompletionContext(
 	const cancelled = allRecords.filter((record) => record.state === "cancelled");
 	const cancelledSlots = Math.max(0, MAX_UNRESOLVED_REQUIRED_COMPLETIONS - unresolved.length);
 	const retainedCancelled = cancelledSlots > 0 ? cancelled.slice(-cancelledSlots) : [];
-	const records = [...unresolved, ...retainedCancelled];
-	const omittedCancelled = cancelled.length - retainedCancelled.length;
-	if (records.length === 0)
-		return withoutPrior.length === messages.length ? messages : withoutPrior;
-	const content = truncateUtf8(
+	const records = [...unresolved, ...retainedCancelled].sort((left, right) => {
+		if (left.runId === right.runId) return left.generation - right.generation;
+		return left.runId < right.runId ? -1 : 1;
+	});
+	return { records, omittedCancelled: cancelled.length - retainedCancelled.length };
+}
+
+function hasModelVisibleRequirementState(
+	messages: ContextEvent["messages"],
+	records: readonly ModelRequirementRecord[],
+): boolean {
+	const visible = completionRequirementsFromBranch(messages).records;
+	return records.every((record) => {
+		const retained = visible.get(completionRequirementKey(record));
+		if (!retained) return false;
+		if (record.state === "available" && retained.state === "visible") return true;
+		return retained.state === record.state && retained.terminalState === record.terminalState;
+	});
+}
+
+function requiredCompletionContextContent(
+	records: readonly ModelRequirementRecord[],
+	omittedCancelled: number,
+): string {
+	return truncateUtf8(
 		[
 			"[PI SUBAGENT REQUIRED COMPLETIONS v1]",
 			"Runtime-tracked exact runs are JSON data below.",
@@ -228,17 +303,38 @@ export function reconcileRequiredCompletionContext(
 		].join("\n"),
 		DEFAULT_MAX_CONTEXT_BYTES,
 	).text;
-	return [
-		...withoutPrior,
-		{
-			role: "custom",
-			customType: COMPLETION_REQUIREMENT_CONTEXT_TYPE,
-			content,
-			display: false,
-			details: { version: COMPLETION_REQUIREMENT_VERSION },
-			timestamp: 0,
-		},
-	];
+}
+
+type RequiredCompletionContextMessage = Extract<
+	ContextEvent["messages"][number],
+	{ role: "custom" }
+> & { content: string };
+
+function isRequiredCompletionContextMessage(
+	message: ContextEvent["messages"][number],
+): message is RequiredCompletionContextMessage {
+	return message.role === "custom" && message.customType === COMPLETION_REQUIREMENT_CONTEXT_TYPE;
+}
+
+function hasCompletionRequirementContextVersion(
+	message: RequiredCompletionContextMessage,
+): boolean {
+	return (
+		typeof message.details === "object" &&
+		message.details !== null &&
+		!Array.isArray(message.details) &&
+		(message.details as Record<string, unknown>).version === COMPLETION_REQUIREMENT_VERSION
+	);
+}
+
+function leadingSummaryBoundary(messages: ContextEvent["messages"]): number {
+	let index = 0;
+	while (index < messages.length) {
+		const role = messages[index]?.role;
+		if (role !== "compactionSummary" && role !== "branchSummary") break;
+		index += 1;
+	}
+	return index;
 }
 
 export function isCompletionRequirementRecord(

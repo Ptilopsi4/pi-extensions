@@ -14,7 +14,9 @@ Omitting the field or using `background` preserves prior behavior and does not c
 `AgentRegistry` owns requirement transitions with the child turn and persisted completion outbox.
 Tool-result `details.agent.completionRequirements` provides fork-sensitive branch evidence.
 Session restoration retains exact requirements found on the active branch and treats sessions without visible subagent state as a possible compacted continuation.
-The `context` hook owns one canonical hidden `pi-subagent-required-completions` block and replaces any older copy on every provider context assembly.
+The successful lifecycle tool result and delivered completion message are the ordinary model-visible requirement handoff.
+If leading compaction or branch summaries remove equivalent current evidence, the `context` hook restores one canonical hidden `pi-subagent-required-completions` fallback immediately after the summaries.
+The fallback remains at that fixed boundary across ordinary turns and is removed when equivalent current evidence becomes visible or no retained requirement remains.
 `CompletionDeliveryBroker` owns exact completion visibility acknowledgement and asks the registry to mark the corresponding requirement visible.
 No timer, waiter, or UI object owns requirement truth.
 
@@ -31,9 +33,18 @@ The runtime bounds retained requirement records per agent and rejects a sixty-fi
 ## Parent behavior
 
 Pending and available requirements remain final-answer dependencies.
-Visible requirements no longer appear in the canonical context block.
+Visible requirements no longer appear in the canonical fallback block.
 Cancelled requirements are terminal and must be reported rather than silently treated as successful evidence.
 A failed, partial, interrupted, stale, or cancelled child never satisfies mutating acceptance or independent-verification requirements merely because its turn settled.
+
+## Prompt-cache boundary
+
+Provider-visible subagent tool definitions and prompt metadata remain stable within one configured tool-surface epoch.
+A versioned hidden session-guidance message carries the bounded agent catalog, completion delivery, capacity, cwd policy, and consultation resource policy without placing mutable values in leading tool metadata.
+The initial guidance contract is persisted once before the first agent turn when no equivalent retained contract exists.
+A successfully applied live policy change appends a superseding guidance contract without triggering a model turn.
+Compaction restores missing guidance and required-completion fallbacks in deterministic order after leading summaries.
+These rules preserve normalized cache-eligible prefixes across ordinary turns but do not guarantee a provider-reported cache hit.
 
 ## Budget termination
 

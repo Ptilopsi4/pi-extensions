@@ -215,10 +215,21 @@ test("uses visible todo calls and injects only missing current state", async () 
 			tokensBefore: 100,
 			timestamp: 0,
 		},
+		{
+			role: "branchSummary",
+			summary: "Retained branch state.",
+			fromId: "branch-start",
+			timestamp: 0,
+		},
+		{
+			role: "user",
+			content: [{ type: "text", text: "continue" }],
+			timestamp: 0,
+		},
 	];
 	const transformed = await harness.context(base, current.ctx);
-	assert.equal(transformed.length, 2);
-	const reminder = transformed.at(-1);
+	assert.equal(transformed.length, 4);
+	const reminder = transformed[2];
 	assert.equal(reminder?.role, "custom");
 	if (reminder?.role !== "custom") assert.fail("Expected a custom todo reminder");
 	assert.equal(reminder.customType, TODO_CONTEXT_MESSAGE_TYPE);
@@ -230,8 +241,40 @@ test("uses visible todo calls and injects only missing current state", async () 
 	);
 	assert.doesNotMatch(reminder.content as string, /call update_todo_list/u);
 
+	assert.equal(transformed.at(-1), base.at(-1));
 	const unchanged = await harness.context(transformed, current.ctx);
 	assert.equal(unchanged, transformed);
+	const duplicated = [
+		...base.slice(0, 2),
+		reminder,
+		reminder,
+		...base.slice(2),
+	] as ContextEvent["messages"];
+	const deduplicated = await harness.context(duplicated, current.ctx);
+	assert.equal(
+		deduplicated.filter(
+			(message) => message.role === "custom" && message.customType === TODO_CONTEXT_MESSAGE_TYPE,
+		).length,
+		1,
+	);
+	assert.equal(deduplicated[2]?.role, "custom");
+	const repairedVersion = await harness.context(
+		[...base.slice(0, 2), { ...reminder, details: { version: 0 } }, ...base.slice(2)],
+		current.ctx,
+	);
+	assert.deepEqual(repairedVersion[2]?.role === "custom" ? repairedVersion[2].details : undefined, {
+		version: TODO_CONTEXT_VERSION,
+	});
+
+	const ordinary: ContextEvent["messages"] = [
+		{
+			role: "user",
+			content: [{ type: "text", text: "ordinary context" }],
+			timestamp: 0,
+		},
+	];
+	assert.equal(await harness.context(ordinary, current.ctx), ordinary);
+	assert.deepEqual(await harness.context([...ordinary, reminder], current.ctx), ordinary);
 
 	for (const toolName of [TOOL_NAME, "todo_widget"]) {
 		const details: TodoDetails = { version: TODO_DETAILS_VERSION, items };
