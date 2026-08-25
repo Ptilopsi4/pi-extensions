@@ -1,5 +1,11 @@
 # @narumitw/pi-todo
 
+## 0.1.2
+
+### Patch Changes
+
+- 6dd7b9e: Persist restored todo, subagent guidance, and required-completion context boundaries as validated branch-local session metadata so reloads and tree navigation preserve stable model-visible prefixes.
+
 ## 0.1.1
 
 ### Patch Changes
