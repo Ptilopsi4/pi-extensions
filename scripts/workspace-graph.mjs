@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import semver from "semver";
 
 const DEPENDENCY_FIELDS = [
 	"dependencies",
@@ -12,21 +13,26 @@ export function readWorkspaces(root) {
 	const packagesDirectory = path.join(root, "packages");
 	if (!fs.existsSync(packagesDirectory)) return [];
 
-	const workspaces = [];
+	const workspaceManifests = [];
 	for (const entry of fs.readdirSync(packagesDirectory, { withFileTypes: true })) {
 		if (!entry.isDirectory()) continue;
 		const manifestPath = path.join(packagesDirectory, entry.name, "package.json");
 		if (!fs.existsSync(manifestPath)) continue;
 		const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 		if (typeof manifest.name !== "string") continue;
-		workspaces.push({
-			dependencies: dependencyNames(manifest),
-			directoryName: entry.name,
-			hasBuildScript: typeof manifest.scripts?.build === "string",
-			name: manifest.name,
-		});
+		workspaceManifests.push({ directoryName: entry.name, manifest });
 	}
-	return workspaces.sort((left, right) => left.directoryName.localeCompare(right.directoryName));
+	workspaceManifests.sort((left, right) => left.directoryName.localeCompare(right.directoryName));
+
+	const workspaceVersions = new Map(
+		workspaceManifests.map(({ manifest }) => [manifest.name, manifest.version]),
+	);
+	return workspaceManifests.map(({ directoryName, manifest }) => ({
+		dependencies: dependencyNames(manifest, workspaceVersions),
+		directoryName,
+		hasBuildScript: typeof manifest.scripts?.build === "string",
+		name: manifest.name,
+	}));
 }
 
 export function expandReverseDependencies(workspaces, directlyAffected) {
@@ -87,12 +93,24 @@ export function orderDependenciesFirst(workspaces, workspaceNames) {
 	return ordered;
 }
 
-function dependencyNames(manifest) {
+function dependencyNames(manifest, workspaceVersions) {
 	const names = new Set();
 	for (const field of DEPENDENCY_FIELDS) {
 		const dependencies = manifest[field];
 		if (!dependencies || typeof dependencies !== "object" || Array.isArray(dependencies)) continue;
-		for (const name of Object.keys(dependencies)) names.add(name);
+		for (const [name, specifier] of Object.entries(dependencies)) {
+			if (!workspaceVersions.has(name)) continue;
+			if (!usesLocalWorkspace(specifier, workspaceVersions.get(name))) continue;
+			names.add(name);
+		}
 	}
 	return names;
+}
+
+function usesLocalWorkspace(specifier, workspaceVersion) {
+	if (typeof specifier !== "string") return false;
+	if (specifier.startsWith("workspace:")) return true;
+	if (typeof workspaceVersion !== "string" || !semver.valid(workspaceVersion)) return false;
+	const range = semver.validRange(specifier);
+	return range !== null && semver.satisfies(workspaceVersion, range, { includePrerelease: true });
 }

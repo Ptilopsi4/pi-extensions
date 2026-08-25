@@ -23,11 +23,44 @@ const ROOT_FULL_TYPECHECK_FILES = new Set([
 const ROOT_IGNORED_PREFIXES = [".changeset/", ".github/", "docs/"];
 
 export function stagedFiles(root) {
-	const output = execFileSync(
-		"git",
-		["diff", "--cached", "--name-only", "-z", "--diff-filter=ACDMRTUXB"],
-		{ cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-	);
+	const unstagedManifests = gitPaths(root, [
+		"diff",
+		"--name-only",
+		"-z",
+		"--",
+		":(glob)packages/*/package.json",
+	]);
+	const untrackedManifests = gitPaths(root, [
+		"ls-files",
+		"--others",
+		"--exclude-standard",
+		"-z",
+		"--",
+		":(glob)packages/*/package.json",
+	]);
+	const inconsistentManifests = [...new Set([...unstagedManifests, ...untrackedManifests])];
+	if (inconsistentManifests.length > 0) {
+		throw new Error(
+			`workspace manifests differ from the index: ${inconsistentManifests.join(", ")}`,
+		);
+	}
+
+	return gitPaths(root, [
+		"diff",
+		"--cached",
+		"--no-renames",
+		"--name-only",
+		"-z",
+		"--diff-filter=ACDMRTUXB",
+	]);
+}
+
+function gitPaths(root, args) {
+	const output = execFileSync("git", args, {
+		cwd: root,
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "pipe"],
+	});
 	return output.split("\0").filter(Boolean);
 }
 

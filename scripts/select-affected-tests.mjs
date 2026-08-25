@@ -22,7 +22,7 @@ export function changedFilesSince(root, base, head = "HEAD") {
 
 	const output = execFileSync(
 		"git",
-		["diff", "--name-only", "-z", "--diff-filter=ACDMRTUXB", `${base}...${head}`],
+		["diff", "--no-renames", "--name-only", "-z", "--diff-filter=ACDMRTUXB", `${base}...${head}`],
 		{ cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
 	);
 	return output.split("\0").filter(Boolean);

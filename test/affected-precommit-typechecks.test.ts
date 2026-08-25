@@ -20,6 +20,7 @@ interface SelectorModule {
 }
 
 interface TestSelectorModule {
+	changedFilesSince(root: string, base: string, head?: string): string[];
 	selectAffectedTests(
 		root: string,
 		changedFiles: string[],
@@ -45,20 +46,33 @@ beforeAll(async () => {
 	selector = (await import(selectorUrl)) as SelectorModule;
 	testSelector = (await import(testSelectorUrl)) as TestSelectorModule;
 	fixtureRoot = mkdtempSync(path.join(os.tmpdir(), "pi-precommit-selection-"));
-	writeWorkspace("library", { name: "@fixture/library", scripts: { build: "build" } });
+	writeWorkspace("library", {
+		name: "@fixture/library",
+		scripts: { build: "build" },
+		version: "1.0.0",
+	});
 	writeWorkspace("feature", {
-		dependencies: { "@fixture/library": "workspace:*" },
+		dependencies: { "@fixture/library": "^1.0.0" },
 		name: "@fixture/feature",
 		scripts: { build: "build" },
+		version: "1.0.0",
 	});
 	writeWorkspace("app", {
 		devDependencies: { "@fixture/feature": "workspace:*" },
 		name: "@fixture/app",
 		scripts: { build: "build" },
+		version: "1.0.0",
+	});
+	writeWorkspace("registry-consumer", {
+		dependencies: { "@fixture/library": "^0.9.0" },
+		name: "@fixture/registry-consumer",
+		scripts: { build: "build" },
+		version: "1.0.0",
 	});
 	writeWorkspace("unrelated", {
 		name: "@fixture/unrelated",
 		scripts: { build: "build" },
+		version: "1.0.0",
 	});
 });
 
@@ -79,7 +93,7 @@ test("a staged workspace selects transitive dependents and required build depend
 	]);
 });
 
-test("a staged shared library selects all transitive dependents but not unrelated workspaces", () => {
+test("a staged shared library selects local dependents but not registry-resolved consumers", () => {
 	const selection = selector.selectStagedTypechecks(fixtureRoot, ["packages/library/src/index.ts"]);
 
 	assert.equal(selection.mode, "affected");
@@ -88,7 +102,17 @@ test("a staged shared library selects all transitive dependents but not unrelate
 		"@fixture/feature",
 		"@fixture/app",
 	]);
-	assert.doesNotMatch(selection.workspaceNames.join(" "), /unrelated/u);
+	assert.doesNotMatch(selection.workspaceNames.join(" "), /registry-consumer|unrelated/u);
+});
+
+test("an incompatible dependency range does not build the unrelated local workspace", () => {
+	const selection = selector.selectStagedTypechecks(fixtureRoot, [
+		"packages/registry-consumer/src/index.ts",
+	]);
+
+	assert.equal(selection.mode, "affected");
+	assert.deepEqual(selection.workspaceNames, ["@fixture/registry-consumer"]);
+	assert.deepEqual(selection.buildWorkspaceNames, ["@fixture/registry-consumer"]);
 });
 
 test("documentation-only staging skips workspace typechecks", () => {
@@ -118,6 +142,7 @@ test("shared root inputs and removed workspaces fall back to all workspaces", ()
 			"@fixture/library",
 			"@fixture/feature",
 			"@fixture/app",
+			"@fixture/registry-consumer",
 			"@fixture/unrelated",
 		]);
 	}
@@ -133,20 +158,42 @@ test("the existing affected-test selector retains reverse-dependent behavior", (
 	assert.deepEqual(selection.workspaceDirectories, ["app", "feature"]);
 });
 
-test("staged file discovery excludes unstaged changes", () => {
+test("staged file discovery tracks both rename paths and rejects unstaged manifests", () => {
 	const gitRoot = mkdtempSync(path.join(os.tmpdir(), "pi-precommit-git-"));
 	try {
 		git(gitRoot, ["init", "-q"]);
 		writeFileSync(path.join(gitRoot, "staged.ts"), "export const staged = 1;\n");
 		writeFileSync(path.join(gitRoot, "unstaged.ts"), "export const unstaged = 1;\n");
+		mkdirSync(path.join(gitRoot, "packages", "source", "src"), { recursive: true });
+		writeFileSync(
+			path.join(gitRoot, "packages", "source", "package.json"),
+			'{"name":"@fixture/source","version":"1.0.0"}\n',
+		);
+		writeFileSync(path.join(gitRoot, "packages", "source", "src", "moved.ts"), "export {};\n");
 		git(gitRoot, ["add", "."]);
-		git(gitRoot, ["-c", "commit.gpgsign=false", "commit", "-qm", "fixture"]);
+		commitFixture(gitRoot, "fixture");
+		const base = git(gitRoot, ["rev-parse", "HEAD"]).trim();
 
 		writeFileSync(path.join(gitRoot, "staged.ts"), "export const staged = 2;\n");
 		writeFileSync(path.join(gitRoot, "unstaged.ts"), "export const unstaged = 2;\n");
+		mkdirSync(path.join(gitRoot, "docs"), { recursive: true });
+		git(gitRoot, ["mv", "packages/source/src/moved.ts", "docs/moved.ts"]);
 		git(gitRoot, ["add", "staged.ts"]);
 
-		assert.deepEqual(selector.stagedFiles(gitRoot), ["staged.ts"]);
+		const renamedPaths = ["docs/moved.ts", "packages/source/src/moved.ts", "staged.ts"];
+		assert.deepEqual(selector.stagedFiles(gitRoot), renamedPaths);
+
+		commitFixture(gitRoot, "rename fixture");
+		assert.deepEqual(testSelector.changedFilesSince(gitRoot, base), renamedPaths);
+
+		writeFileSync(
+			path.join(gitRoot, "packages", "source", "package.json"),
+			'{"name":"@fixture/source","version":"2.0.0"}\n',
+		);
+		assert.throws(
+			() => selector.stagedFiles(gitRoot),
+			/workspace manifests differ from the index: packages\/source\/package\.json/u,
+		);
 	} finally {
 		rmSync(gitRoot, { recursive: true, force: true });
 	}
@@ -165,6 +212,20 @@ function writeWorkspace(directoryName: string, manifest: Record<string, unknown>
 	mkdirSync(path.join(workspaceRoot, "src"), { recursive: true });
 	writeFileSync(path.join(workspaceRoot, "package.json"), `${JSON.stringify(manifest)}\n`);
 	writeFileSync(path.join(workspaceRoot, "src", "index.ts"), "export {};\n");
+}
+
+function commitFixture(cwd: string, message: string) {
+	git(cwd, [
+		"-c",
+		"commit.gpgsign=false",
+		"-c",
+		"user.name=Fixture",
+		"-c",
+		"user.email=fixture@example.com",
+		"commit",
+		"-qm",
+		message,
+	]);
 }
 
 function git(cwd: string, args: string[]) {
