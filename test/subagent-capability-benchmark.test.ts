@@ -539,19 +539,19 @@ test("manual runner selects the separately versioned v3 protocol explicitly", as
 	assert.deepEqual(preview.capabilityMatrix, capabilityMatrix("v3"));
 });
 
-test("resume rejects changed v1, v2, and v3 extension identities", async () => {
-	const directory = mkdtempSync(path.join(os.tmpdir(), "subagent-capability-resume-identity-"));
-	const root = path.resolve(import.meta.dirname, "..");
-	const script = "scripts/benchmark-subagent-capabilities.ts";
-	try {
-		for (const testCase of [
-			{ protocol: [] as string[], option: "--v1-extension", name: "v1" },
-			{ protocol: [] as string[], option: "--v2-extension", name: "v2" },
-			{ protocol: ["--job-version", "v3"], option: "--v3-extension", name: "v3" },
-		]) {
+for (const testCase of [
+	{ protocol: [] as string[], option: "--v1-extension", name: "v1" },
+	{ protocol: [] as string[], option: "--v2-extension", name: "v2" },
+	{ protocol: ["--job-version", "v3"], option: "--v3-extension", name: "v3" },
+]) {
+	test(`resume rejects a changed ${testCase.name} extension identity`, async () => {
+		const directory = mkdtempSync(path.join(os.tmpdir(), "subagent-capability-resume-identity-"));
+		const root = path.resolve(import.meta.dirname, "..");
+		const script = "scripts/benchmark-subagent-capabilities.ts";
+		try {
 			const output = path.join(directory, `${testCase.name}.json`);
-			const initial = path.join(directory, testCase.name, "initial", "extension.ts");
-			const changed = path.join(directory, testCase.name, "changed", "extension.ts");
+			const initial = path.join(directory, "initial", "extension.ts");
+			const changed = path.join(directory, "changed", "extension.ts");
 			const { stdout } = await execFileAsync(
 				process.execPath,
 				[script, "--model", "provider/model", ...testCase.protocol, testCase.option, initial],
@@ -582,8 +582,8 @@ test("resume rejects changed v1, v2, and v3 extension identities", async () => {
 				(error: Error & { stderr?: string }) =>
 					/different extension identities/i.test(error.stderr ?? ""),
 			);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
 		}
-	} finally {
-		rmSync(directory, { recursive: true, force: true });
-	}
-});
+	});
+}
