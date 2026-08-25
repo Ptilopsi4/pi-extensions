@@ -13,6 +13,7 @@ import {
 	COMPLETION_REQUIREMENT_TRANSITION_TYPE,
 	completionRequirementKey,
 	completionRequirementsFromBranch,
+	createRequiredCompletionTransition,
 	reconcileRequiredCompletionContext,
 } from "../src/completion-requirement.js";
 import { AgentRegistry } from "../src/registry.js";
@@ -397,6 +398,160 @@ test("live policy changes retain compacted guidance at its prior provider bounda
 	await emit(mock, "session_shutdown", { reason: "quit" }, replacement.ctx);
 });
 
+test("settings changes before the first resumed context retain compacted guidance", async () => {
+	let snapshot = guidanceSnapshot();
+	const branch = [
+		{
+			type: "compaction",
+			id: "compaction",
+			parentId: null,
+			timestamp: new Date(0).toISOString(),
+			summary: "Earlier work was compacted.",
+			firstKeptEntryId: "kept",
+			tokensBefore: 100,
+		},
+	] as SessionEntry[];
+	const mock = createMockPi();
+	const controller = registerSubagentSessionGuidance(
+		mock.pi,
+		() => snapshot,
+		() => [],
+	);
+	const context = createMockContext({ sessionManager: sessionManagerFor(branch) });
+	await emit(mock, "session_start", { reason: "resume" }, context.ctx);
+
+	const priorSnapshot = snapshot;
+	snapshot = { ...snapshot, completionDelivery: "auto-resume" };
+	controller.publish();
+	const appended = mock.sentMessages.at(-1)?.message as
+		| ContextEvent["messages"][number]
+		| undefined;
+	if (!appended) assert.fail("expected a live-policy contract");
+	const summary: ContextEvent["messages"] = [
+		{
+			role: "compactionSummary",
+			summary: "Earlier work was compacted.",
+			tokensBefore: 100,
+			timestamp: 0,
+		},
+	];
+	const baseline = reconcileSubagentSessionGuidance(
+		[...summary, userMessage("continue")],
+		priorSnapshot,
+	);
+	const resumed = await applyContextHooks(
+		mock,
+		[...summary, userMessage("continue"), appended],
+		context.ctx,
+	);
+	assert.deepEqual(
+		convertToLlm(resumed).slice(0, convertToLlm(baseline).length),
+		convertToLlm(baseline),
+	);
+	assert.equal(resumed.at(-1), appended);
+	assert.match(
+		String(resumed[1]?.role === "custom" ? resumed[1].content : ""),
+		/"completionDelivery":"next-turn"/u,
+	);
+	assert.match(
+		String(appended.role === "custom" ? appended.content : ""),
+		/"completionDelivery":"auto-resume"/u,
+	);
+
+	await emit(mock, "session_shutdown", { reason: "quit" }, context.ctx);
+});
+
+test("restored requirement context remains fixed after completion becomes visible", async () => {
+	const requirement = beginCompletionRequirement(undefined, {
+		runId: "run:completed-after-restoration",
+		generation: 1,
+		createdAt: 10,
+	})[0];
+	const agent = record({ completionRequirements: [requirement] });
+	const agents = [agent];
+	const branch = [
+		{
+			type: "compaction",
+			id: "compaction",
+			parentId: null,
+			timestamp: new Date(0).toISOString(),
+			summary: "Earlier work was compacted.",
+			firstKeptEntryId: "kept",
+			tokensBefore: 100,
+		},
+	] as SessionEntry[];
+	const mock = createMockPi();
+	registerSubagentSessionGuidance(mock.pi, guidanceSnapshot, () => agents);
+	const context = createMockContext({ sessionManager: sessionManagerFor(branch) });
+	await emit(mock, "session_start", { reason: "resume" }, context.ctx);
+	const summary: ContextEvent["messages"] = [
+		{
+			role: "compactionSummary",
+			summary: "Earlier work was compacted.",
+			tokensBefore: 100,
+			timestamp: 0,
+		},
+	];
+	const firstRaw = [...summary, userMessage("continue")];
+	const firstMessages = await applyContextHooks(mock, firstRaw, context.ctx);
+	const restored = firstMessages.find(
+		(message) =>
+			message.role === "custom" && message.customType === COMPLETION_REQUIREMENT_CONTEXT_TYPE,
+	);
+	assert.ok(restored);
+
+	const available = {
+		...requirement,
+		state: "available" as const,
+		completionId: "completion:restored",
+		terminalState: "completed" as const,
+		updatedAt: 20,
+	};
+	agent.completionRequirements = [{ ...available, state: "visible" }];
+	const completion: ContextEvent["messages"][number] = {
+		role: "custom",
+		customType: "pi-subagent-completion",
+		content: "completed",
+		display: true,
+		details: { completionRequirement: available },
+		timestamp: 0,
+	};
+	const secondMessages = await applyContextHooks(
+		mock,
+		[...firstRaw, assistantMessage("working"), completion],
+		context.ctx,
+	);
+	const first = convertToLlm(firstMessages);
+	const second = convertToLlm(secondMessages);
+	assert.deepEqual(second.slice(0, first.length), first);
+	assert.deepEqual(
+		secondMessages.find(
+			(message) =>
+				message.role === "custom" && message.customType === COMPLETION_REQUIREMENT_CONTEXT_TYPE,
+		),
+		restored,
+	);
+	assert.equal(secondMessages.at(-1), completion);
+
+	const replacement = createMockContext({ sessionManager: sessionManagerFor(branch) });
+	await emit(mock, "session_start", { reason: "fork" }, replacement.ctx);
+	await emit(mock, "session_shutdown", { reason: "replace" }, context.ctx);
+	const replacementMessages = await applyContextHooks(
+		mock,
+		[...firstRaw, completion],
+		replacement.ctx,
+	);
+	assert.equal(
+		replacementMessages.some(
+			(message) =>
+				message.role === "custom" && message.customType === COMPLETION_REQUIREMENT_CONTEXT_TYPE,
+		),
+		false,
+		"session replacement must clear the prior requirement boundary",
+	);
+	await emit(mock, "session_shutdown", { reason: "quit" }, replacement.ctx);
+});
+
 test("uncompacted resume appends a restored requirement cancellation once", async () => {
 	const requirement = beginCompletionRequirement(undefined, {
 		runId: "run:restored",
@@ -499,6 +654,94 @@ test("uncompacted resume appends a restored requirement cancellation once", asyn
 	const first = convertToLlm(firstMessages);
 	const second = convertToLlm(secondMessages);
 	assert.deepEqual(second.slice(0, first.length), first);
+
+	await emit(mock, "session_shutdown", { reason: "quit" }, context.ctx);
+});
+
+test("compacted resume appends cancellation after a retained pending handoff", async () => {
+	const requirement = beginCompletionRequirement(undefined, {
+		runId: "run:retained-after-summary",
+		generation: 1,
+		createdAt: 10,
+	})[0];
+	const registry = new AgentRegistry(
+		{ kind: "fake", runTurn: async () => ({ output: "unused", exitCode: 0 }) },
+		{ now: () => 20 },
+	);
+	registry.restore([
+		record({
+			state: "running",
+			completionRequirements: [requirement],
+		}),
+	]);
+	const cancelled = registry.list()[0];
+	assert.equal(cancelled?.completionRequirements?.[0]?.state, "cancelled");
+
+	const pendingResult: ContextEvent["messages"][number] = {
+		role: "toolResult",
+		toolCallId: "spawn-retained",
+		toolName: "subagent_spawn",
+		content: [{ type: "text", text: "spawned required child" }],
+		details: { agent: { completionRequirements: [requirement] } },
+		isError: false,
+		timestamp: 0,
+	};
+	const branch = [
+		{
+			type: "compaction",
+			id: "compaction",
+			parentId: null,
+			timestamp: new Date(0).toISOString(),
+			summary: "Earlier work was compacted.",
+			firstKeptEntryId: "spawn",
+			tokensBefore: 100,
+		},
+		{
+			type: "message",
+			id: "spawn",
+			parentId: "compaction",
+			timestamp: new Date(1).toISOString(),
+			message: pendingResult,
+		},
+	] as SessionEntry[];
+	const summary: ContextEvent["messages"] = [
+		{
+			role: "compactionSummary",
+			summary: "Earlier work was compacted.",
+			tokensBefore: 100,
+			timestamp: 0,
+		},
+	];
+	assert.equal(
+		createRequiredCompletionTransition(summary, registry.list()),
+		undefined,
+		"a missing handoff must use summary-boundary restoration instead of a tail transition",
+	);
+
+	const mock = createMockPi();
+	registerSubagentSessionGuidance(mock.pi, guidanceSnapshot, () => registry.list());
+	const context = createMockContext({ sessionManager: sessionManagerFor(branch) });
+	await emit(mock, "session_start", { reason: "resume" }, context.ctx);
+	const firstMessages = await applyPromptBoundary(
+		mock,
+		[...summary, pendingResult, userMessage("continue resumed work")],
+		context.ctx,
+	);
+	const transitionIndex = firstMessages.findIndex(
+		(message) =>
+			message.role === "custom" && message.customType === COMPLETION_REQUIREMENT_TRANSITION_TYPE,
+	);
+	const handoffIndex = firstMessages.indexOf(pendingResult);
+	assert.ok(transitionIndex > handoffIndex);
+	assert.equal(transitionIndex, firstMessages.length - 1);
+	assert.equal(
+		firstMessages.some(
+			(message) =>
+				message.role === "custom" && message.customType === COMPLETION_REQUIREMENT_CONTEXT_TYPE,
+		),
+		false,
+		"the tail cancellation supersedes the retained handoff without an earlier fallback",
+	);
 
 	await emit(mock, "session_shutdown", { reason: "quit" }, context.ctx);
 });

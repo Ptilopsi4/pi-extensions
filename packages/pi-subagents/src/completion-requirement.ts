@@ -212,14 +212,15 @@ export function createRequiredCompletionTransition(
 	messages: ContextEvent["messages"],
 	agents: readonly ManagedAgent[],
 ) {
-	if (leadingSummaryBoundary(messages) > 0) return undefined;
+	const summarized = leadingSummaryBoundary(messages) > 0;
 	const state = modelRequirementState(agents);
 	const visible = completionRequirementsFromBranch(messages).records;
-	const records = state.records.filter(
-		(record) =>
-			record.state === "cancelled" &&
-			!modelRequirementStateMatches(visible.get(completionRequirementKey(record)), record),
-	);
+	const records = state.records.filter((record) => {
+		if (record.state !== "cancelled") return false;
+		const retained = visible.get(completionRequirementKey(record));
+		if (modelRequirementStateMatches(retained, record)) return false;
+		return !summarized || retained !== undefined;
+	});
 	if (records.length === 0) return undefined;
 	return {
 		role: "custom" as const,
@@ -238,18 +239,17 @@ export function reconcileRequiredCompletionContext(
 	messages: ContextEvent["messages"],
 	agents: readonly ManagedAgent[],
 	restorationPredecessors: readonly string[] = [],
+	restoredBoundaryContent?: string,
 ): ContextEvent["messages"] {
 	const existing = messages.filter(isRequiredCompletionContextMessage);
 	const withoutPrior = messages.filter((message) => !isRequiredCompletionContextMessage(message));
 	const state = modelRequirementState(agents);
-	if (state.records.length === 0) {
-		return existing.length === 0 ? messages : withoutPrior;
-	}
 	const summaryBoundary = leadingSummaryBoundary(withoutPrior);
-	const content =
-		summaryBoundary > 0 && !hasModelVisibleRequirementState(withoutPrior, state.records)
+	const currentContent =
+		state.records.length > 0 && !hasModelVisibleRequirementState(withoutPrior, state.records)
 			? requiredCompletionContextContent(state.records, state.omittedCancelled)
 			: undefined;
+	const content = summaryBoundary > 0 ? (restoredBoundaryContent ?? currentContent) : undefined;
 	let insertionBoundary = summaryBoundary;
 	while (insertionBoundary < withoutPrior.length) {
 		const predecessor = withoutPrior[insertionBoundary];

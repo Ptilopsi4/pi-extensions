@@ -56,6 +56,7 @@ const TodoParameters = Type.Object({
 export default function todoWidgetExtension(pi: ExtensionAPI): void {
 	let activeSession: ExtensionContext["sessionManager"] | undefined;
 	let items: TodoItem[] = [];
+	let restoredBoundary: { summaryEpoch: string; content: string } | undefined;
 
 	const ownsSession = (ctx: ExtensionContext): boolean => ctx.sessionManager === activeSession;
 
@@ -128,12 +129,21 @@ export default function todoWidgetExtension(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => {
 		activeSession = ctx.sessionManager;
 		items = reconstructItems(ctx.sessionManager.getBranch());
+		restoredBoundary = undefined;
 		publish(ctx);
 	});
 
 	pi.on("context", (event, ctx) => {
 		if (!ownsSession(ctx)) return;
-		const messages = reconcileTodoContext(event.messages, items);
+		const summaryEpoch = leadingSummaryEpoch(event.messages);
+		if (restoredBoundary?.summaryEpoch !== summaryEpoch) restoredBoundary = undefined;
+		const messages = reconcileTodoContext(event.messages, items, restoredBoundary?.content);
+		if (restoredBoundary === undefined && summaryEpoch) {
+			const boundaryMessage = messages[leadingSummaryBoundary(messages)];
+			if (isTodoContextMessage(boundaryMessage)) {
+				restoredBoundary = { summaryEpoch, content: boundaryMessage.content };
+			}
+		}
 		if (messages !== event.messages) return { messages };
 	});
 
@@ -147,6 +157,7 @@ export default function todoWidgetExtension(pi: ExtensionAPI): void {
 		if (!ownsSession(ctx)) return;
 		if (ctx.mode === "tui") ctx.ui.setWidget(WIDGET_KEY, undefined);
 		items = [];
+		restoredBoundary = undefined;
 		activeSession = undefined;
 	});
 }
@@ -195,14 +206,16 @@ export function renderTodoWidget(
 export function reconcileTodoContext(
 	messages: ContextEvent["messages"],
 	items: readonly TodoItem[],
+	restoredBoundaryContent?: string,
 ): ContextEvent["messages"] {
 	const existing = messages.filter(isTodoContextMessage);
 	const withoutExisting = messages.filter((message) => !isTodoContextMessage(message));
 	const summaryBoundary = leadingSummaryBoundary(withoutExisting);
-	const content =
-		items.length > 0 && summaryBoundary > 0 && !hasModelVisibleTodoState(withoutExisting, items)
+	const currentContent =
+		items.length > 0 && !hasModelVisibleTodoState(withoutExisting, items)
 			? todoContextContent(items)
 			: undefined;
+	const content = summaryBoundary > 0 ? (restoredBoundaryContent ?? currentContent) : undefined;
 	if (
 		content !== undefined &&
 		existing.length === 1 &&
@@ -298,6 +311,11 @@ function hasTodoContextVersion(message: TodoContextMessage): boolean {
 		!Array.isArray(message.details) &&
 		(message.details as Record<string, unknown>).version === TODO_CONTEXT_VERSION
 	);
+}
+
+function leadingSummaryEpoch(messages: ContextEvent["messages"]): string | undefined {
+	const boundary = leadingSummaryBoundary(messages);
+	return boundary === 0 ? undefined : JSON.stringify(messages.slice(0, boundary));
 }
 
 function leadingSummaryBoundary(messages: ContextEvent["messages"]): number {

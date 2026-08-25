@@ -11,6 +11,7 @@ import type {
 	DelegationCwdPolicy,
 } from "./agents/types.js";
 import {
+	COMPLETION_REQUIREMENT_CONTEXT_TYPE,
 	createRequiredCompletionTransition,
 	reconcileRequiredCompletionContext,
 } from "./completion-requirement.js";
@@ -44,12 +45,22 @@ export function registerSubagentSessionGuidance(
 ): SubagentSessionGuidanceController {
 	let activeSession: ExtensionContext["sessionManager"] | undefined;
 	let lastPublishedContent: string | undefined;
-	let restoredBoundary: { summaryEpoch: string; content: string } | undefined;
+	let restoredGuidanceBoundary: { summaryEpoch: string; content: string } | undefined;
+	let restoredRequirementBoundary: { summaryEpoch: string; content: string } | undefined;
 
 	pi.on("session_start", (_event, ctx) => {
 		activeSession = ctx.sessionManager;
 		lastPublishedContent = undefined;
-		restoredBoundary = undefined;
+		restoredRequirementBoundary = undefined;
+		const messages = buildSessionContext(ctx.sessionManager.getBranch()).messages;
+		const summaryEpoch = leadingSummaryEpoch(messages);
+		restoredGuidanceBoundary =
+			summaryEpoch && !hasSubagentSessionGuidanceHistory(messages)
+				? {
+						summaryEpoch,
+						content: createSubagentSessionGuidance(getSnapshot()).content,
+					}
+				: undefined;
 	});
 
 	pi.on("before_agent_start", (_event, ctx) => {
@@ -65,8 +76,8 @@ export function registerSubagentSessionGuidance(
 		const summaryEpoch = leadingSummaryEpoch(contextMessages);
 		if (summaryEpoch && !hasSubagentSessionGuidanceHistory(contextMessages)) {
 			if (
-				restoredBoundary?.summaryEpoch === summaryEpoch &&
-				restoredBoundary.content !== contract.content
+				restoredGuidanceBoundary?.summaryEpoch === summaryEpoch &&
+				restoredGuidanceBoundary.content !== contract.content
 			) {
 				return { message: contract };
 			}
@@ -85,13 +96,18 @@ export function registerSubagentSessionGuidance(
 	pi.on("context", (event, ctx) => {
 		if (ctx.sessionManager !== activeSession) return;
 		const summaryEpoch = leadingSummaryEpoch(event.messages);
-		if (restoredBoundary?.summaryEpoch !== summaryEpoch) restoredBoundary = undefined;
+		if (restoredGuidanceBoundary?.summaryEpoch !== summaryEpoch) {
+			restoredGuidanceBoundary = undefined;
+		}
+		if (restoredRequirementBoundary?.summaryEpoch !== summaryEpoch) {
+			restoredRequirementBoundary = undefined;
+		}
 		if (
-			restoredBoundary === undefined &&
+			restoredGuidanceBoundary === undefined &&
 			summaryEpoch &&
 			!hasSubagentSessionGuidanceHistory(event.messages)
 		) {
-			restoredBoundary = {
+			restoredGuidanceBoundary = {
 				summaryEpoch,
 				content: createSubagentSessionGuidance(getSnapshot()).content,
 			};
@@ -99,11 +115,26 @@ export function registerSubagentSessionGuidance(
 		const withGuidance = reconcileSubagentSessionGuidance(
 			event.messages,
 			getSnapshot(),
-			restoredBoundary?.content,
+			restoredGuidanceBoundary?.content,
 		);
-		const messages = reconcileRequiredCompletionContext(withGuidance, getAgents(), [
-			SUBAGENT_GUIDANCE_CONTEXT_TYPE,
-		]);
+		const messages = reconcileRequiredCompletionContext(
+			withGuidance,
+			getAgents(),
+			[SUBAGENT_GUIDANCE_CONTEXT_TYPE],
+			restoredRequirementBoundary?.content,
+		);
+		if (restoredRequirementBoundary === undefined && summaryEpoch) {
+			const boundaryMessage = messages.find(
+				(message) =>
+					message.role === "custom" && message.customType === COMPLETION_REQUIREMENT_CONTEXT_TYPE,
+			);
+			if (boundaryMessage?.role === "custom" && typeof boundaryMessage.content === "string") {
+				restoredRequirementBoundary = {
+					summaryEpoch,
+					content: boundaryMessage.content,
+				};
+			}
+		}
 		if (messages !== event.messages) return { messages };
 	});
 
@@ -111,7 +142,8 @@ export function registerSubagentSessionGuidance(
 		if (ctx.sessionManager !== activeSession) return;
 		activeSession = undefined;
 		lastPublishedContent = undefined;
-		restoredBoundary = undefined;
+		restoredGuidanceBoundary = undefined;
+		restoredRequirementBoundary = undefined;
 	});
 
 	return {
