@@ -242,13 +242,16 @@ export function createDebugExtension(
 		});
 
 		pi.on("after_provider_response", (event) => {
-			const requestIndex = capture.pendingRequestIndexes.shift();
+			const requestIndex = capture.pendingRequestIndexes[0];
 			if (requestIndex === undefined) return;
 			const request = capture.records.find((record) => record.requestIndex === requestIndex);
 			if (!request) return;
 			const response = createProviderResponseDiagnostic(request, event.status, now());
 			attachProviderResponse(request, response);
 			pi.appendEntry(PROVIDER_RESPONSE_ENTRY_TYPE, response);
+			if (event.status >= 200 && event.status < 300) {
+				capture.pendingRequestIndexes.shift();
+			}
 		});
 
 		function restoreBranchState(

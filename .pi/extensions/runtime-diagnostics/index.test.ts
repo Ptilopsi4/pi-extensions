@@ -238,7 +238,7 @@ test("captures only sanitized provider metadata, byte counts, status, and header
 	});
 });
 
-test("extracts provider-visible tools from Google and Bedrock payloads", () => {
+test("extracts provider-visible tools from Google, Bedrock, and pi-messages payloads", () => {
 	const googleTools = [
 		{
 			functionDeclarations: [
@@ -282,6 +282,30 @@ test("extracts provider-visible tools from Google and Bedrock payloads", () => {
 	assert.deepEqual(bedrock.topLevelToolNames, ["bash", "write"]);
 	assert.equal(bedrock.toolDefinitionBytes, Buffer.byteLength(JSON.stringify(bedrockTools)));
 	assert.equal(bedrock.responseTelemetry, "pending");
+
+	const piMessageTools = [
+		{ name: "read", description: "Read files", parameters: { type: "object" } },
+		{ name: "write", description: "Write files", parameters: { type: "object" } },
+	];
+	const piMessages = extractProviderRequestDiagnostic(
+		{
+			model: "radius-test",
+			context: {
+				systemPrompt: "[CODEX-LIKE PLAN MODE ACTIVE]",
+				tools: piMessageTools,
+			},
+			options: {},
+		},
+		{
+			requestIndex: 3,
+			capturedAt: 300,
+			sessionId: "session",
+			api: "pi-messages",
+		},
+	);
+	assert.deepEqual(piMessages.topLevelToolNames, ["read", "write"]);
+	assert.equal(piMessages.toolDefinitionBytes, Buffer.byteLength(JSON.stringify(piMessageTools)));
+	assert.equal(piMessages.planModeMarkerPresent, true);
 });
 
 test("strips every Unicode bidirectional formatting control", () => {
@@ -330,6 +354,64 @@ test("restores fork-sensitive controls and prunes the active reporting window", 
 
 	pruneCaptureState(restored, 2_000 + 61 * 60_000);
 	assert.equal(restored.records.length, 0);
+});
+
+test("marks restored response-less captures unavailable instead of pending", async () => {
+	const harness = createHarness();
+	const legacyRequest = {
+		version: 1,
+		requestIndex: 4,
+		capturedAt: 900,
+		sessionId: "session-1",
+		provider: "openai",
+		model: "legacy-model",
+		planModeMarkerPresent: false,
+		topLevelToolNames: ["read"],
+		transcriptToolNames: [],
+	};
+	const persistedPendingRequest = extractProviderRequestDiagnostic(
+		{ tools: [{ name: "read" }] },
+		{
+			requestIndex: 5,
+			capturedAt: 950,
+			sessionId: "session-1",
+			provider: "openai",
+			model: "gpt-test",
+			api: "openai-responses",
+		},
+	);
+	harness.entries.push(
+		customEntry(PROVIDER_REQUEST_ENTRY_TYPE, legacyRequest),
+		customEntry(PROVIDER_REQUEST_ENTRY_TYPE, persistedPendingRequest),
+	);
+	await harness.emit("session_start", {});
+
+	const shown = parseToolResult(
+		await harness
+			.tool()
+			.execute(
+				"call-restored",
+				{ action: "show", limit: 2 },
+				new AbortController().signal,
+				undefined,
+				harness.context,
+			),
+	);
+	const provider = (shown.details as Record<string, unknown>).providerRequestCapture as {
+		recent: Array<{ responseTelemetry: string }>;
+		performance: { pendingRequestCount: number; unavailableRequestCount: number };
+	};
+	assert.deepEqual(
+		provider.recent.map(({ responseTelemetry }) => responseTelemetry),
+		["unavailable", "unavailable"],
+	);
+	assert.equal(provider.performance.pendingRequestCount, 0);
+	assert.equal(provider.performance.unavailableRequestCount, 2);
+	assert.ok(
+		(shown.findings as Array<{ code: string }>).some(
+			({ code }) => code === "response-telemetry-unavailable",
+		),
+	);
 });
 
 test("defaults to a concise agent report and supports targeted, control, bundle, and command routes", async () => {
@@ -605,6 +687,54 @@ test("clears unmatched provider requests before attributing responses in a later
 		status: 200,
 		responseHeaderLatencyMs: 25,
 	});
+});
+
+test("keeps retry responses attached until the final provider response", async () => {
+	const harness = createHarness({ modelApi: "openai-codex-responses" });
+	await harness.emit("session_start", {});
+	harness.setTime(2_000);
+	await harness.emit("before_provider_request", { payload: { tools: [{ name: "read" }] } });
+	harness.setTime(2_010);
+	await harness.emit("after_provider_response", { status: 429, headers: {} });
+	harness.setTime(2_050);
+	await harness.emit("after_provider_response", { status: 200, headers: {} });
+
+	const shown = parseToolResult(
+		await harness
+			.tool()
+			.execute(
+				"call-retry",
+				{ action: "show" },
+				new AbortController().signal,
+				undefined,
+				harness.context,
+			),
+	);
+	const provider = (shown.details as Record<string, unknown>).providerRequestCapture as {
+		latest: {
+			requestIndex: number;
+			responseTelemetry: string;
+			response: { status: number; responseHeaderLatencyMs: number };
+		};
+		performance: {
+			completedRequestCount: number;
+			pendingRequestCount: number;
+			statusCounts: Record<string, number>;
+		};
+	};
+	assert.equal(provider.latest.requestIndex, 1);
+	assert.equal(provider.latest.responseTelemetry, "received");
+	assert.equal(provider.latest.response.status, 200);
+	assert.equal(provider.latest.response.responseHeaderLatencyMs, 50);
+	assert.equal(provider.performance.completedRequestCount, 1);
+	assert.equal(provider.performance.pendingRequestCount, 0);
+	assert.deepEqual(provider.performance.statusCounts, { "200": 1 });
+	assert.equal(
+		harness.entries.filter(
+			(entry) => entry.type === "custom" && entry.customType === PROVIDER_RESPONSE_ENTRY_TYPE,
+		).length,
+		2,
+	);
 });
 
 test("marks Google response telemetry unsupported instead of pending", async () => {

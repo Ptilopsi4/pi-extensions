@@ -228,7 +228,7 @@ export function formatCommandSummary(
 			`Retained: ${provider?.retainedRecordCount ?? 0}`,
 			`Latest request: ${provider?.latest?.requestIndex ?? "none"}`,
 			`Latest status: ${formatResponseTelemetry(provider?.latest ?? null)}`,
-			`Telemetry completed/pending/unsupported: ${provider?.performance.completedRequestCount ?? 0}/${provider?.performance.pendingRequestCount ?? 0}/${provider?.performance.unsupportedRequestCount ?? 0}`,
+			`Telemetry completed/pending/unavailable/unsupported: ${provider?.performance.completedRequestCount ?? 0}/${provider?.performance.pendingRequestCount ?? 0}/${provider?.performance.unavailableRequestCount ?? 0}/${provider?.performance.unsupportedRequestCount ?? 0}`,
 			`Average header latency: ${formatMilliseconds(provider?.performance.averageResponseHeaderLatencyMs ?? null)}`,
 		].join("\n");
 	}
@@ -310,6 +310,9 @@ function createProviderReport(
 	const pending = capture.records.filter(
 		({ responseTelemetry }) => responseTelemetry === "pending",
 	);
+	const unavailable = capture.records.filter(
+		({ responseTelemetry }) => responseTelemetry === "unavailable",
+	);
 	const unsupported = capture.records.filter(
 		({ responseTelemetry }) => responseTelemetry === "unsupported",
 	);
@@ -327,6 +330,7 @@ function createProviderReport(
 		performance: {
 			completedRequestCount: completed.length,
 			pendingRequestCount: pending.length,
+			unavailableRequestCount: unavailable.length,
 			unsupportedRequestCount: unsupported.length,
 			averageResponseHeaderLatencyMs:
 				completed.length > 0
@@ -415,6 +419,15 @@ function createFindings(
 			message: `Provider-visible tools absent from the current active set: ${extra.join(", ")}.`,
 			recommendation:
 				"Check whether the active set changed after capture or whether transcript-anchored deferred tools remain visible.",
+		});
+	}
+	if (latest.responseTelemetry === "unavailable") {
+		findings.push({
+			severity: "info",
+			code: "response-telemetry-unavailable",
+			message: "The restored provider request has no retained response telemetry.",
+			recommendation:
+				"Capture a new provider request before interpreting HTTP status or response-header latency.",
 		});
 	}
 	if (latest.responseTelemetry === "unsupported") {
@@ -662,8 +675,8 @@ function formatPercent(value: number | null): string {
 
 function formatResponseTelemetry(record: ProviderRequestDiagnostic | null): string {
 	if (!record) return "none";
-	if (record.responseTelemetry === "unsupported") return "unsupported";
-	return record.response?.status === undefined ? "pending" : String(record.response.status);
+	if (record.responseTelemetry !== "received") return record.responseTelemetry;
+	return String(record.response?.status ?? "unavailable");
 }
 
 function formatMilliseconds(value: number | null): string {

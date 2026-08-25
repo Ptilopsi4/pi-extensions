@@ -2,8 +2,8 @@ import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
 	attachProviderResponse,
 	isProviderResponseDiagnostic,
-	normalizeProviderRequestDiagnostic,
 	type ProviderRequestDiagnostic,
+	restoreProviderRequestDiagnostic,
 } from "./provider-request.js";
 
 export const PROVIDER_REQUEST_ENTRY_TYPE = "pi-debug:provider-request";
@@ -65,7 +65,7 @@ export function restoreCaptureState(
 	for (const entry of entries) {
 		if (entry.type !== "custom") continue;
 		if (entry.customType === PROVIDER_REQUEST_ENTRY_TYPE) {
-			const record = normalizeProviderRequestDiagnostic(entry.data);
+			const record = restoreProviderRequestDiagnostic(entry.data);
 			if (!record) continue;
 			maximumRequestIndex = Math.max(maximumRequestIndex, record.requestIndex);
 			state.records.push(record);

@@ -4,7 +4,7 @@ const PLAN_MODE_MARKER = "[CODEX-LIKE PLAN MODE ACTIVE]";
 const MAX_TOOL_NAMES = 200;
 const MAX_TOOL_NAME_LENGTH = 128;
 
-export type ResponseTelemetryState = "pending" | "received" | "unsupported";
+export type ResponseTelemetryState = "pending" | "received" | "unavailable" | "unsupported";
 
 export interface ProviderRequestDiagnostic {
 	version: 3;
@@ -45,6 +45,7 @@ export function extractProviderRequestDiagnostic(
 ): ProviderRequestDiagnostic {
 	const root = asRecord(payload);
 	const config = asRecord(root?.config);
+	const context = asRecord(root?.context);
 	return {
 		version: 3,
 		requestIndex: identity.requestIndex,
@@ -55,6 +56,7 @@ export function extractProviderRequestDiagnostic(
 		planModeMarkerPresent:
 			containsMarker(root?.instructions) ||
 			containsMarker(config?.systemInstruction) ||
+			containsMarker(context?.systemPrompt) ||
 			containsMarker(root?.system),
 		requestBytes: jsonByteLength(payload),
 		toolDefinitionBytes: jsonByteLength(extractProviderToolDefinitions(root)),
@@ -79,7 +81,7 @@ export function createProviderResponseDiagnostic(
 	};
 }
 
-export function normalizeProviderRequestDiagnostic(
+export function restoreProviderRequestDiagnostic(
 	value: unknown,
 ): ProviderRequestDiagnostic | undefined {
 	const record = asRecord(value);
@@ -108,7 +110,7 @@ export function normalizeProviderRequestDiagnostic(
 					: null,
 			topLevelToolNames: normalizeNames(record.topLevelToolNames as string[]),
 			transcriptToolNames: normalizeNames(record.transcriptToolNames as string[]),
-			responseTelemetry: response ? "received" : "pending",
+			responseTelemetry: response ? "received" : "unavailable",
 			response,
 		};
 	}
@@ -135,7 +137,8 @@ export function normalizeProviderRequestDiagnostic(
 		toolDefinitionBytes: record.toolDefinitionBytes,
 		topLevelToolNames: normalizeNames(record.topLevelToolNames as string[]),
 		transcriptToolNames: normalizeNames(record.transcriptToolNames as string[]),
-		responseTelemetry: record.responseTelemetry,
+		responseTelemetry:
+			record.responseTelemetry === "pending" ? "unavailable" : record.responseTelemetry,
 		response: record.response as ProviderResponseDiagnostic | null,
 	};
 }
@@ -180,16 +183,19 @@ function isProviderRequestBase(
 function extractProviderToolDefinitions(root: Record<string, unknown> | undefined): unknown {
 	const config = asRecord(root?.config);
 	const toolConfig = asRecord(root?.toolConfig);
-	return root?.tools ?? config?.tools ?? toolConfig?.tools;
+	const context = asRecord(root?.context);
+	return root?.tools ?? config?.tools ?? toolConfig?.tools ?? context?.tools;
 }
 
 function extractProviderToolNames(root: Record<string, unknown> | undefined): string[] {
 	const config = asRecord(root?.config);
 	const toolConfig = asRecord(root?.toolConfig);
+	const context = asRecord(root?.context);
 	return normalizeNames([
 		...extractToolNames(root?.tools),
 		...extractGoogleToolNames(config?.tools),
 		...extractBedrockToolNames(toolConfig?.tools),
+		...extractToolNames(context?.tools),
 	]);
 }
 
@@ -275,7 +281,12 @@ function jsonByteLength(value: unknown): number | null {
 }
 
 function isResponseTelemetryState(value: unknown): value is ResponseTelemetryState {
-	return value === "pending" || value === "received" || value === "unsupported";
+	return (
+		value === "pending" ||
+		value === "received" ||
+		value === "unavailable" ||
+		value === "unsupported"
+	);
 }
 
 function isStringArray(value: unknown): value is string[] {

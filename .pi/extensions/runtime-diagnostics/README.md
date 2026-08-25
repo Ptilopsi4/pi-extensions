@@ -10,7 +10,7 @@ The default response is concise, while selected sections and sanitized bundles p
 - Aggregates prompt-cache usage and reports cautious findings when repeated requests have no cache reads.
 - Lists active and inactive tools, lower-bound definition sizes, provenance, and the limitations of Pi's tool-inspection API.
 - Lists visible extension tool and command surfaces with owning package versions when a package manifest is discoverable.
-- Captures provider-visible tool names, numeric request sizes, HTTP status, and response-header latency without retaining payload content.
+- Captures provider-visible tool names across installed adapter payload shapes, numeric request sizes, final HTTP status, and response-header latency without retaining payload content.
 - Compares provider requests and runtime snapshots with explicit added, removed, and changed fields.
 - Produces actionable findings and deduplicated recommendations.
 - Audits retained provider fields and bundle source-path redaction before marking a diagnostic bundle shareable.
@@ -70,7 +70,9 @@ The `before_provider_request` hook exposes the payload at this extension's handl
 A captured payload does not prove that the provider accepted or executed the exposed tools.
 Response latency ends when headers arrive and does not measure stream completion.
 The installed `google-generative-ai` and `google-vertex` adapters do not emit response-header telemetry, so their requests are marked `unsupported` rather than `pending`.
+Restored requests without retained response telemetry are marked `unavailable` because a future response cannot complete a historical capture.
 Provider responses are matched to requests by event order because the hook exposes no request identifier.
+Failed HTTP attempts remain associated with the same request until a successful retry replaces them or `agent_end` ends the run.
 Unmatched request indexes are discarded at `agent_end` so a failed run cannot offset response attribution in a later run.
 Extension visibility includes only public tool and slash-command surfaces, so passive event-only extensions cannot be enumerated.
 Inactive tools include an honest generic explanation because Pi does not expose the configuration, filter, or deferred-loading reason.
