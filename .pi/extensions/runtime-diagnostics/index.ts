@@ -6,6 +6,7 @@ import {
 	CONTROL_ENTRY_TYPE,
 	createCaptureState,
 	createControlEntry,
+	finalizePendingRequests,
 	MAX_CAPTURE_AGE_MINUTES,
 	MAX_CAPTURE_RECORDS,
 	PROVIDER_REQUEST_ENTRY_TYPE,
@@ -208,7 +209,7 @@ export function createDebugExtension(
 		});
 
 		pi.on("agent_end", () => {
-			capture.pendingRequestIndexes = [];
+			finalizePendingRequests(capture);
 		});
 
 		pi.on("message_end", (event, ctx) => {

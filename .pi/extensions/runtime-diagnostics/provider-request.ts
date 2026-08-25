@@ -59,9 +59,9 @@ export function extractProviderRequestDiagnostic(
 			containsMarker(context?.systemPrompt) ||
 			containsMarker(root?.system),
 		requestBytes: jsonByteLength(payload),
-		toolDefinitionBytes: jsonByteLength(extractProviderToolDefinitions(root)),
+		toolDefinitionBytes: providerToolDefinitionByteLength(root),
 		topLevelToolNames: extractProviderToolNames(root),
-		transcriptToolNames: extractTranscriptToolNames(root?.input),
+		transcriptToolNames: extractTranscriptToolNames(root?.input, root?.messages),
 		responseTelemetry: responseTelemetryState(identity.api),
 		response: null,
 	};
@@ -180,11 +180,34 @@ function isProviderRequestBase(
 	);
 }
 
-function extractProviderToolDefinitions(root: Record<string, unknown> | undefined): unknown {
+function extractProviderToolDefinitionContainers(
+	root: Record<string, unknown> | undefined,
+): unknown[] {
 	const config = asRecord(root?.config);
 	const toolConfig = asRecord(root?.toolConfig);
 	const context = asRecord(root?.context);
-	return root?.tools ?? config?.tools ?? toolConfig?.tools ?? context?.tools;
+	const containers = [root?.tools, config?.tools, toolConfig?.tools, context?.tools].filter(
+		(value) => value !== undefined,
+	);
+	if (!Array.isArray(root?.messages)) return containers;
+	for (const message of root.messages) {
+		const tools = asRecord(message)?.tools;
+		if (tools !== undefined) containers.push(tools);
+	}
+	return containers;
+}
+
+function providerToolDefinitionByteLength(
+	root: Record<string, unknown> | undefined,
+): number | null {
+	const containers = extractProviderToolDefinitionContainers(root);
+	let total = 0;
+	for (const container of containers) {
+		const bytes = jsonByteLength(container);
+		if (bytes === null) return null;
+		total += bytes;
+	}
+	return total;
 }
 
 function extractProviderToolNames(root: Record<string, unknown> | undefined): string[] {
@@ -212,18 +235,26 @@ function extractBedrockToolNames(value: unknown): string[] {
 	});
 }
 
-function extractTranscriptToolNames(input: unknown): string[] {
-	if (!Array.isArray(input)) return [];
+function extractTranscriptToolNames(input: unknown, messages: unknown): string[] {
 	const names: string[] = [];
-	for (const item of input) {
-		const record = asRecord(item);
-		if (record?.type !== "additional_tools" && record?.type !== "tool_search_output") {
-			continue;
+	if (Array.isArray(input)) {
+		for (const item of input) {
+			const record = asRecord(item);
+			if (record?.type !== "additional_tools" && record?.type !== "tool_search_output") {
+				continue;
+			}
+			names.push(...extractToolNames(record.tools));
+			if (record.type === "tool_search_output") {
+				const output = asRecord(record.output);
+				names.push(
+					...extractToolNames(Array.isArray(record.output) ? record.output : output?.tools),
+				);
+			}
 		}
-		names.push(...extractToolNames(record.tools));
-		if (record.type === "tool_search_output") {
-			const output = asRecord(record.output);
-			names.push(...extractToolNames(Array.isArray(record.output) ? record.output : output?.tools));
+	}
+	if (Array.isArray(messages)) {
+		for (const message of messages) {
+			names.push(...extractToolNames(asRecord(message)?.tools));
 		}
 	}
 	return normalizeNames(names);
