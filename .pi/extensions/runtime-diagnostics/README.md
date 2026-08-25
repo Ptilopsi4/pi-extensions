@@ -8,7 +8,7 @@ The default response is concise, while selected sections and sanitized bundles p
 
 - Reports the active provider, model, thinking level, Node.js version, platform, architecture, and resolved Pi Coding Agent version.
 - Aggregates prompt-cache usage and reports cautious findings when repeated requests have no cache reads.
-- Lists active and inactive tools, definition sizes, provenance, and the limitations of Pi's inactive-state API.
+- Lists active and inactive tools, lower-bound definition sizes, provenance, and the limitations of Pi's tool-inspection API.
 - Lists visible extension tool and command surfaces with owning package versions when a package manifest is discoverable.
 - Captures provider-visible tool names, numeric request sizes, HTTP status, and response-header latency without retaining payload content.
 - Compares provider requests and runtime snapshots with explicit added, removed, and changed fields.
@@ -30,7 +30,7 @@ Call `runtime_diagnostics` with no arguments to receive a concise status summary
 | `disable` | Disables provider-request capture for the active session branch. |
 | `clear` | Clears records from the active reporting window. |
 | `configure` | Updates session-scoped `maxRecords` or `maxAgeMinutes`. |
-| `bundle` | Returns every detail section as a sanitized shareable JSON bundle. |
+| `bundle` | Returns every detail section as a sanitized shareable JSON bundle, regardless of `sections`. |
 
 Set `detail` to `full` to include every section with an ordinary action.
 Set `sections` to any combination of `provider`, `cache`, `tools`, `extensions`, `environment`, `timeline`, and `privacy` for targeted evidence.
@@ -60,26 +60,29 @@ Provider request records retain only a timestamp, session ID, provider and model
 The extension does not retain prompts, instructions, message content, tool schemas, tool arguments, HTTP headers, response bodies, credentials, API keys, or authorization values.
 Request and tool-definition sizes are retained as numbers rather than serialized content.
 Captured display strings are stripped of terminal controls, bidirectional controls, and newlines before retention.
-Bundle exports replace every non-virtual tool and extension source path with `[redacted-local-path]`.
+Bundle exports replace every non-virtual source path, every package source reference, and every other path-like source reference with `[redacted-local-path]`.
 Ordinary targeted diagnostics keep sanitized source paths available for local troubleshooting.
-The `privacy` section reports the provider-field allowlist and bundle path-redaction audit results.
+The `privacy` section reports the provider-field allowlist and bundle source-redaction audit results.
 
 ## Limitations
 
 The `before_provider_request` hook exposes the payload at this extension's handler position, so a later extension can still replace it.
 A captured payload does not prove that the provider accepted or executed the exposed tools.
 Response latency ends when headers arrive and does not measure stream completion.
+The installed `google-generative-ai` and `google-vertex` adapters do not emit response-header telemetry, so their requests are marked `unsupported` rather than `pending`.
 Provider responses are matched to requests by event order because the hook exposes no request identifier.
 Unmatched request indexes are discarded at `agent_end` so a failed run cannot offset response attribution in a later run.
 Extension visibility includes only public tool and slash-command surfaces, so passive event-only extensions cannot be enumerated.
 Inactive tools include an honest generic explanation because Pi does not expose the configuration, filter, or deferred-loading reason.
+Per-tool definition sizes are lower bounds over the provider-visible name, description, and parameters because `ExtensionAPI.getAllTools()` does not expose `constrainedSampling`.
+Captured provider-request totals measure the actual serialized tool container and include adapter-specific strictness or grammar effects.
 A cache finding cannot prove provider cache support and should be interpreted with the selected provider and model documentation.
 
 ## Source layout
 
 - `index.ts` registers the tool, command, lifecycle hooks, and provider hooks.
 - `capture-state.ts` owns session reconstruction, controls, and retention pruning.
-- `provider-request.ts` owns privacy-filtered provider extraction and response timing.
+- `provider-request.ts` owns privacy-filtered provider extraction across supported payload shapes and response-telemetry state.
 - `snapshot.ts` owns runtime, cache, tool, extension, environment, and timeline snapshots.
 - `report.ts` owns findings, comparisons, privacy audits, presentation, and output bounds.
 - `text.ts` owns terminal-safe diagnostic string normalization.

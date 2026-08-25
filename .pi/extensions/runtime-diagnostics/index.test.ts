@@ -21,7 +21,9 @@ import {
 	createProviderResponseDiagnostic,
 	extractProviderRequestDiagnostic,
 } from "./provider-request.js";
+import { DIAGNOSTIC_SECTIONS } from "./report.js";
 import { RUNTIME_ENTRY_TYPE } from "./snapshot.js";
+import { sanitizeDiagnosticText } from "./text.js";
 
 interface ToolResult {
 	content: Array<{ type: "text"; text: string }>;
@@ -68,7 +70,9 @@ function customEntry(customType: string, data: unknown): SessionEntry {
 	} as unknown as SessionEntry;
 }
 
-function createHarness(options: { extraToolCount?: number } = {}) {
+function createHarness(
+	options: { extraToolCount?: number; modelApi?: string; provider?: string } = {},
+) {
 	let currentTime = 1_000;
 	const handlers = new Map<string, Handler[]>();
 	const tools: RegisteredTool[] = [];
@@ -124,10 +128,10 @@ function createHarness(options: { extraToolCount?: number } = {}) {
 				...tools.map((tool) => ({
 					...tool,
 					sourceInfo: {
-						path: "/project/.pi/extensions/runtime-diagnostics/index.ts",
-						source: "auto",
+						path: "/home/alice/private-extension/index.ts",
+						source: "/home/alice/private-extension",
 						scope: "project",
-						origin: "top-level",
+						origin: "package",
 					},
 				})),
 				...extraTools,
@@ -139,10 +143,10 @@ function createHarness(options: { extraToolCount?: number } = {}) {
 				description: command.description,
 				source: "extension",
 				sourceInfo: {
-					path: "/project/.pi/extensions/runtime-diagnostics/index.ts",
-					source: "auto",
+					path: "/home/alice/private-extension/index.ts",
+					source: "/home/alice/private-extension",
 					scope: "project",
-					origin: "top-level",
+					origin: "package",
 				},
 			}));
 		},
@@ -154,7 +158,11 @@ function createHarness(options: { extraToolCount?: number } = {}) {
 	const context = {
 		mode: "tui",
 		hasUI: true,
-		model: { provider: "openai", id: "gpt-test" },
+		model: {
+			provider: options.provider ?? "openai",
+			id: "gpt-test",
+			api: options.modelApi ?? "openai-responses",
+		},
 		sessionManager,
 		ui: {
 			notify(message: string) {
@@ -220,6 +228,7 @@ test("captures only sanitized provider metadata, byte counts, status, and header
 
 	const response = createProviderResponseDiagnostic(request, 429, 175);
 	attachProviderResponse(request, response);
+	assert.equal(request.responseTelemetry, "received");
 	assert.deepEqual(request.response, {
 		version: 1,
 		requestIndex: 1,
@@ -227,6 +236,57 @@ test("captures only sanitized provider metadata, byte counts, status, and header
 		status: 429,
 		responseHeaderLatencyMs: 75,
 	});
+});
+
+test("extracts provider-visible tools from Google and Bedrock payloads", () => {
+	const googleTools = [
+		{
+			functionDeclarations: [
+				{ name: "read", parametersJsonSchema: { type: "object" } },
+				{ name: "edit", parametersJsonSchema: { type: "object" } },
+			],
+		},
+	];
+	const google = extractProviderRequestDiagnostic(
+		{
+			config: {
+				systemInstruction: "[CODEX-LIKE PLAN MODE ACTIVE]",
+				tools: googleTools,
+			},
+		},
+		{
+			requestIndex: 1,
+			capturedAt: 100,
+			sessionId: "session",
+			api: "google-generative-ai",
+		},
+	);
+	assert.deepEqual(google.topLevelToolNames, ["edit", "read"]);
+	assert.equal(google.toolDefinitionBytes, Buffer.byteLength(JSON.stringify(googleTools)));
+	assert.equal(google.planModeMarkerPresent, true);
+	assert.equal(google.responseTelemetry, "unsupported");
+
+	const bedrockTools = [
+		{ toolSpec: { name: "bash", inputSchema: { json: { type: "object" } } } },
+		{ toolSpec: { name: "write", inputSchema: { json: { type: "object" } } } },
+	];
+	const bedrock = extractProviderRequestDiagnostic(
+		{ toolConfig: { tools: bedrockTools } },
+		{
+			requestIndex: 2,
+			capturedAt: 200,
+			sessionId: "session",
+			api: "bedrock-converse-stream",
+		},
+	);
+	assert.deepEqual(bedrock.topLevelToolNames, ["bash", "write"]);
+	assert.equal(bedrock.toolDefinitionBytes, Buffer.byteLength(JSON.stringify(bedrockTools)));
+	assert.equal(bedrock.responseTelemetry, "pending");
+});
+
+test("strips every Unicode bidirectional formatting control", () => {
+	const controls = "\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069";
+	assert.equal(sanitizeDiagnosticText(`left${controls}right`), "leftright");
 });
 
 test("restores fork-sensitive controls and prunes the active reporting window", () => {
@@ -408,7 +468,7 @@ test("defaults to a concise agent report and supports targeted, control, bundle,
 			.tool()
 			.execute(
 				"call-9",
-				{ action: "bundle" },
+				{ action: "bundle", sections: ["provider"] },
 				new AbortController().signal,
 				undefined,
 				harness.context,
@@ -416,8 +476,11 @@ test("defaults to a concise agent report and supports targeted, control, bundle,
 	);
 	assert.equal((bundle.export as { sanitized: boolean }).sanitized, true);
 	const bundleDetails = bundle.details as Record<string, unknown>;
-	assert.ok(bundleDetails.timeline);
-	assert.equal(JSON.stringify(bundle).includes("/project/"), false);
+	for (const section of DIAGNOSTIC_SECTIONS) {
+		const key = section === "provider" ? "providerRequestCapture" : section;
+		assert.ok(bundleDetails[key], `bundle omitted ${section}`);
+	}
+	assert.equal(JSON.stringify(bundle).includes("/home/alice/"), false);
 	assert.deepEqual(
 		(
 			bundleDetails.tools as {
@@ -428,14 +491,35 @@ test("defaults to a concise agent report and supports targeted, control, bundle,
 	);
 	assert.deepEqual(
 		(
+			bundleDetails.tools as {
+				catalog: Array<{ source: { source: string } }>;
+			}
+		).catalog.map(({ source }) => source.source),
+		["builtin", "[redacted-local-path]"],
+	);
+	assert.match(
+		(bundleDetails.tools as { definitionSizeBasis: string }).definitionSizeBasis,
+		/constrainedSampling/,
+	);
+	assert.equal("definitionBytes" in (bundleDetails.tools as object), false);
+	assert.deepEqual(
+		(
 			bundleDetails.extensions as {
 				surfaces: Array<{ path: string }>;
 			}
 		).surfaces.map(({ path }) => path),
 		["[redacted-local-path]"],
 	);
+	assert.deepEqual(
+		(
+			bundleDetails.extensions as {
+				surfaces: Array<{ source: string }>;
+			}
+		).surfaces.map(({ source }) => source),
+		["[redacted-local-path]"],
+	);
 	assert.equal(
-		(bundleDetails.privacy as { bundlePathRedaction: string }).bundlePathRedaction,
+		(bundleDetails.privacy as { bundleSourceRedaction: string }).bundleSourceRedaction,
 		"passed",
 	);
 
@@ -521,6 +605,115 @@ test("clears unmatched provider requests before attributing responses in a later
 		status: 200,
 		responseHeaderLatencyMs: 25,
 	});
+});
+
+test("marks Google response telemetry unsupported instead of pending", async () => {
+	const harness = createHarness({ modelApi: "google-generative-ai", provider: "google" });
+	await harness.emit("session_start", {});
+	harness.setTime(2_000);
+	await harness.emit("before_provider_request", {
+		payload: {
+			config: {
+				tools: [{ functionDeclarations: [{ name: "read" }] }],
+			},
+		},
+	});
+	await harness.emit("agent_end", { messages: [] });
+
+	const shown = parseToolResult(
+		await harness
+			.tool()
+			.execute(
+				"call-google",
+				{ action: "show" },
+				new AbortController().signal,
+				undefined,
+				harness.context,
+			),
+	);
+	const provider = (shown.details as Record<string, unknown>).providerRequestCapture as {
+		latest: { responseTelemetry: string; response: unknown };
+		performance: {
+			completedRequestCount: number;
+			pendingRequestCount: number;
+			unsupportedRequestCount: number;
+			averageResponseHeaderLatencyMs: number | null;
+		};
+	};
+	assert.equal(provider.latest.responseTelemetry, "unsupported");
+	assert.equal(provider.latest.response, null);
+	assert.equal(provider.performance.completedRequestCount, 0);
+	assert.equal(provider.performance.pendingRequestCount, 0);
+	assert.equal(provider.performance.unsupportedRequestCount, 1);
+	assert.equal(provider.performance.averageResponseHeaderLatencyMs, null);
+	assert.ok(
+		(shown.findings as Array<{ code: string }>).some(
+			({ code }) => code === "response-telemetry-unsupported",
+		),
+	);
+});
+
+test("rebuilds fork-sensitive diagnostics after session tree navigation", async () => {
+	const harness = createHarness();
+	await harness.emit("session_start", {});
+	harness.setTime(2_000);
+	await harness.emit("before_provider_request", { payload: { tools: [{ name: "read" }] } });
+
+	const retained = extractProviderRequestDiagnostic(
+		{ tools: [{ name: "read" }] },
+		{
+			requestIndex: 7,
+			capturedAt: 3_000,
+			sessionId: "session-1",
+			provider: "openai",
+			model: "gpt-test",
+			api: "openai-responses",
+		},
+	);
+	const branchState = createCaptureState();
+	const branchControl = createControlEntry(branchState, "configure", 3_500, {
+		maxRecords: 5,
+		maxAgeMinutes: 60,
+	});
+	harness.entries.splice(
+		0,
+		harness.entries.length,
+		customEntry(PROVIDER_REQUEST_ENTRY_TYPE, retained),
+		customEntry(CONTROL_ENTRY_TYPE, branchControl),
+	);
+	harness.setTime(4_000);
+	await harness.emit("session_tree", { newLeafId: "branch", oldLeafId: "abandoned" });
+	await harness.emit("before_provider_request", { payload: { tools: [{ name: "read" }] } });
+
+	const shown = parseToolResult(
+		await harness
+			.tool()
+			.execute(
+				"call-tree",
+				{ action: "show", limit: 20 },
+				new AbortController().signal,
+				undefined,
+				harness.context,
+			),
+	);
+	const provider = (shown.details as Record<string, unknown>).providerRequestCapture as {
+		recent: Array<{ requestIndex: number }>;
+		policy: { maxRecords: number; maxAgeMinutes: number };
+	};
+	const recent = provider.recent;
+	assert.deepEqual(provider.policy, { maxRecords: 5, maxAgeMinutes: 60 });
+	assert.deepEqual(
+		recent.map(({ requestIndex }) => requestIndex),
+		[7, 8],
+	);
+	assert.ok(
+		harness.entries.some(
+			(entry) =>
+				entry.type === "custom" &&
+				entry.customType === RUNTIME_ENTRY_TYPE &&
+				(entry.data as { reason?: string }).reason === "session_tree",
+		),
+	);
 });
 
 test("ignores malformed restored runtime snapshots before comparison", async () => {

@@ -4,8 +4,10 @@ const PLAN_MODE_MARKER = "[CODEX-LIKE PLAN MODE ACTIVE]";
 const MAX_TOOL_NAMES = 200;
 const MAX_TOOL_NAME_LENGTH = 128;
 
+export type ResponseTelemetryState = "pending" | "received" | "unsupported";
+
 export interface ProviderRequestDiagnostic {
-	version: 2;
+	version: 3;
 	requestIndex: number;
 	capturedAt: number;
 	sessionId: string;
@@ -16,6 +18,7 @@ export interface ProviderRequestDiagnostic {
 	toolDefinitionBytes: number | null;
 	topLevelToolNames: string[];
 	transcriptToolNames: string[];
+	responseTelemetry: ResponseTelemetryState;
 	response: ProviderResponseDiagnostic | null;
 }
 
@@ -33,6 +36,7 @@ export interface ProviderRequestIdentity {
 	sessionId: string;
 	provider?: string;
 	model?: string;
+	api?: string;
 }
 
 export function extractProviderRequestDiagnostic(
@@ -40,18 +44,23 @@ export function extractProviderRequestDiagnostic(
 	identity: ProviderRequestIdentity,
 ): ProviderRequestDiagnostic {
 	const root = asRecord(payload);
+	const config = asRecord(root?.config);
 	return {
-		version: 2,
+		version: 3,
 		requestIndex: identity.requestIndex,
 		capturedAt: identity.capturedAt,
 		sessionId: sanitizeDiagnosticText(identity.sessionId, 128),
 		provider: identity.provider ? sanitizeDiagnosticText(identity.provider, 128) : null,
 		model: identity.model ? sanitizeDiagnosticText(identity.model, 256) : null,
-		planModeMarkerPresent: containsMarker(root?.instructions),
+		planModeMarkerPresent:
+			containsMarker(root?.instructions) ||
+			containsMarker(config?.systemInstruction) ||
+			containsMarker(root?.system),
 		requestBytes: jsonByteLength(payload),
-		toolDefinitionBytes: jsonByteLength(root?.tools),
-		topLevelToolNames: extractToolNames(root?.tools),
+		toolDefinitionBytes: jsonByteLength(extractProviderToolDefinitions(root)),
+		topLevelToolNames: extractProviderToolNames(root),
 		transcriptToolNames: extractTranscriptToolNames(root?.input),
+		responseTelemetry: responseTelemetryState(identity.api),
 		response: null,
 	};
 }
@@ -75,9 +84,13 @@ export function normalizeProviderRequestDiagnostic(
 ): ProviderRequestDiagnostic | undefined {
 	const record = asRecord(value);
 	if (!isProviderRequestBase(record)) return undefined;
-	if (record.version === 1) {
+	if (record.version === 1 || record.version === 2) {
+		const response =
+			record.version === 2 && isProviderResponseDiagnostic(record.response)
+				? record.response
+				: null;
 		return {
-			version: 2,
+			version: 3,
 			requestIndex: record.requestIndex as number,
 			capturedAt: record.capturedAt as number,
 			sessionId: sanitizeDiagnosticText(record.sessionId as string, 128),
@@ -85,23 +98,32 @@ export function normalizeProviderRequestDiagnostic(
 				typeof record.provider === "string" ? sanitizeDiagnosticText(record.provider, 128) : null,
 			model: typeof record.model === "string" ? sanitizeDiagnosticText(record.model, 256) : null,
 			planModeMarkerPresent: record.planModeMarkerPresent as boolean,
-			requestBytes: null,
-			toolDefinitionBytes: null,
+			requestBytes:
+				record.version === 2 && isNullableFiniteNumber(record.requestBytes)
+					? record.requestBytes
+					: null,
+			toolDefinitionBytes:
+				record.version === 2 && isNullableFiniteNumber(record.toolDefinitionBytes)
+					? record.toolDefinitionBytes
+					: null,
 			topLevelToolNames: normalizeNames(record.topLevelToolNames as string[]),
 			transcriptToolNames: normalizeNames(record.transcriptToolNames as string[]),
-			response: null,
+			responseTelemetry: response ? "received" : "pending",
+			response,
 		};
 	}
 	if (
-		record.version !== 2 ||
+		record.version !== 3 ||
 		!isNullableFiniteNumber(record.requestBytes) ||
 		!isNullableFiniteNumber(record.toolDefinitionBytes) ||
-		!(record.response === null || isProviderResponseDiagnostic(record.response))
+		!isResponseTelemetryState(record.responseTelemetry) ||
+		!(record.response === null || isProviderResponseDiagnostic(record.response)) ||
+		(record.responseTelemetry === "received") !== isProviderResponseDiagnostic(record.response)
 	) {
 		return undefined;
 	}
 	return {
-		version: 2,
+		version: 3,
 		requestIndex: record.requestIndex as number,
 		capturedAt: record.capturedAt as number,
 		sessionId: sanitizeDiagnosticText(record.sessionId as string, 128),
@@ -109,10 +131,11 @@ export function normalizeProviderRequestDiagnostic(
 			typeof record.provider === "string" ? sanitizeDiagnosticText(record.provider, 128) : null,
 		model: typeof record.model === "string" ? sanitizeDiagnosticText(record.model, 256) : null,
 		planModeMarkerPresent: record.planModeMarkerPresent as boolean,
-		requestBytes: record.requestBytes as number | null,
-		toolDefinitionBytes: record.toolDefinitionBytes as number | null,
+		requestBytes: record.requestBytes,
+		toolDefinitionBytes: record.toolDefinitionBytes,
 		topLevelToolNames: normalizeNames(record.topLevelToolNames as string[]),
 		transcriptToolNames: normalizeNames(record.transcriptToolNames as string[]),
+		responseTelemetry: record.responseTelemetry,
 		response: record.response as ProviderResponseDiagnostic | null,
 	};
 }
@@ -134,6 +157,7 @@ export function attachProviderResponse(
 	response: ProviderResponseDiagnostic,
 ): void {
 	if (request.requestIndex !== response.requestIndex) return;
+	request.responseTelemetry = "received";
 	request.response = response;
 }
 
@@ -141,7 +165,7 @@ function isProviderRequestBase(
 	record: Record<string, unknown> | undefined,
 ): record is Record<string, unknown> {
 	return (
-		(record?.version === 1 || record?.version === 2) &&
+		(record?.version === 1 || record?.version === 2 || record?.version === 3) &&
 		isNonNegativeInteger(record.requestIndex) &&
 		isFiniteNumber(record.capturedAt) &&
 		typeof record.sessionId === "string" &&
@@ -151,6 +175,35 @@ function isProviderRequestBase(
 		isStringArray(record.topLevelToolNames) &&
 		isStringArray(record.transcriptToolNames)
 	);
+}
+
+function extractProviderToolDefinitions(root: Record<string, unknown> | undefined): unknown {
+	const config = asRecord(root?.config);
+	const toolConfig = asRecord(root?.toolConfig);
+	return root?.tools ?? config?.tools ?? toolConfig?.tools;
+}
+
+function extractProviderToolNames(root: Record<string, unknown> | undefined): string[] {
+	const config = asRecord(root?.config);
+	const toolConfig = asRecord(root?.toolConfig);
+	return normalizeNames([
+		...extractToolNames(root?.tools),
+		...extractGoogleToolNames(config?.tools),
+		...extractBedrockToolNames(toolConfig?.tools),
+	]);
+}
+
+function extractGoogleToolNames(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value.flatMap((group) => extractToolNames(asRecord(group)?.functionDeclarations));
+}
+
+function extractBedrockToolNames(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value.flatMap((candidate) => {
+		const name = firstName(asRecord(asRecord(candidate)?.toolSpec)?.name);
+		return name ? [name] : [];
+	});
 }
 
 function extractTranscriptToolNames(input: unknown): string[] {
@@ -208,6 +261,10 @@ function normalizeNames(names: readonly string[]): string[] {
 		.slice(0, MAX_TOOL_NAMES);
 }
 
+function responseTelemetryState(api: string | undefined): ResponseTelemetryState {
+	return api === "google-generative-ai" || api === "google-vertex" ? "unsupported" : "pending";
+}
+
 function jsonByteLength(value: unknown): number | null {
 	if (value === undefined) return 0;
 	try {
@@ -215,6 +272,10 @@ function jsonByteLength(value: unknown): number | null {
 	} catch {
 		return null;
 	}
+}
+
+function isResponseTelemetryState(value: unknown): value is ResponseTelemetryState {
+	return value === "pending" || value === "received" || value === "unsupported";
 }
 
 function isStringArray(value: unknown): value is string[] {

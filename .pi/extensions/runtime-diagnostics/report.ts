@@ -1,3 +1,4 @@
+import { isAbsolute, win32 } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ProviderCaptureState } from "./capture-state.js";
 import type { ProviderRequestDiagnostic } from "./provider-request.js";
@@ -40,6 +41,7 @@ const PROVIDER_HOOK_LIMITATIONS = [
 	"before_provider_request exposes the serialized payload at this extension's position in handler load order; later extensions can still replace it.",
 	"The hook does not prove that the provider accepted or executed the exposed tools.",
 	"Response latency ends when response headers arrive and does not measure stream completion.",
+	"The installed google-generative-ai and google-vertex adapters do not emit response-header telemetry, so those requests are marked unsupported.",
 	"Provider responses are matched to requests by event order because Pi exposes no request identifier to this hook.",
 	"ExtensionAPI cannot enumerate passive event-only extensions, so extension visibility is limited to public tool and command surfaces.",
 	"Retention bounds the active reporting window; Pi session custom entries are append-only and are not erased from an existing session file.",
@@ -75,8 +77,8 @@ export function createDiagnosticResponse(options: DiagnosticReportOptions) {
 		: runtime.extensions;
 	const privacy = createPrivacyAudit(options.capture.records, {
 		bundleRequested,
-		bundlePathRedactionPassed:
-			!bundleRequested || bundlePathsAreRedacted(toolCatalog, extensions.surfaces),
+		bundleSourceRedactionPassed:
+			!bundleRequested || bundleSourcesAreRedacted(toolCatalog, extensions.surfaces),
 	});
 	const findings = createFindings(runtime, provider, options.capture, privacy);
 	const selectedSections = selectSections(options);
@@ -87,7 +89,11 @@ export function createDiagnosticResponse(options: DiagnosticReportOptions) {
 		details.tools = {
 			state: runtime.tools,
 			catalog: toolCatalog,
-			definitionBytes: sumNullable(toolCatalog.map(({ definitionBytes }) => definitionBytes)),
+			knownProviderDefinitionBytes: sumNullable(
+				toolCatalog.map(({ knownProviderDefinitionBytes }) => knownProviderDefinitionBytes),
+			),
+			definitionSizeBasis:
+				"Lower bound from name, description, and parameters. ExtensionAPI does not expose constrainedSampling; captured provider requests report actual serialized tool bytes.",
 		};
 	}
 	if (selectedSections.has("extensions")) details.extensions = extensions;
@@ -221,7 +227,8 @@ export function formatCommandSummary(
 			`Capture: ${provider?.enabled ? "enabled" : "disabled"}`,
 			`Retained: ${provider?.retainedRecordCount ?? 0}`,
 			`Latest request: ${provider?.latest?.requestIndex ?? "none"}`,
-			`Latest status: ${provider?.latest?.response?.status ?? "pending"}`,
+			`Latest status: ${formatResponseTelemetry(provider?.latest ?? null)}`,
+			`Telemetry completed/pending/unsupported: ${provider?.performance.completedRequestCount ?? 0}/${provider?.performance.pendingRequestCount ?? 0}/${provider?.performance.unsupportedRequestCount ?? 0}`,
 			`Average header latency: ${formatMilliseconds(provider?.performance.averageResponseHeaderLatencyMs ?? null)}`,
 		].join("\n");
 	}
@@ -237,12 +244,15 @@ export function formatCommandSummary(
 	}
 	if (route === "tools") {
 		const tools = detail.tools as
-			| { state: RuntimeDiagnosticReport["tools"]; definitionBytes: number | null }
+			| {
+					state: RuntimeDiagnosticReport["tools"];
+					knownProviderDefinitionBytes: number | null;
+			  }
 			| undefined;
 		return [
 			...header,
 			`Configured/active/inactive: ${tools?.state.configuredCount ?? 0}/${tools?.state.activeCount ?? 0}/${tools?.state.inactiveCount ?? 0}`,
-			`Definition bytes: ${tools?.definitionBytes ?? "unknown"}`,
+			`Known provider-definition bytes: ${tools?.knownProviderDefinitionBytes ?? "unknown"}`,
 			`Active: ${formatNameList(tools?.state.active ?? [])}`,
 			`Inactive: ${formatNameList(tools?.state.inactive ?? [])}`,
 		].join("\n");
@@ -260,7 +270,7 @@ export function formatCommandSummary(
 	return [
 		...header,
 		`Privacy audit: ${privacy?.passed ? "passed" : "failed"}`,
-		`Bundle path redaction: ${privacy?.bundlePathRedaction ?? "unknown"}`,
+		`Bundle source redaction: ${privacy?.bundleSourceRedaction ?? "unknown"}`,
 		`Checked records: ${privacy?.checkedRecordCount ?? 0}`,
 		`Unexpected fields: ${formatNameList(privacy?.unexpectedFields ?? [])}`,
 		`Not retained: ${privacy?.notRetained.join(", ") ?? "unknown"}`,
@@ -268,8 +278,9 @@ export function formatCommandSummary(
 }
 
 function selectSections(options: DiagnosticReportOptions): Set<DiagnosticSection> {
+	if (options.action === "bundle") return new Set(DIAGNOSTIC_SECTIONS);
 	if (options.sections.length > 0) return new Set(options.sections);
-	if (options.action === "bundle" || options.detail === "full") {
+	if (options.detail === "full") {
 		return new Set(DIAGNOSTIC_SECTIONS);
 	}
 	if (options.action === "latest" || options.action === "show") return new Set(["provider"]);
@@ -293,7 +304,15 @@ function createProviderReport(
 	const recent = action === "show" || action === "bundle" ? capture.records.slice(-limit) : [];
 	const latest = capture.records.at(-1) ?? null;
 	const comparisonRecords = selectComparisonRecords(action, recent, capture.records);
-	const completed = capture.records.filter(({ response }) => response !== null);
+	const completed = capture.records.filter(
+		({ responseTelemetry }) => responseTelemetry === "received",
+	);
+	const pending = capture.records.filter(
+		({ responseTelemetry }) => responseTelemetry === "pending",
+	);
+	const unsupported = capture.records.filter(
+		({ responseTelemetry }) => responseTelemetry === "unsupported",
+	);
 	return {
 		enabled: capture.enabled,
 		retainedRecordCount: capture.records.length,
@@ -307,6 +326,8 @@ function createProviderReport(
 				: null,
 		performance: {
 			completedRequestCount: completed.length,
+			pendingRequestCount: pending.length,
+			unsupportedRequestCount: unsupported.length,
 			averageResponseHeaderLatencyMs:
 				completed.length > 0
 					? completed.reduce(
@@ -339,7 +360,7 @@ function createFindings(
 		findings.push({
 			severity: "error",
 			code: "privacy-audit-failed",
-			message: `Captured records contain unexpected fields: ${privacy.unexpectedFields.join(", ")}.`,
+			message: `The diagnostic bundle privacy audit failed: ${privacy.unexpectedFields.join(", ")}.`,
 			recommendation:
 				"Disable capture and clear active records before sharing a diagnostic bundle.",
 		});
@@ -396,6 +417,15 @@ function createFindings(
 				"Check whether the active set changed after capture or whether transcript-anchored deferred tools remain visible.",
 		});
 	}
+	if (latest.responseTelemetry === "unsupported") {
+		findings.push({
+			severity: "info",
+			code: "response-telemetry-unsupported",
+			message: "The selected provider adapter does not expose response-header telemetry.",
+			recommendation:
+				"Use request-size and provider-visible-tool diagnostics without interpreting the missing HTTP status or latency as a pending response.",
+		});
+	}
 	if (latest.response && (latest.response.status < 200 || latest.response.status >= 400)) {
 		findings.push({
 			severity: "warning",
@@ -410,7 +440,7 @@ function createFindings(
 
 function createPrivacyAudit(
 	records: readonly ProviderRequestDiagnostic[],
-	options: { bundleRequested: boolean; bundlePathRedactionPassed: boolean },
+	options: { bundleRequested: boolean; bundleSourceRedactionPassed: boolean },
 ) {
 	const allowedRequestFields = new Set([
 		"version",
@@ -424,6 +454,7 @@ function createPrivacyAudit(
 		"toolDefinitionBytes",
 		"topLevelToolNames",
 		"transcriptToolNames",
+		"responseTelemetry",
 		"response",
 	]);
 	const allowedResponseFields = new Set([
@@ -434,8 +465,8 @@ function createPrivacyAudit(
 		"responseHeaderLatencyMs",
 	]);
 	const unexpectedFields = new Set<string>();
-	if (options.bundleRequested && !options.bundlePathRedactionPassed) {
-		unexpectedFields.add("bundle.source.path");
+	if (options.bundleRequested && !options.bundleSourceRedactionPassed) {
+		unexpectedFields.add("bundle.source-location");
 	}
 	for (const record of records) {
 		for (const key of Object.keys(record)) {
@@ -450,8 +481,8 @@ function createPrivacyAudit(
 		passed: unexpectedFields.size === 0,
 		checkedRecordCount: records.length,
 		unexpectedFields: [...unexpectedFields].sort(),
-		bundlePathRedaction: options.bundleRequested
-			? options.bundlePathRedactionPassed
+		bundleSourceRedaction: options.bundleRequested
+			? options.bundleSourceRedactionPassed
 				? "passed"
 				: "failed"
 			: "not-applicable",
@@ -466,7 +497,7 @@ function createPrivacyAudit(
 		notes: [
 			"Request and tool-definition byte counts are retained as numbers, never as serialized content.",
 			"Captured display strings are stripped of terminal controls and bounded before retention.",
-			"Bundle exports replace every non-virtual tool and extension source path with a redaction marker.",
+			"Bundle exports redact non-virtual source paths, package source references, and other path-like source references.",
 		],
 	};
 }
@@ -481,6 +512,7 @@ function redactToolCatalogPaths(
 		source: {
 			...tool.source,
 			path: redactSourcePath(tool.source.path),
+			source: redactSourceReference(tool.source.source, tool.source.origin),
 		},
 	}));
 }
@@ -493,21 +525,44 @@ function redactExtensionSurfacePaths(
 		surfaces: extensions.surfaces.map((surface) => ({
 			...surface,
 			path: redactSourcePath(surface.path),
+			source: redactSourceReference(surface.source, surface.origin),
 		})),
 	};
 }
 
-function bundlePathsAreRedacted(
+function bundleSourcesAreRedacted(
 	catalog: RuntimeDiagnosticReport["toolCatalog"],
 	surfaces: RuntimeDiagnosticReport["extensions"]["surfaces"],
 ): boolean {
-	return [...catalog.map(({ source }) => source.path), ...surfaces.map(({ path }) => path)].every(
-		(path) => path === REDACTED_SOURCE_PATH || isVirtualSourcePath(path),
+	const pathsAreRedacted = [
+		...catalog.map(({ source }) => source.path),
+		...surfaces.map(({ path }) => path),
+	].every((path) => path === REDACTED_SOURCE_PATH || isVirtualSourcePath(path));
+	const sourcesAreRedacted = [
+		...catalog.map(({ source }) => ({ source: source.source, origin: source.origin })),
+		...surfaces.map(({ source, origin }) => ({ source, origin })),
+	].every(
+		({ source, origin }) =>
+			source === REDACTED_SOURCE_PATH || (origin !== "package" && !isPathLikeSource(source)),
 	);
+	return pathsAreRedacted && sourcesAreRedacted;
 }
 
 function redactSourcePath(path: string): string {
 	return isVirtualSourcePath(path) ? path : REDACTED_SOURCE_PATH;
+}
+
+function redactSourceReference(source: string, origin: string): string {
+	return origin === "package" || isPathLikeSource(source) ? REDACTED_SOURCE_PATH : source;
+}
+
+function isPathLikeSource(source: string): boolean {
+	return (
+		isAbsolute(source) ||
+		win32.isAbsolute(source) ||
+		/^file:/iu.test(source) ||
+		/^(?:\.{1,2}|~)[\\/]/u.test(source)
+	);
 }
 
 function isVirtualSourcePath(path: string): boolean {
@@ -603,6 +658,12 @@ function withinOutputBounds(text: string): boolean {
 
 function formatPercent(value: number | null): string {
 	return value === null ? "n/a" : `${value.toFixed(1)}%`;
+}
+
+function formatResponseTelemetry(record: ProviderRequestDiagnostic | null): string {
+	if (!record) return "none";
+	if (record.responseTelemetry === "unsupported") return "unsupported";
+	return record.response?.status === undefined ? "pending" : String(record.response.status);
 }
 
 function formatMilliseconds(value: number | null): string {

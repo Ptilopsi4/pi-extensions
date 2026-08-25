@@ -12,6 +12,7 @@ const MAX_RUNTIME_RECORDS = 20;
 
 const RUNTIME_SNAPSHOT_REASONS = [
 	"session_start",
+	"session_tree",
 	"model_select",
 	"before_agent_start",
 	"tools_changed",
@@ -64,7 +65,7 @@ export interface ToolCatalogEntry {
 	name: string;
 	active: boolean;
 	inactiveReason: string | null;
-	definitionBytes: number | null;
+	knownProviderDefinitionBytes: number | null;
 	source: {
 		path: string;
 		source: string;
@@ -257,11 +258,10 @@ function collectToolCatalog(pi: ExtensionAPI): ToolCatalogEntry[] {
 				inactiveReason: isActive
 					? null
 					: "Registered but not active; Pi does not expose whether configuration, filtering, or deferred loading caused this state.",
-				definitionBytes: jsonByteLength({
+				knownProviderDefinitionBytes: jsonByteLength({
 					name: tool.name,
 					description: tool.description,
 					parameters: tool.parameters,
-					promptGuidelines: tool.promptGuidelines,
 				}),
 				source: sanitizeSourceInfo(tool.sourceInfo),
 			};

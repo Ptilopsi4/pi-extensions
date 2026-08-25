@@ -188,9 +188,11 @@ export function createDebugExtension(
 		});
 
 		pi.on("session_start", (_event, ctx) => {
-			capture = restoreCaptureState(ctx.sessionManager.getBranch(), now());
-			lastRuntimeSignature = undefined;
-			recordRuntime(ctx, "session_start", true);
+			restoreBranchState(ctx, "session_start");
+		});
+
+		pi.on("session_tree", (_event, ctx) => {
+			restoreBranchState(ctx, "session_tree");
 		});
 
 		pi.on("model_select", (_event, ctx) => {
@@ -228,10 +230,13 @@ export function createDebugExtension(
 				sessionId: ctx.sessionManager.getSessionId(),
 				provider: ctx.model?.provider,
 				model: ctx.model?.id,
+				api: ctx.model?.api,
 			});
 			capture.nextRequestIndex += 1;
 			capture.records.push(diagnostic);
-			capture.pendingRequestIndexes.push(diagnostic.requestIndex);
+			if (diagnostic.responseTelemetry === "pending") {
+				capture.pendingRequestIndexes.push(diagnostic.requestIndex);
+			}
 			pruneCaptureState(capture, now());
 			pi.appendEntry(PROVIDER_REQUEST_ENTRY_TYPE, diagnostic);
 		});
@@ -245,6 +250,15 @@ export function createDebugExtension(
 			attachProviderResponse(request, response);
 			pi.appendEntry(PROVIDER_RESPONSE_ENTRY_TYPE, response);
 		});
+
+		function restoreBranchState(
+			ctx: ExtensionContext,
+			reason: "session_start" | "session_tree",
+		): void {
+			capture = restoreCaptureState(ctx.sessionManager.getBranch(), now());
+			lastRuntimeSignature = undefined;
+			recordRuntime(ctx, reason, true);
+		}
 
 		function recordRuntime(
 			ctx: ExtensionContext,
