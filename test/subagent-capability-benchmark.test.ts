@@ -13,6 +13,9 @@ import {
 	CAPABILITY_TASKS,
 	type CapabilityBenchmarkArm,
 	type CapabilityTrialRecord,
+	capabilityBenchmarkArms,
+	capabilityBenchmarkVersion,
+	capabilityMatrix,
 	createCapabilityFixture,
 	createCapabilityTrialPlan,
 	parseCapabilityBenchmarkArgs,
@@ -77,6 +80,7 @@ test("argument parsing fixes model and bounded matched repetitions", () => {
 			outputPath: "result.json",
 			run: true,
 			resume: false,
+			jobVersion: "v2",
 		},
 	);
 	assert.throws(() => parseCapabilityBenchmarkArgs([]), /--model is required/i);
@@ -87,6 +91,14 @@ test("argument parsing fixes model and bounded matched repetitions", () => {
 	assert.throws(
 		() => parseCapabilityBenchmarkArgs(["--model", "p/m", "--repetitions", "11"]),
 		/1 through 10/i,
+	);
+	assert.equal(
+		parseCapabilityBenchmarkArgs(["--model", "p/m", "--job-version", "v3"]).jobVersion,
+		"v3",
+	);
+	assert.throws(
+		() => parseCapabilityBenchmarkArgs(["--model", "p/m", "--v3-extension", "v3.ts"]),
+		/--v3-extension requires --job-version v3/i,
 	);
 });
 
@@ -120,6 +132,10 @@ test("trial plan rotates all four arms across every matched workload", () => {
 			new Set(CAPABILITY_BENCHMARK_ARMS),
 		);
 	}
+	assert.deepEqual(
+		new Set(createCapabilityTrialPlan(1, "v3").map((trial) => trial.arm)),
+		new Set(capabilityBenchmarkArms("v3")),
+	);
 });
 
 test("arm prompts require direct, blocking, detached, and bounded-job topologies", () => {
@@ -141,6 +157,10 @@ test("arm prompts require direct, blocking, detached, and bounded-job topologies
 	assert.match(
 		buildCapabilityPrompt("v2-job", single, "low"),
 		/subagent-v2-start[\s\S]*subagent-v2-wait/,
+	);
+	assert.match(
+		buildCapabilityPrompt("v3-job", single, "low"),
+		/subagent-v3-start[\s\S]*subagent-v3-wait/,
 	);
 	assert.doesNotMatch(buildCapabilityPrompt("v1-sync", CAPABILITY_TASKS[2], "low"), /consult/iu);
 });
@@ -164,6 +184,14 @@ test("event analysis enforces each arm topology and completion order", () => {
 			[
 				toolResult("subagent-v2-start"),
 				toolResult("subagent-v2-wait", { state: "completed", timedOut: false }),
+				assistant(final),
+			],
+		],
+		[
+			"v3-job",
+			[
+				toolResult("subagent-v3-start"),
+				toolResult("subagent-v3-wait", { state: "completed", timedOut: false }),
 				assistant(final),
 			],
 		],
@@ -320,7 +348,7 @@ test("summary keeps four arms, quality, latency, and budget limitations separate
 		version: SUBAGENT_CAPABILITY_BENCHMARK_VERSION,
 		pairIndex: 0,
 		repetition: 0,
-		orderIndex: CAPABILITY_BENCHMARK_ARMS.indexOf(arm),
+		orderIndex: capabilityBenchmarkArms("v2").indexOf(arm),
 		arm,
 		taskId: "single-research",
 		outcome: "completed",
@@ -459,4 +487,33 @@ test("manual runner preview exposes four-arm controls without a provider request
 		new Set(preview.order.map((trial) => trial.arm)),
 		new Set(CAPABILITY_BENCHMARK_ARMS),
 	);
+});
+
+test("manual runner selects the separately versioned v3 protocol explicitly", async () => {
+	const { stdout } = await execFileAsync(
+		process.execPath,
+		[
+			"scripts/benchmark-subagent-capabilities.ts",
+			"--model",
+			"provider/model",
+			"--job-version",
+			"v3",
+			"--v3-extension",
+			"custom-v3.ts",
+		],
+		{ cwd: path.resolve(import.meta.dirname, ".."), timeout: 3_000 },
+	);
+	const preview = JSON.parse(stdout) as {
+		version: string;
+		order: Array<{ arm: string }>;
+		capabilityMatrix: Array<Record<string, unknown>>;
+		environment: { extensions: Record<string, string | null> };
+	};
+	assert.equal(preview.version, capabilityBenchmarkVersion("v3"));
+	assert.deepEqual(
+		new Set(preview.order.map((trial) => trial.arm)),
+		new Set(capabilityBenchmarkArms("v3")),
+	);
+	assert.equal(preview.environment.extensions["v3-job"], "custom-v3.ts");
+	assert.deepEqual(preview.capabilityMatrix, capabilityMatrix("v3"));
 });
