@@ -23,6 +23,7 @@ import {
 	registerSubagentSessionGuidance,
 	SUBAGENT_GUIDANCE_CONTEXT_TYPE,
 	SUBAGENT_GUIDANCE_VERSION,
+	SUBAGENT_RESTORED_BOUNDARY_ENTRY_TYPE,
 	type SubagentSessionGuidanceSnapshot,
 } from "../src/session-guidance-contract.js";
 import { resolveStatefulLimits } from "../src/stateful-limits.js";
@@ -40,6 +41,25 @@ function sessionManagerFor(branch: SessionEntry[]) {
 		getBranch: () => branch,
 		getEntries: () => branch,
 	};
+}
+
+function appendPersistedEntries(
+	mock: ReturnType<typeof createMockPi>,
+	branch: SessionEntry[],
+	parentId: string | null,
+): void {
+	for (const [index, entry] of mock.entries.entries()) {
+		const id = `persisted-boundary-${branch.length}-${index}`;
+		branch.push({
+			type: "custom",
+			id,
+			parentId,
+			timestamp: new Date(index + 1).toISOString(),
+			customType: entry.customType,
+			data: structuredClone(entry.data),
+		} as SessionEntry);
+		parentId = id;
+	}
 }
 
 function userMessage(text: string): ContextEvent["messages"][number] {
@@ -398,7 +418,7 @@ test("live policy changes retain compacted guidance at its prior provider bounda
 	await emit(mock, "session_shutdown", { reason: "quit" }, replacement.ctx);
 });
 
-test("settings changes before the first resumed context retain compacted guidance", async () => {
+test("reloaded settings append after persisted compacted guidance", async () => {
 	let snapshot = guidanceSnapshot();
 	const branch = [
 		{
@@ -411,22 +431,6 @@ test("settings changes before the first resumed context retain compacted guidanc
 			tokensBefore: 100,
 		},
 	] as SessionEntry[];
-	const mock = createMockPi();
-	const controller = registerSubagentSessionGuidance(
-		mock.pi,
-		() => snapshot,
-		() => [],
-	);
-	const context = createMockContext({ sessionManager: sessionManagerFor(branch) });
-	await emit(mock, "session_start", { reason: "resume" }, context.ctx);
-
-	const priorSnapshot = snapshot;
-	snapshot = { ...snapshot, completionDelivery: "auto-resume" };
-	controller.publish();
-	const appended = mock.sentMessages.at(-1)?.message as
-		| ContextEvent["messages"][number]
-		| undefined;
-	if (!appended) assert.fail("expected a live-policy contract");
 	const summary: ContextEvent["messages"] = [
 		{
 			role: "compactionSummary",
@@ -435,12 +439,41 @@ test("settings changes before the first resumed context retain compacted guidanc
 			timestamp: 0,
 		},
 	];
-	const baseline = reconcileSubagentSessionGuidance(
-		[...summary, userMessage("continue")],
-		priorSnapshot,
+	const priorSnapshot = snapshot;
+	const firstMock = createMockPi();
+	registerSubagentSessionGuidance(
+		firstMock.pi,
+		() => snapshot,
+		() => [],
 	);
+	const context = createMockContext({ sessionManager: sessionManagerFor(branch) });
+	await emit(firstMock, "session_start", { reason: "resume" }, context.ctx);
+	const baseline = await applyContextHooks(
+		firstMock,
+		[...summary, userMessage("continue")],
+		context.ctx,
+	);
+	assert.equal(firstMock.entries.length, 1);
+	assert.equal(firstMock.entries[0]?.customType, SUBAGENT_RESTORED_BOUNDARY_ENTRY_TYPE);
+	appendPersistedEntries(firstMock, branch, "compaction");
+	await emit(firstMock, "session_shutdown", { reason: "reload" }, context.ctx);
+
+	snapshot = { ...snapshot, completionDelivery: "auto-resume" };
+	const reloadedMock = createMockPi();
+	registerSubagentSessionGuidance(
+		reloadedMock.pi,
+		() => snapshot,
+		() => [],
+	);
+	await emit(reloadedMock, "session_start", { reason: "reload" }, context.ctx);
+	const transition = (await reloadedMock.events.get("before_agent_start")?.[0]?.(
+		{ prompt: "continue", systemPrompt: "base" },
+		context.ctx,
+	)) as { message?: ContextEvent["messages"][number] } | undefined;
+	const appended = transition?.message;
+	if (!appended) assert.fail("expected the refreshed policy to append after reload");
 	const resumed = await applyContextHooks(
-		mock,
+		reloadedMock,
 		[...summary, userMessage("continue"), appended],
 		context.ctx,
 	);
@@ -457,8 +490,12 @@ test("settings changes before the first resumed context retain compacted guidanc
 		String(appended.role === "custom" ? appended.content : ""),
 		/"completionDelivery":"auto-resume"/u,
 	);
-
-	await emit(mock, "session_shutdown", { reason: "quit" }, context.ctx);
+	assert.deepEqual(
+		baseline,
+		reconcileSubagentSessionGuidance([...summary, userMessage("continue")], priorSnapshot),
+	);
+	assert.equal(reloadedMock.entries.length, 0, "reload must reuse persisted boundary metadata");
+	await emit(reloadedMock, "session_shutdown", { reason: "quit" }, context.ctx);
 });
 
 test("restored requirement context remains fixed after completion becomes visible", async () => {
@@ -533,23 +570,69 @@ test("restored requirement context remains fixed after completion becomes visibl
 	);
 	assert.equal(secondMessages.at(-1), completion);
 
+	assert.equal(
+		mock.entries.filter((entry) => entry.customType === SUBAGENT_RESTORED_BOUNDARY_ENTRY_TYPE)
+			.length,
+		2,
+		"guidance and requirement boundary metadata must be persisted",
+	);
+	appendPersistedEntries(mock, branch, "compaction");
+	const reloadedMock = createMockPi();
+	registerSubagentSessionGuidance(reloadedMock.pi, guidanceSnapshot, () => agents);
 	const replacement = createMockContext({ sessionManager: sessionManagerFor(branch) });
-	await emit(mock, "session_start", { reason: "fork" }, replacement.ctx);
-	await emit(mock, "session_shutdown", { reason: "replace" }, context.ctx);
+	await emit(reloadedMock, "session_start", { reason: "reload" }, replacement.ctx);
 	const replacementMessages = await applyContextHooks(
-		mock,
+		reloadedMock,
 		[...firstRaw, completion],
 		replacement.ctx,
 	);
-	assert.equal(
-		replacementMessages.some(
+	assert.deepEqual(
+		replacementMessages.find(
 			(message) =>
 				message.role === "custom" && message.customType === COMPLETION_REQUIREMENT_CONTEXT_TYPE,
 		),
-		false,
-		"session replacement must clear the prior requirement boundary",
+		restored,
+		"reload must retain the requirement boundary after completion becomes visible",
 	);
-	await emit(mock, "session_shutdown", { reason: "quit" }, replacement.ctx);
+	assert.equal(reloadedMock.entries.length, 0);
+
+	const siblingGuidance = createSubagentSessionGuidance(guidanceSnapshot());
+	branch.splice(
+		0,
+		branch.length,
+		{
+			type: "compaction",
+			id: "sibling-compaction",
+			parentId: null,
+			timestamp: new Date(0).toISOString(),
+			summary: "Earlier work was compacted.",
+			firstKeptEntryId: "sibling-guidance",
+			tokensBefore: 100,
+		} as SessionEntry,
+		{
+			type: "message",
+			id: "sibling-guidance",
+			parentId: "sibling-compaction",
+			timestamp: new Date(1).toISOString(),
+			message: siblingGuidance,
+		} as SessionEntry,
+		{
+			type: "message",
+			id: "sibling-completion",
+			parentId: "sibling-guidance",
+			timestamp: new Date(2).toISOString(),
+			message: completion,
+		} as SessionEntry,
+	);
+	await emit(reloadedMock, "session_tree", {}, replacement.ctx);
+	const siblingMessages = [...summary, siblingGuidance, completion];
+	assert.equal(
+		await applyContextHooks(reloadedMock, siblingMessages, replacement.ctx),
+		siblingMessages,
+		"sibling navigation must not inherit restored boundaries from another branch",
+	);
+	await emit(mock, "session_shutdown", { reason: "reload" }, context.ctx);
+	await emit(reloadedMock, "session_shutdown", { reason: "quit" }, replacement.ctx);
 });
 
 test("uncompacted resume appends a restored requirement cancellation once", async () => {

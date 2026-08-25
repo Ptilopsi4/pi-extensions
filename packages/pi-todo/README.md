@@ -81,6 +81,7 @@ During ordinary turns, the model reads the complete list from the persisted `upd
 If leading compaction or branch summaries remove that matching call/result pair, the extension inserts one hidden, non-persistent state-only fallback immediately after those summaries.
 
 That restored message remains fixed for the current leading-summary epoch, including after a later valid todo update or clear.
+The extension stores branch-local boundary metadata in the session so reload and branch navigation retain the established prefix without making the hidden fallback itself persistent model context.
 The later tool call and result supersede the restored state at the conversation tail without rewriting the earlier provider prefix.
 An ordinary context without a leading summary does not synthesize a fallback, and a new summary epoch restores only the then-current list when needed.
 

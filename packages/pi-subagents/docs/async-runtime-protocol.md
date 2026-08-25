@@ -18,6 +18,7 @@ The successful lifecycle tool result and delivered completion message are the or
 When a resume changes a pending run to cancelled and interrupted while its stale handoff remains in model context, `before_agent_start` appends one hidden versioned transition after that handoff.
 This append-only transition also applies when leading summaries retain the stale handoff, prevents duplicate publication on later turns, and participates in fork-sensitive branch reconstruction.
 If leading compaction or branch summaries remove the handoff, the `context` hook restores one canonical hidden `pi-subagent-required-completions` fallback immediately after the summaries.
+A branch-local custom session entry records the exact restored boundary so reload and tree navigation reconstruct the correct historical fallback.
 The fallback remains at that fixed boundary for the leading-summary epoch, while a later completion or cancellation transition supersedes it at the conversation tail.
 `CompletionDeliveryBroker` owns exact completion visibility acknowledgement and asks the registry to mark the corresponding requirement visible.
 No timer, waiter, or UI object owns requirement truth.
