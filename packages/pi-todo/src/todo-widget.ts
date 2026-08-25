@@ -198,22 +198,25 @@ export function reconcileTodoContext(
 ): ContextEvent["messages"] {
 	const existing = messages.filter(isTodoContextMessage);
 	const withoutExisting = messages.filter((message) => !isTodoContextMessage(message));
+	const summaryBoundary = leadingSummaryBoundary(withoutExisting);
 	const content =
-		items.length > 0 && !hasModelVisibleTodoState(withoutExisting, items)
+		items.length > 0 && summaryBoundary > 0 && !hasModelVisibleTodoState(withoutExisting, items)
 			? todoContextContent(items)
 			: undefined;
 	if (
+		content !== undefined &&
 		existing.length === 1 &&
-		messages.at(-1) === existing[0] &&
-		existing[0]?.content === content
+		messages[summaryBoundary] === existing[0] &&
+		existing[0]?.content === content &&
+		hasTodoContextVersion(existing[0])
 	) {
 		return messages;
 	}
 	if (existing.length === 0 && content === undefined) return messages;
-
 	if (content === undefined) return withoutExisting;
+
 	return [
-		...withoutExisting,
+		...withoutExisting.slice(0, summaryBoundary),
 		{
 			role: "custom",
 			customType: TODO_CONTEXT_MESSAGE_TYPE,
@@ -222,6 +225,7 @@ export function reconcileTodoContext(
 			details: { version: TODO_CONTEXT_VERSION },
 			timestamp: 0,
 		},
+		...withoutExisting.slice(summaryBoundary),
 	];
 }
 
@@ -277,10 +281,33 @@ function isTodoToolArguments(value: unknown): value is { items: TodoItem[] } {
 	return isTodoItems((value as Record<string, unknown>).items);
 }
 
+type TodoContextMessage = Extract<ContextEvent["messages"][number], { role: "custom" }> & {
+	content: string;
+};
+
 function isTodoContextMessage(
 	message: ContextEvent["messages"][number],
-): message is ContextEvent["messages"][number] & { content: string } {
+): message is TodoContextMessage {
 	return message.role === "custom" && message.customType === TODO_CONTEXT_MESSAGE_TYPE;
+}
+
+function hasTodoContextVersion(message: TodoContextMessage): boolean {
+	return (
+		typeof message.details === "object" &&
+		message.details !== null &&
+		!Array.isArray(message.details) &&
+		(message.details as Record<string, unknown>).version === TODO_CONTEXT_VERSION
+	);
+}
+
+function leadingSummaryBoundary(messages: ContextEvent["messages"]): number {
+	let index = 0;
+	while (index < messages.length) {
+		const role = messages[index]?.role;
+		if (role !== "compactionSummary" && role !== "branchSummary") break;
+		index += 1;
+	}
+	return index;
 }
 
 function validateItems(items: readonly TodoItem[]): void {

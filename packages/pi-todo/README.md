@@ -78,9 +78,11 @@ Branch reconstruction also accepts valid results stored under the previous `todo
 
 During ordinary turns, the model reads the complete list from the persisted `update_todo_list` assistant tool call, while its successful result confirms the active state and preserves append-only prompt history.
 
-If compaction or branch context construction removes that matching call/result pair, the extension appends one hidden, non-persistent state-only fallback containing the current list as JSON data.
+If leading compaction or branch summaries remove that matching call/result pair, the extension inserts one hidden, non-persistent state-only fallback immediately after those summaries.
 
-The fallback stays at the end of model context until a later valid todo tool call and successful result become visible, and it is omitted when the list is cleared.
+That fixed restoration boundary keeps later ordinary requests append-only while the todo state is unchanged.
+An ordinary context without a leading summary does not synthesize a fallback.
+A later valid todo update or clear starts an explicit state-transition epoch and replaces or removes restored state.
 
 In TUI mode, updates appear immediately in a widget above the editor.
 
@@ -117,8 +119,9 @@ packages/pi-todo/
 │   ├── index.ts              # Thin authoritative extension forwarder
 │   └── todo-widget.ts        # Tool, lifecycle, state reconstruction, and rendering
 ├── test/
-│   ├── build-runtime.test.ts # Build, boundary, and Jiti loader coverage
-│   └── todo-widget.test.ts   # Extension behavior coverage
+│   ├── build-runtime.test.ts       # Build, boundary, and Jiti loader coverage
+│   ├── todo-cache-contract.test.ts # Normalized provider-prefix coverage
+│   └── todo-widget.test.ts         # Extension behavior coverage
 ├── LICENSE
 ├── README.md
 ├── package.json
