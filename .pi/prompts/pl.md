@@ -1,9 +1,9 @@
 ---
 description: Research, plan, and complete an objective using a dated plan
-argument-hint: "<objective>"
+argument-hint: "[objective]"
 ---
 
-Objective: $ARGUMENTS
+${ARGUMENTS:-Derive the objective from the preceding conversation.}
 
 Use `docs/plans/YYYY-MM-DD_<topic>-plan.md` as the executable source of truth for this objective.
 Replace `YYYY-MM-DD` with the current date and `<topic>` with a concise kebab-case topic.
@@ -59,6 +59,6 @@ After approval:
 4. Keep the dated plan file synchronized with discoveries and actual progress.
 5. If a major scope, architecture, risk, or acceptance criterion changes, update the plan and request approval again before continuing.
 6. Run the completion checklist and inspect the final diff.
-7. Mark the objective `DONE` only when every required checkbox has passed.
+7. Report the work as `DONE` only when every required checkbox has passed.
 
 Report blockers and failed or unverified checks plainly.
