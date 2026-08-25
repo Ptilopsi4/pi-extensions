@@ -11,10 +11,9 @@ import {
 	RPC_DOCUMENT_LINE_WIDTH,
 	RPC_DOCUMENT_PAGE_SIZE,
 } from "./document-formatting.js";
-import { menuHint, renderFrame, renderHorizontalRule, safeMenuText } from "./rendering.js";
+import { componentRows, menuHint, renderHorizontalRule, safeMenuText } from "./rendering.js";
 
 const DEFAULT_REVIEW_VIEWPORT_SIZE = 14;
-const RESERVED_HOST_ROWS = 3;
 const MIN_FRAMED_ROWS = 5;
 
 export type ReviewOptions<
@@ -46,44 +45,23 @@ export function createReviewComponent<ScreenId extends string, ActionId extends 
 				options.screen.format,
 				safeWidth,
 			);
-			const terminalRows =
-				options.screen.viewportSize === "adaptive" ? options.tui.terminal.rows : undefined;
-			if (terminalRows !== undefined && Number.isFinite(terminalRows)) {
-				const frame = renderAdaptiveReviewFrame({
-					screen: options.screen,
-					allLines,
-					width: safeWidth,
-					terminalRows,
-					scrollOffset,
-					theme: options.theme,
-					keybindings: options.keybindings,
-				});
-				scrollOffset = frame.scrollOffset;
-				lastMaximumScroll = frame.maximumScroll;
-				lastViewportSize = frame.viewportSize;
-				return frame.lines;
-			}
-
-			const viewportSize = reviewViewportSize(options.screen);
-			lastMaximumScroll = Math.max(0, allLines.length - viewportSize);
-			scrollOffset = Math.max(0, Math.min(scrollOffset, lastMaximumScroll));
-			lastViewportSize = viewportSize;
-			const visible = allLines.slice(scrollOffset, scrollOffset + viewportSize);
-			const first = allLines.length === 0 ? 0 : scrollOffset + 1;
-			const last = Math.min(allLines.length, scrollOffset + viewportSize);
-			const position =
-				allLines.length > viewportSize
-					? [options.theme.fg("dim", `${first}-${last}/${allLines.length}`)]
-					: [];
-			return renderFrame(
-				options.screen.title,
-				options.screen.lines ?? [],
-				[...visible, ...position],
-				options.screen.hint ?? "back",
-				safeWidth,
-				options,
-				options.screen.confirm ? safeMenuText(options.screen.confirm.label) : "",
-			);
+			const frame = renderAdaptiveReviewFrame({
+				screen: options.screen,
+				allLines,
+				width: safeWidth,
+				terminalRows: options.tui.terminal.rows,
+				maximumViewportSize:
+					options.screen.viewportSize === "adaptive"
+						? undefined
+						: reviewViewportSize(options.screen),
+				scrollOffset,
+				theme: options.theme,
+				keybindings: options.keybindings,
+			});
+			scrollOffset = frame.scrollOffset;
+			lastMaximumScroll = frame.maximumScroll;
+			lastViewportSize = frame.viewportSize;
+			return frame.lines;
 		},
 		invalidate() {
 			documentLineCache.invalidate();
@@ -121,6 +99,7 @@ interface AdaptiveReviewFrameOptions<ActionId extends string> {
 	allLines: readonly string[];
 	width: number;
 	terminalRows: number;
+	maximumViewportSize?: number;
 	scrollOffset: number;
 	theme: MenuScreenComponentOptions<string, ActionId>["theme"];
 	keybindings: MenuKeybindings;
@@ -144,7 +123,7 @@ interface AdaptiveReviewChrome {
 function renderAdaptiveReviewFrame<ActionId extends string>(
 	options: AdaptiveReviewFrameOptions<ActionId>,
 ): AdaptiveReviewFrame {
-	const totalRows = Math.max(1, Math.floor(options.terminalRows) - RESERVED_HOST_ROWS);
+	const totalRows = componentRows(options.terminalRows);
 	const framed = totalRows >= MIN_FRAMED_ROWS;
 	const availableRows = framed ? totalRows - 2 : totalRows;
 	const destination = options.screen.hint ?? "back";
@@ -174,9 +153,17 @@ function renderAdaptiveReviewFrame<ActionId extends string>(
 		fullHint,
 		criticalHint,
 		false,
+		options.maximumViewportSize,
 	);
 	if (availableRows >= 4 && options.allLines.length > chrome.viewportSize) {
-		chrome = allocateAdaptiveReviewChrome(availableRows, fullHeader, fullHint, criticalHint, true);
+		chrome = allocateAdaptiveReviewChrome(
+			availableRows,
+			fullHeader,
+			fullHint,
+			criticalHint,
+			true,
+			options.maximumViewportSize,
+		);
 	}
 
 	const maximumScroll = Math.max(0, options.allLines.length - chrome.viewportSize);
@@ -211,6 +198,7 @@ function allocateAdaptiveReviewChrome(
 	fullHint: readonly string[],
 	criticalHint: string,
 	showPosition: boolean,
+	maximumViewportSize?: number,
 ): AdaptiveReviewChrome {
 	if (availableRows === 1) {
 		return { header: [], separator: false, hint: [], showPosition: false, viewportSize: 1 };
@@ -254,7 +242,10 @@ function allocateAdaptiveReviewChrome(
 		separator,
 		hint,
 		showPosition,
-		viewportSize: 1 + remainingRows,
+		viewportSize: Math.min(
+			1 + remainingRows,
+			maximumViewportSize === undefined ? Number.POSITIVE_INFINITY : maximumViewportSize,
+		),
 	};
 }
 

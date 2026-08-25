@@ -65,8 +65,11 @@ test("makes the no-argument command a menu and advertises compatibility routes",
 		assert.match(frame, /File Context/u);
 		assert.match(frame, /Add context snippet/u);
 		assert.match(frame, /Review selected context \(0\)/u);
-		assert.match(frame, /Settings/u);
-		assert.match(frame, /Status/u);
+		tui.press("tui.select.down");
+		tui.press("tui.select.down");
+		const laterRows = tui.render().join("\n");
+		assert.match(laterRows, /Settings/u);
+		assert.match(laterRows, /Status/u);
 		tui.press("ctrl+c");
 		await running;
 	});

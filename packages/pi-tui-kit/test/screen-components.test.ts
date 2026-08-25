@@ -189,7 +189,7 @@ test("action screens prioritize actionable rows when terminal height is constrai
 		keybindings: inputFriendlyKeybindings,
 	});
 	const lines = plainRender(harness.component, 32);
-	assert.ok(lines.length <= 12);
+	assert.ok(lines.length <= 9);
 	assert.equal(lines[0], "─".repeat(32));
 	assert.equal(lines.at(-1), "─".repeat(32));
 	assert.match(lines.join("\n"), /→ Restore sync access/u);
@@ -202,11 +202,47 @@ test("action screens prioritize actionable rows when terminal height is constrai
 		keybindings: inputFriendlyKeybindings,
 	});
 	const tinyLines = plainRender(tinyHarness.component, 32);
-	assert.ok(tinyLines.length <= 7);
-	assert.equal(tinyLines[0], "─".repeat(32));
-	assert.equal(tinyLines.at(-1), "─".repeat(32));
+	assert.ok(tinyLines.length <= 4);
+	assert.doesNotMatch(tinyLines.join("\n"), /─/u);
 	assert.match(tinyLines.join("\n"), /→ Help/u);
 	assert.match(tinyLines.join("\n"), /esc\s+close/u);
+
+	const minimumHarness = componentHarness(screen, {
+		selectedItemId: "help",
+		plainTheme: true,
+		rows: 4,
+		keybindings: inputFriendlyKeybindings,
+	});
+	assert.deepEqual(plainRender(minimumHarness.component, 32), ["→ Help"]);
+});
+
+test("choice and settings screens reserve host rows and keep focused controls visible", () => {
+	const choice = componentHarness(choiceScreen, {
+		selectedItemId: "balanced",
+		plainTheme: true,
+		rows: 9,
+		keybindings: inputFriendlyKeybindings,
+	});
+	const choiceLines = plainRender(choice.component, 32);
+	assert.ok(choiceLines.length <= 6);
+	assert.equal(choiceLines[0], "─".repeat(32));
+	assert.equal(choiceLines.at(-1), "─".repeat(32));
+	assert.match(choiceLines.join("\n"), /→ Balanced/u);
+	assert.match(choiceLines.join("\n"), /esc\s+back/u);
+
+	const settings = componentHarness(largeSettingsScreen(), {
+		selectedItemId: "setting-11",
+		plainTheme: true,
+		rows: 9,
+		keybindings: inputFriendlyKeybindings,
+	});
+	const settingsLines = plainRender(settings.component, 40);
+	assert.ok(settingsLines.length <= 6);
+	assert.equal(settingsLines[0], "─".repeat(40));
+	assert.equal(settingsLines.at(-1), "─".repeat(40));
+	assert.ok(settingsLines.some((line) => line.startsWith("> ")));
+	assert.match(settingsLines.join("\n"), /→ Setting 11/u);
+	assert.match(settingsLines.join("\n"), /Esc to go back/u);
 });
 
 test("action screens honor injected navigation and distinguish Back from Ctrl+C Close", () => {
@@ -936,6 +972,34 @@ test("searchable multi-select filters label and declared search text by stable r
 
 	for (const input of ["\u007f", "\u007f"]) harness.component.handleInput(input);
 	assert.match(plainRender(harness.component, 60).join("\n"), /› \[x\] 讀取 📖/);
+});
+
+test("searchable multi-select keeps its focused query and selected row in compact frames", () => {
+	const screen: MenuScreen<ScreenId, ActionId> = {
+		kind: "multiSelect",
+		title: "Searchable tools",
+		enableSearch: true,
+		items: Array.from({ length: 8 }, (_, index) => ({
+			id: `tool-${index}`,
+			label: `tool_${index}`,
+			searchText: "shared tool",
+			selected: false,
+		})),
+		action: "toggle",
+	};
+	const harness = componentHarness(screen, {
+		selectedItemId: "tool-7",
+		plainTheme: true,
+		rows: 10,
+		keybindings: inputFriendlyKeybindings,
+	});
+	for (const input of ["t", "o", "o", "l"]) harness.component.handleInput(input);
+	const lines = plainRender(harness.component, 32);
+	assert.ok(lines.length <= 7);
+	assert.equal(lines[0], "─".repeat(32));
+	assert.equal(lines.at(-1), "─".repeat(32));
+	assert.ok(lines.some((line) => line.startsWith("> tool")));
+	assert.match(lines.join("\n"), /› \[ \] tool_7/u);
 });
 
 test("searchable multi-select keeps actions available for no matches and distinguishes empty", async () => {

@@ -218,7 +218,10 @@ export function createMultiSelectComponent<ScreenId extends string, ActionId ext
 				options.screen.hint ?? "back",
 				width,
 				options,
-				row?.kind === "action" ? "select" : "toggle",
+				{
+					confirmAction: row?.kind === "action" ? "select" : "toggle",
+					pinnedContentRows: options.screen.enableSearch ? 1 : 0,
+				},
 			);
 		},
 		invalidate() {

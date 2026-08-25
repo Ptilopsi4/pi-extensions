@@ -82,7 +82,7 @@ function customPalettePicker(
 	return async (factory: (...args: unknown[]) => unknown) => {
 		let result: unknown;
 		const component = (await factory(
-			{ requestRender() {} },
+			{ terminal: { rows: 24 }, requestRender() {} },
 			{
 				fg: (_color: string, text: string) => text,
 				bold: (text: string) => text,

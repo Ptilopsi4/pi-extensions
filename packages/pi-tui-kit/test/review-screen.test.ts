@@ -74,6 +74,24 @@ test("fixed and default review frames use consistent rules and preserve content"
 	]);
 });
 
+test("fixed and default review pagination reaches the end after height compaction", () => {
+	const content = Array.from({ length: 20 }, (_, index) => `row ${index + 1}`).join("\n");
+	for (const viewportSize of [14, undefined]) {
+		const harness = reviewComponentHarness({ ...reviewScreen, content, viewportSize }, false, 10);
+		let rendered = plainRender(harness.component, 80);
+		assert.ok(harness.component.render(80).length <= 7);
+		assert.match(rendered, /row 1/u);
+		assert.match(rendered, /1-1\/20/u);
+
+		harness.component.handleInput("\u001b[F");
+		rendered = plainRender(harness.component, 80);
+		assert.match(rendered, /row 20/u);
+		assert.match(rendered, /20-20\/20/u);
+		harness.component.handleInput("u");
+		assert.match(plainRender(harness.component, 80), /row 19/u);
+	}
+});
+
 test("adaptive review degrades explicitly at constrained terminal heights", () => {
 	const content = Array.from({ length: 10 }, (_, index) => `row ${index + 1}`).join("\n");
 	const harness = reviewComponentHarness(

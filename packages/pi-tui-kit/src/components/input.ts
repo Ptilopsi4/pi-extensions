@@ -86,7 +86,7 @@ export function createInputComponent<ScreenId extends string, ActionId extends s
 				options.screen.hint ?? "back",
 				safeWidth,
 				options,
-				"submit",
+				{ confirmAction: "submit", pinnedContentRows: 1 },
 			);
 		},
 		invalidate() {
