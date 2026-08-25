@@ -139,14 +139,14 @@ test("firecrawl loader additively loads crawl workflows without network access",
 	});
 });
 
-test("firecrawl eagerly exposes available tools when native deferred loading is unsupported", async () => {
+test("firecrawl keeps Azure Responses eager when compat enables tool search", async () => {
 	await withTempAgentDir(async () => {
 		const firecrawlModule = await importFreshFirecrawl();
 		const unsupportedModel = {
-			api: "openai-responses",
-			provider: "openai",
-			id: "gpt-5.3",
-			compat: { supportsToolSearch: false },
+			api: "azure-openai-responses",
+			provider: "azure-openai-responses",
+			id: "gpt-5.4",
+			compat: { supportsToolSearch: true },
 		};
 		const nativeModel = {
 			api: "openai-responses",

@@ -183,14 +183,14 @@ test("chrome-devtools loader additively activates matching allowed tools", async
 	});
 });
 
-test("chrome-devtools eagerly exposes available tools without native deferred loading", async () => {
+test("chrome-devtools keeps Azure Responses eager when compat enables tool search", async () => {
 	await withTempAgentDir(async () => {
 		const chromeDevtoolsModule = await importFreshChromeDevtools();
 		const unsupportedModel = {
-			api: "openai-responses",
-			provider: "openai",
-			id: "gpt-5.3",
-			compat: { supportsToolSearch: false },
+			api: "azure-openai-responses",
+			provider: "azure-openai-responses",
+			id: "gpt-5.4",
+			compat: { supportsToolSearch: true },
 		};
 		const nativeModel = {
 			api: "openai-responses",

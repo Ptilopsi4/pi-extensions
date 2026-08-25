@@ -84,6 +84,8 @@ On reload, resume, or fork, capabilities recorded by `firecrawl_load` on the act
 
 Pi uses native deferred tool references on compatible Anthropic models and native tool search on compatible OpenAI Responses models.
 
+`azure-openai-responses` remains eager because Pi's Azure adapter does not implement native deferred tool-search serialization.
+
 When the selected model/provider lacks native deferred support, the extension activates every capability allowed by settings before the next model request instead of using Pi's cache-invalidating lazy-loading fallback.
 
 After a session enters eager exposure, it stays eager across later model switches to avoid removing tool definitions within that session.
