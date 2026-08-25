@@ -30,7 +30,6 @@ export interface AgentDefinition {
 	tools?: string[];
 	model?: string;
 	thinkingLevel?: ThinkingLevel;
-	timeoutMs?: number;
 }
 
 export interface AgentDiscovery {
@@ -50,7 +49,7 @@ export interface ChildRequest {
 	agent: AgentDefinition;
 	task: string;
 	cwd: string;
-	timeoutMs: number;
+	timeout?: number;
 	projectTrusted: boolean;
 	readOnly: boolean;
 	signal: AbortSignal;
@@ -63,7 +62,7 @@ export interface JobSummary {
 	createdAt: number;
 	startedAt?: number;
 	finishedAt?: number;
-	timeoutMs: number;
+	timeout?: number;
 	resultSummary?: string;
 	errorSummary?: string;
 }

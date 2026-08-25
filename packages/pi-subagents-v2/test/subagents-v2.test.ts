@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
+import { discoverAgents } from "../src/agents.js";
 import subagentsV2 from "../src/subagents-v2.js";
 import type { ChildRequest, ChildResult } from "../src/types.js";
 
@@ -11,8 +12,12 @@ interface RegisteredTool {
 	name: string;
 	description: string;
 	parameters: {
-		properties?: Record<string, { minimum?: number; maximum?: number; maxLength?: number }>;
+		properties?: Record<
+			string,
+			{ description?: string; minimum?: number; maximum?: number; maxLength?: number }
+		>;
 	};
+	prepareArguments?: (args: unknown) => unknown;
 	execute: (
 		toolCallId: string,
 		params: Record<string, unknown>,
@@ -57,11 +62,60 @@ test("registers only the five minimal subagent-v2 tools with bounded schemas", (
 		],
 	);
 	assert.equal(tools[0]?.parameters.properties?.task?.maxLength, 50 * 1024);
-	assert.equal(tools[0]?.parameters.properties?.timeoutMs?.maximum, 3_600_000);
-	assert.equal(tools[3]?.parameters.properties?.timeoutMs?.maximum, 300_000);
+	assert.equal(
+		tools[0]?.parameters.properties?.timeout?.description,
+		"Timeout in seconds (optional, no default timeout)",
+	);
+	assert.equal(tools[0]?.parameters.properties?.timeoutMs, undefined);
+	assert.equal(
+		tools[3]?.parameters.properties?.timeout?.description,
+		"Timeout in seconds (optional, no default timeout)",
+	);
+	assert.equal(tools[3]?.parameters.properties?.timeoutMs, undefined);
+	assert.deepEqual(
+		tools[0]?.prepareArguments?.({ agent: "worker", task: "old", timeoutMs: 1500 }),
+		{
+			agent: "worker",
+			task: "old",
+			timeout: 1.5,
+		},
+	);
+	assert.deepEqual(tools[3]?.prepareArguments?.({ jobId: "job_old", timeoutMs: 30_000 }), {
+		jobId: "job_old",
+		timeout: 30,
+	});
 	assert.deepEqual(Object.keys(tools[1]?.parameters.properties ?? {}), []);
 	assert.match(tools[4]?.description ?? "", /read-only/i);
 	assert.deepEqual([...mock.commands.keys()], []);
+});
+
+test("rejects invalid execution timeouts with Pi bash semantics", async () => {
+	const mock = createMockPi();
+	subagentsV2(mock.pi);
+	const start = tool(mock, "subagent-v2-start");
+	const context = createMockContext();
+	await assert.rejects(
+		() =>
+			start.execute(
+				"non-positive",
+				{ agent: "worker", task: "task", timeout: 0 },
+				undefined,
+				undefined,
+				context.ctx,
+			),
+		/Invalid timeout: must be a finite number of seconds/,
+	);
+	await assert.rejects(
+		() =>
+			start.execute(
+				"oversized",
+				{ agent: "worker", task: "task", timeout: 2_147_483.648 },
+				undefined,
+				undefined,
+				context.ctx,
+			),
+		/Invalid timeout: maximum is 2147483\.647 seconds/,
+	);
 });
 
 test("starts in the background, delivers one completion, and returns terminal output from wait", async () => {
@@ -69,22 +123,30 @@ test("starts in the background, delivers one completion, and returns terminal ou
 	const child = new Promise<ChildResult>((resolve) => {
 		resolveChild = resolve;
 	});
+	let childRequest: ChildRequest | undefined;
 	const mock = createMockPi();
-	subagentsV2(mock.pi, { runChild: async () => child });
+	subagentsV2(mock.pi, {
+		runChild: async (request) => {
+			childRequest = request;
+			return child;
+		},
+	});
 	const context = createMockContext({ cwd: process.cwd(), isProjectTrusted: () => false });
 	const start = tool(mock, "subagent-v2-start");
 	const wait = tool(mock, "subagent-v2-wait");
 	const inspect = tool(mock, "subagent-v2-inspect");
 	const started = await start.execute(
 		"start",
-		{ agent: "explorer", task: "Inspect one thing", timeoutMs: 1000 },
+		{ agent: "explorer", task: "Inspect one thing", timeout: 1 },
 		undefined,
 		undefined,
 		context.ctx,
 	);
 	assert.equal(started.details.state, "queued");
+	assert.equal(started.details.timeout, 1);
 	const jobId = String(started.details.jobId);
 	await Promise.resolve();
+	assert.equal(childRequest?.timeout, 1);
 	const running = await inspect.execute("inspect", {}, undefined, undefined, context.ctx);
 	assert.equal((running.details.jobs as Array<{ state: string }>)[0]?.state, "running");
 
@@ -94,13 +156,7 @@ test("starts in the background, delivers one completion, and returns terminal ou
 		limitations: [],
 		truncated: false,
 	});
-	const terminal = await wait.execute(
-		"wait",
-		{ jobId, timeoutMs: 1000 },
-		undefined,
-		undefined,
-		context.ctx,
-	);
+	const terminal = await wait.execute("wait", { jobId }, undefined, undefined, context.ctx);
 	assert.deepEqual(terminal.details, {
 		jobId,
 		state: "completed",
@@ -150,11 +206,12 @@ test("wait timeout leaves the job active and cancellation rejects a stale late r
 		undefined,
 		context.ctx,
 	);
+	assert.equal(started.details.timeout, undefined);
 	const jobId = String(started.details.jobId);
 	await Promise.resolve();
 	const waited = await tool(mock, "subagent-v2-wait").execute(
 		"wait",
-		{ jobId, timeoutMs: 1 },
+		{ jobId, timeout: 0.001 },
 		undefined,
 		undefined,
 		context.ctx,
@@ -242,6 +299,7 @@ test("consult enforces the read-only request and shutdown suppresses stale deliv
 	);
 	assert.equal(consulted.details.state, "completed");
 	assert.equal(requests[0]?.readOnly, true);
+	assert.equal(requests[0]?.timeout, undefined);
 
 	await tool(mock, "subagent-v2-start").execute(
 		"start",
@@ -270,7 +328,7 @@ test("trusted project agents override user agents and inspection exposes only bo
 		mkdirSync(projectAgents, { recursive: true });
 		writeFileSync(
 			path.join(projectAgents, "reviewer.md"),
-			"---\nname: reviewer\ndescription: Project reviewer\ntools: read\n---\nSECRET PROJECT PROMPT\n",
+			"---\nname: reviewer\ndescription: Project reviewer\ntools: read\ntimeoutMs: 1\n---\nSECRET PROJECT PROMPT\n",
 		);
 		const mock = createMockPi();
 		subagentsV2(mock.pi);
@@ -297,6 +355,10 @@ test("trusted project agents override user agents and inspection exposes only bo
 		);
 		assert.equal(userReviewer?.source, "user");
 		assert.equal(projectReviewer?.source, "project");
+		const discoveredReviewer = discoverAgents(project, true).agents.find(
+			(candidate) => candidate.name === "reviewer",
+		);
+		assert.equal(Object.hasOwn(discoveredReviewer ?? {}, "timeoutMs"), false);
 		assert.doesNotMatch(JSON.stringify(trusted.details), /SECRET PROJECT PROMPT/);
 	} finally {
 		rmSync(project, { recursive: true, force: true });
