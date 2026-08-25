@@ -1,0 +1,237 @@
+import assert from "node:assert/strict";
+import type { AssistantMessage, ModelCostRates } from "@earendil-works/pi-ai";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	SessionEntry,
+	Theme,
+} from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { test } from "vitest";
+import cacheHitMonitor, { renderCacheMonitor, WIDGET_KEY } from "./index.js";
+import { createCacheMonitorView, createCacheSample } from "./metrics.js";
+
+const RATES: ModelCostRates = { input: 10, output: 20, cacheRead: 1, cacheWrite: 20 };
+const THEME = {
+	fg: (_role: string, text: string) => text,
+	bold: (text: string) => text,
+} as unknown as Theme;
+
+type Handler = (event: never, ctx: ExtensionContext) => unknown;
+type WidgetFactory = (_tui: never, theme: Theme) => Component;
+type WidgetRecord = [
+	string,
+	string[] | WidgetFactory | undefined,
+	{ placement: "aboveEditor" } | undefined,
+];
+
+function assistant(
+	input: number,
+	cacheRead: number,
+	cacheWrite = 0,
+	overrides: Partial<AssistantMessage> = {},
+): AssistantMessage {
+	return {
+		role: "assistant",
+		api: "openai-responses",
+		provider: "test-provider",
+		model: "test-model",
+		content: [],
+		stopReason: "stop",
+		timestamp: 1_000,
+		usage: {
+			input,
+			output: 10,
+			cacheRead,
+			cacheWrite,
+			totalTokens: input + cacheRead + cacheWrite + 10,
+			cost: {
+				input: (input * RATES.input) / 1_000_000,
+				output: (10 * RATES.output) / 1_000_000,
+				cacheRead: (cacheRead * RATES.cacheRead) / 1_000_000,
+				cacheWrite: (cacheWrite * RATES.cacheWrite) / 1_000_000,
+				total: 0,
+			},
+		},
+		...overrides,
+	};
+}
+
+function messageEntry(message: AssistantMessage): SessionEntry {
+	return { type: "message", id: crypto.randomUUID(), parentId: null, message } as SessionEntry;
+}
+
+function createHarness() {
+	const handlers = new Map<string, Handler[]>();
+	const pi = {
+		on(event: string, handler: Handler) {
+			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+		},
+	} as unknown as ExtensionAPI;
+	cacheHitMonitor(pi);
+	return {
+		async emit(event: string, payload: Record<string, unknown>, ctx: ExtensionContext) {
+			for (const handler of handlers.get(event) ?? []) await handler(payload as never, ctx);
+		},
+	};
+}
+
+function createContext(
+	mode: ExtensionContext["mode"] = "tui",
+	initialEntries: SessionEntry[] = [],
+) {
+	let entries = initialEntries;
+	const widgets: WidgetRecord[] = [];
+	const sessionManager = {
+		getBranch: () => entries,
+	} as unknown as ExtensionContext["sessionManager"];
+	const ctx = {
+		mode,
+		hasUI: mode === "tui" || mode === "rpc",
+		sessionManager,
+		modelRegistry: {
+			find: () => ({ cost: RATES }),
+		},
+		ui: {
+			setWidget(
+				key: string,
+				content: string[] | WidgetFactory | undefined,
+				options?: { placement: "aboveEditor" },
+			) {
+				widgets.push([key, content, options]);
+			},
+		},
+	} as unknown as ExtensionContext;
+	return {
+		ctx,
+		widgets,
+		setEntries(next: SessionEntry[]) {
+			entries = next;
+		},
+	};
+}
+
+function renderWidget(record: WidgetRecord | undefined, width = 100): string[] | undefined {
+	if (!record) return undefined;
+	const content = record[1];
+	return typeof content === "function" ? content(undefined as never, THEME).render(width) : content;
+}
+
+test("publishes waiting state, previews streaming usage, and finalizes detailed metrics", async () => {
+	const harness = createHarness();
+	const current = createContext();
+	await harness.emit("session_start", {}, current.ctx);
+	assert.deepEqual(renderWidget(current.widgets.at(-1))?.slice(1), [
+		"Prompt cache · waiting for provider usage",
+		"Hit = cacheRead / (input + cacheRead + cacheWrite). Live updates begin when usage is reported.",
+	]);
+
+	const first = assistant(200, 800);
+	await harness.emit("message_update", { message: first, assistantMessageEvent: {} }, current.ctx);
+	const live = renderWidget(current.widgets.at(-1));
+	assert.match(live?.join("\n") ?? "", /LIVE.*hit 80\.0%/s);
+	const updateCount = current.widgets.length;
+	await harness.emit("message_update", { message: first, assistantMessageEvent: {} }, current.ctx);
+	assert.equal(current.widgets.length, updateCount);
+
+	await harness.emit("message_end", { message: first }, current.ctx);
+	assert.doesNotMatch(renderWidget(current.widgets.at(-1))?.join("\n") ?? "", /LIVE/);
+
+	const second = assistant(400, 600, 100, { timestamp: 3_000 });
+	await harness.emit("message_update", { message: second, assistantMessageEvent: {} }, current.ctx);
+	const compared = renderWidget(current.widgets.at(-1), 120)?.join("\n") ?? "";
+	assert.match(compared, /loss 25\.5 pp/);
+	assert.match(compared, /re-billed 400 \(40\.0%\)/);
+	assert.match(compared, /miss premium ~\$0\.0044/);
+});
+
+test("clears a partial live preview if an agent run ends without a final message", async () => {
+	const harness = createHarness();
+	const current = createContext();
+	await harness.emit("session_start", {}, current.ctx);
+	await harness.emit("message_update", { message: assistant(200, 800) }, current.ctx);
+	assert.match(renderWidget(current.widgets.at(-1))?.join("\n") ?? "", /LIVE/);
+
+	await harness.emit("agent_end", { messages: [] }, current.ctx);
+	assert.doesNotMatch(renderWidget(current.widgets.at(-1))?.join("\n") ?? "", /LIVE/);
+	assert.match(
+		renderWidget(current.widgets.at(-1))?.join("\n") ?? "",
+		/waiting for provider usage/,
+	);
+});
+
+test("restores active-branch history and resets comparison after compaction", async () => {
+	const first = assistant(200, 800);
+	const harness = createHarness();
+	const current = createContext("tui", [messageEntry(first)]);
+	await harness.emit("session_start", {}, current.ctx);
+	assert.match(renderWidget(current.widgets.at(-1))?.join("\n") ?? "", /request #1.*hit 80\.0%/s);
+
+	const afterCompaction = assistant(900, 100, 0, { timestamp: 4_000 });
+	current.setEntries([
+		messageEntry(first),
+		{ type: "compaction", id: "compact", parentId: null } as SessionEntry,
+		messageEntry(afterCompaction),
+	]);
+	await harness.emit("session_compact", {}, current.ctx);
+	const rendered = renderWidget(current.widgets.at(-1), 120)?.join("\n") ?? "";
+	assert.match(rendered, /request #2.*hit 10\.0%/s);
+	assert.match(rendered, /no comparable request in the current cache epoch/);
+	assert.match(rendered, /Session {2}2 req/);
+	assert.match(rendered, /re-billed 0/);
+});
+
+test("ignores stale replacement-session events and clears only the owned widget", async () => {
+	const harness = createHarness();
+	const previous = createContext();
+	const current = createContext();
+	await harness.emit("session_start", {}, previous.ctx);
+	await harness.emit("session_start", {}, current.ctx);
+	const currentCount = current.widgets.length;
+
+	await harness.emit("message_update", { message: assistant(100, 900) }, previous.ctx);
+	await harness.emit("session_shutdown", {}, previous.ctx);
+	assert.equal(current.widgets.length, currentCount);
+
+	await harness.emit("session_shutdown", {}, current.ctx);
+	assert.deepEqual(current.widgets.at(-1), [WIDGET_KEY, undefined, undefined]);
+});
+
+test("uses plain string widgets in RPC mode and remains silent without UI", async () => {
+	const harness = createHarness();
+	const rpc = createContext("rpc", [messageEntry(assistant(200, 800))]);
+	await harness.emit("session_start", {}, rpc.ctx);
+	const rpcContent = rpc.widgets.at(-1)?.[1];
+	assert.ok(Array.isArray(rpcContent));
+	assert.match(rpcContent.join("\n"), /hit 80\.0%/);
+
+	const json = createContext("json", [messageEntry(assistant(200, 800))]);
+	await harness.emit("session_start", {}, json.ctx);
+	assert.equal(json.widgets.length, 0);
+});
+
+test("renders every line within narrow widths and strips unsafe model text", () => {
+	const sample = createCacheSample(
+		assistant(200, 800, 0, {
+			provider: "\u001b]8;;bad\u0007provider",
+			model: "model\n\u202eunsafe",
+		}),
+		0,
+		RATES,
+	);
+	assert.ok(sample);
+	const lines = renderCacheMonitor(createCacheMonitorView([sample]), THEME, 32);
+	const plain = lines.map(stripTerminalSequences);
+
+	assert.ok(lines.every((line) => visibleWidth(line) <= 32));
+	assert.match(plain.join("\n"), /provider\/model unsafe/);
+	assert.ok(
+		plain.every((line) =>
+			[...line].every((character) => {
+				const codePoint = character.codePointAt(0) ?? 0;
+				return (codePoint >= 32 || character === "\n") && codePoint !== 127 && codePoint !== 0x202e;
+			}),
+		),
+	);
+});
