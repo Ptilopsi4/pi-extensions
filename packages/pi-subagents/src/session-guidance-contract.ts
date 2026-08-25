@@ -44,10 +44,12 @@ export function registerSubagentSessionGuidance(
 ): SubagentSessionGuidanceController {
 	let activeSession: ExtensionContext["sessionManager"] | undefined;
 	let lastPublishedContent: string | undefined;
+	let restoredBoundary: { summaryEpoch: string; content: string } | undefined;
 
 	pi.on("session_start", (_event, ctx) => {
 		activeSession = ctx.sessionManager;
 		lastPublishedContent = undefined;
+		restoredBoundary = undefined;
 	});
 
 	pi.on("before_agent_start", (_event, ctx) => {
@@ -60,10 +62,14 @@ export function registerSubagentSessionGuidance(
 			return;
 		}
 		const contextMessages = buildSessionContext(branch).messages;
-		if (
-			leadingSummaryBoundary(contextMessages) > 0 &&
-			!hasSubagentSessionGuidanceHistory(contextMessages)
-		) {
+		const summaryEpoch = leadingSummaryEpoch(contextMessages);
+		if (summaryEpoch && !hasSubagentSessionGuidanceHistory(contextMessages)) {
+			if (
+				restoredBoundary?.summaryEpoch === summaryEpoch &&
+				restoredBoundary.content !== contract.content
+			) {
+				return { message: contract };
+			}
 			return;
 		}
 		return { message: contract };
@@ -78,7 +84,23 @@ export function registerSubagentSessionGuidance(
 
 	pi.on("context", (event, ctx) => {
 		if (ctx.sessionManager !== activeSession) return;
-		const withGuidance = reconcileSubagentSessionGuidance(event.messages, getSnapshot());
+		const summaryEpoch = leadingSummaryEpoch(event.messages);
+		if (restoredBoundary?.summaryEpoch !== summaryEpoch) restoredBoundary = undefined;
+		if (
+			restoredBoundary === undefined &&
+			summaryEpoch &&
+			!hasSubagentSessionGuidanceHistory(event.messages)
+		) {
+			restoredBoundary = {
+				summaryEpoch,
+				content: createSubagentSessionGuidance(getSnapshot()).content,
+			};
+		}
+		const withGuidance = reconcileSubagentSessionGuidance(
+			event.messages,
+			getSnapshot(),
+			restoredBoundary?.content,
+		);
 		const messages = reconcileRequiredCompletionContext(withGuidance, getAgents(), [
 			SUBAGENT_GUIDANCE_CONTEXT_TYPE,
 		]);
@@ -89,6 +111,7 @@ export function registerSubagentSessionGuidance(
 		if (ctx.sessionManager !== activeSession) return;
 		activeSession = undefined;
 		lastPublishedContent = undefined;
+		restoredBoundary = undefined;
 	});
 
 	return {
@@ -148,21 +171,48 @@ export function createSubagentSessionGuidance(snapshot: SubagentSessionGuidanceS
 export function reconcileSubagentSessionGuidance(
 	messages: ContextEvent["messages"],
 	snapshot: SubagentSessionGuidanceSnapshot,
+	restoredBoundaryContent?: string,
 ): ContextEvent["messages"] {
 	const expected = createSubagentSessionGuidance(snapshot);
-	if (latestSubagentSessionGuidanceIsEquivalent(messages, expected.content)) return messages;
+	if (
+		restoredBoundaryContent === undefined &&
+		latestSubagentSessionGuidanceIsEquivalent(messages, expected.content)
+	) {
+		return messages;
+	}
 	const summaryBoundary = leadingSummaryBoundary(messages);
 	if (summaryBoundary === 0) return messages;
+	const boundaryContract =
+		restoredBoundaryContent === undefined
+			? expected
+			: { ...expected, content: restoredBoundaryContent };
 	const boundaryMessage = messages[summaryBoundary];
-	if (isSubagentSessionGuidance(boundaryMessage) && boundaryMessage.content === expected.content) {
-		return [
-			...messages.slice(0, summaryBoundary),
-			expected,
-			...messages.slice(summaryBoundary + 1),
-		];
+	if (isSubagentSessionGuidance(boundaryMessage)) {
+		if (
+			boundaryMessage.content === boundaryContract.content &&
+			hasSubagentSessionGuidanceVersion(boundaryMessage)
+		) {
+			return messages;
+		}
+		if (
+			restoredBoundaryContent !== undefined ||
+			boundaryMessage.content === boundaryContract.content
+		) {
+			return [
+				...messages.slice(0, summaryBoundary),
+				boundaryContract,
+				...messages.slice(summaryBoundary + 1),
+			];
+		}
 	}
-	if (hasSubagentSessionGuidanceHistory(messages)) return messages;
-	return [...messages.slice(0, summaryBoundary), expected, ...messages.slice(summaryBoundary)];
+	if (restoredBoundaryContent === undefined && hasSubagentSessionGuidanceHistory(messages)) {
+		return messages;
+	}
+	return [
+		...messages.slice(0, summaryBoundary),
+		boundaryContract,
+		...messages.slice(summaryBoundary),
+	];
 }
 
 export function hasSubagentSessionGuidanceHistory(messages: readonly unknown[]): boolean {
@@ -190,6 +240,21 @@ function latestSubagentSessionGuidanceIsEquivalent(
 
 function isSubagentSessionGuidance(value: unknown): value is { content?: unknown } {
 	return unwrapMessage(value).customType === SUBAGENT_GUIDANCE_CONTEXT_TYPE;
+}
+
+function hasSubagentSessionGuidanceVersion(value: unknown): boolean {
+	const details = unwrapMessage(value).details;
+	return (
+		typeof details === "object" &&
+		details !== null &&
+		!Array.isArray(details) &&
+		(details as Record<string, unknown>).version === SUBAGENT_GUIDANCE_VERSION
+	);
+}
+
+function leadingSummaryEpoch(messages: readonly unknown[]): string | undefined {
+	const boundary = leadingSummaryBoundary(messages);
+	return boundary === 0 ? undefined : JSON.stringify(messages.slice(0, boundary));
 }
 
 function leadingSummaryBoundary(messages: readonly unknown[]): number {

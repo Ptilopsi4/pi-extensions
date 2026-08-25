@@ -91,6 +91,15 @@ async function applyPromptBoundary(
 		)) as { message?: ContextEvent["messages"][number] } | undefined;
 		if (result?.message) current = [...current, result.message];
 	}
+	return applyContextHooks(mock, current, ctx);
+}
+
+async function applyContextHooks(
+	mock: ReturnType<typeof createMockPi>,
+	messages: ContextEvent["messages"],
+	ctx: ExtensionContext,
+): Promise<ContextEvent["messages"]> {
+	let current = messages;
 	for (const handler of mock.events.get("context") ?? []) {
 		const result = (await handler({ messages: current }, ctx)) as
 			| { messages?: ContextEvent["messages"] }
@@ -268,6 +277,124 @@ test("session guidance persists once, appends live changes, and rejects stale se
 		retryContext.ctx,
 	)) as { message?: { customType?: string } } | undefined;
 	assert.equal(retried?.message?.customType, SUBAGENT_GUIDANCE_CONTEXT_TYPE);
+});
+
+test("live policy changes retain compacted guidance at its prior provider boundary", async () => {
+	let snapshot = guidanceSnapshot();
+	const mock = createMockPi();
+	const controller = registerSubagentSessionGuidance(
+		mock.pi,
+		() => snapshot,
+		() => [],
+	);
+	const summaryBranch = [
+		{
+			type: "compaction",
+			id: "compaction",
+			parentId: null,
+			timestamp: new Date(0).toISOString(),
+			summary: "Earlier work was compacted.",
+			firstKeptEntryId: "kept",
+			tokensBefore: 100,
+		},
+		{
+			type: "branch_summary",
+			id: "branch-summary",
+			parentId: "compaction",
+			timestamp: new Date(0).toISOString(),
+			fromId: "branch-start",
+			summary: "Retained branch state.",
+		},
+	] as SessionEntry[];
+	const firstContext = createMockContext({ sessionManager: sessionManagerFor(summaryBranch) });
+	await emit(mock, "session_start", { reason: "resume" }, firstContext.ctx);
+	const summaries: ContextEvent["messages"] = [
+		{
+			role: "compactionSummary",
+			summary: "Earlier work was compacted.",
+			tokensBefore: 100,
+			timestamp: 0,
+		},
+		{
+			role: "branchSummary",
+			summary: "Retained branch state.",
+			fromId: "branch-start",
+			timestamp: 0,
+		},
+	];
+	const firstRaw = [...summaries, userMessage("continue")];
+	const firstMessages = await applyContextHooks(mock, firstRaw, firstContext.ctx);
+	const restored = firstMessages[2];
+	if (restored?.role !== "custom") assert.fail("expected restored session guidance");
+	assert.equal(restored.customType, SUBAGENT_GUIDANCE_CONTEXT_TYPE);
+	assert.match(String(restored.content), /"completionDelivery":"next-turn"/u);
+	const first = normalizedRequest(mock, firstMessages);
+
+	snapshot = { ...snapshot, completionDelivery: "auto-resume" };
+	controller.publish();
+	const appended = mock.sentMessages.at(-1)?.message as
+		| ContextEvent["messages"][number]
+		| undefined;
+	if (!appended) assert.fail("expected an appended live-policy contract");
+	const secondRaw = [
+		...firstRaw,
+		assistantMessage("working"),
+		userMessage("continue again"),
+		appended,
+	];
+	const secondMessages = await applyContextHooks(mock, secondRaw, firstContext.ctx);
+	assert.deepEqual(secondMessages[2], restored);
+	assert.equal(secondMessages.at(-1), appended);
+	assert.match(
+		String(appended.role === "custom" ? appended.content : ""),
+		/"completionDelivery":"auto-resume"/u,
+	);
+	const second = normalizedRequest(mock, secondMessages);
+	assert.deepEqual(second.messages.slice(0, first.messages.length), first.messages);
+	assert.equal(await applyContextHooks(mock, secondMessages, firstContext.ctx), secondMessages);
+
+	snapshot = { ...snapshot, blockingMaxParallelTasks: 7 };
+	mock.rawPi.sendMessage = () => {
+		throw new Error("insertion unavailable");
+	};
+	controller.publish();
+	const retried = (await mock.events.get("before_agent_start")?.[0]?.(
+		{ prompt: "continue", systemPrompt: "base" },
+		firstContext.ctx,
+	)) as { message?: { content?: unknown } } | undefined;
+	assert.match(
+		String(retried?.message?.content),
+		/"blockingMaxParallelTasks":7/u,
+		"a failed live append must retry after an established compacted boundary",
+	);
+
+	const nextSummaryEpoch = summaries.map((message, index) =>
+		index === 0 && message.role === "compactionSummary"
+			? { ...message, summary: "Later work was compacted." }
+			: message,
+	);
+	const nextEpochMessages = await applyContextHooks(
+		mock,
+		[...nextSummaryEpoch, userMessage("continue after another compaction")],
+		firstContext.ctx,
+	);
+	assert.match(
+		String(nextEpochMessages[2]?.role === "custom" ? nextEpochMessages[2].content : ""),
+		/"completionDelivery":"auto-resume"/u,
+		"a new summary epoch must restore the current contract rather than the prior epoch's contract",
+	);
+
+	const replacement = createMockContext({ sessionManager: sessionManagerFor([]) });
+	await emit(mock, "session_start", { reason: "fork" }, replacement.ctx);
+	await emit(mock, "session_shutdown", { reason: "replace" }, firstContext.ctx);
+	const replacementMessages = await applyContextHooks(mock, firstRaw, replacement.ctx);
+	assert.match(
+		String(replacementMessages[2]?.role === "custom" ? replacementMessages[2].content : ""),
+		/"completionDelivery":"auto-resume"/u,
+		"a replacement session must not inherit the prior session's restored contract",
+	);
+	assert.equal(await applyContextHooks(mock, firstRaw, firstContext.ctx), firstRaw);
+	await emit(mock, "session_shutdown", { reason: "quit" }, replacement.ctx);
 });
 
 test("uncompacted resume appends a restored requirement cancellation once", async () => {
