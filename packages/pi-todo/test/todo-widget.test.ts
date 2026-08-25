@@ -198,7 +198,7 @@ test("registers concise guidance for using and maintaining the todo list", () =>
 	]);
 });
 
-test("uses visible todo calls and injects only missing current state", async () => {
+test("restores missing todo state and retains its summary boundary", async () => {
 	const harness = createHarness();
 	const current = createContext();
 	await harness.emit("session_start", current.ctx);
@@ -207,6 +207,15 @@ test("uses visible todo calls and injects only missing current state", async () 
 		{ text: "implement", status: "in_progress" },
 	];
 	await setTodos(harness, current.ctx, items);
+
+	const ordinary: ContextEvent["messages"] = [
+		{
+			role: "user",
+			content: [{ type: "text", text: "ordinary context" }],
+			timestamp: 0,
+		},
+	];
+	assert.equal(await harness.context(ordinary, current.ctx), ordinary);
 
 	const base: ContextEvent["messages"] = [
 		{
@@ -227,6 +236,18 @@ test("uses visible todo calls and injects only missing current state", async () 
 			timestamp: 0,
 		},
 	];
+	const initialDetails: TodoDetails = { version: TODO_DETAILS_VERSION, items };
+	const initiallyVisible = [
+		...base,
+		todoToolCallMessage(items),
+		todoToolResultMessage(initialDetails),
+	];
+	assert.equal(
+		await harness.context(initiallyVisible, current.ctx),
+		initiallyVisible,
+		"retained matching evidence must prevent initial restoration",
+	);
+
 	const transformed = await harness.context(base, current.ctx);
 	assert.equal(transformed.length, 4);
 	const reminder = transformed[2];
@@ -266,16 +287,6 @@ test("uses visible todo calls and injects only missing current state", async () 
 		version: TODO_CONTEXT_VERSION,
 	});
 
-	const ordinary: ContextEvent["messages"] = [
-		{
-			role: "user",
-			content: [{ type: "text", text: "ordinary context" }],
-			timestamp: 0,
-		},
-	];
-	assert.equal(await harness.context(ordinary, current.ctx), ordinary);
-	assert.deepEqual(await harness.context([...ordinary, reminder], current.ctx), ordinary);
-
 	for (const toolName of [TOOL_NAME, "todo_widget"]) {
 		const details: TodoDetails = { version: TODO_DETAILS_VERSION, items };
 		const visible = [
@@ -283,7 +294,9 @@ test("uses visible todo calls and injects only missing current state", async () 
 			todoToolCallMessage(items, toolName),
 			todoToolResultMessage(details, toolName),
 		];
-		assert.equal(await harness.context(visible, current.ctx), visible);
+		const retained = await harness.context(visible, current.ctx);
+		assert.deepEqual(retained[2], reminder);
+		assert.deepEqual(retained.slice(3), visible.slice(2));
 	}
 
 	const details: TodoDetails = { version: TODO_DETAILS_VERSION, items };
@@ -317,15 +330,29 @@ test("uses visible todo calls and injects only missing current state", async () 
 		todoToolCallMessage(replacementItems),
 		todoToolResultMessage(replacementDetails),
 	];
-	assert.deepEqual(
+	assert.equal(
 		await harness.context(replacement, current.ctx),
-		replacement.filter(
-			(message) => message.role !== "custom" || message.customType !== TODO_CONTEXT_MESSAGE_TYPE,
-		),
+		replacement,
+		"a later update must supersede rather than remove the restored boundary",
 	);
 
 	await setTodos(harness, current.ctx, []);
-	assert.deepEqual(await harness.context(transformed, current.ctx), base);
+	assert.equal(
+		await harness.context(transformed, current.ctx),
+		transformed,
+		"clearing the list must not rewrite the established summary prefix",
+	);
+	const nextSummaryEpoch = base.map((message, index) =>
+		index === 0 && message.role === "compactionSummary"
+			? { ...message, summary: "Later work was compacted." }
+			: message,
+	);
+	assert.equal(
+		await harness.context(nextSummaryEpoch, current.ctx),
+		nextSummaryEpoch,
+		"a new summary epoch must use the current cleared state",
+	);
+	assert.deepEqual(await harness.context([...ordinary, reminder], current.ctx), ordinary);
 });
 
 test("renders completed, current, and pending tasks with themed semantic symbols", () => {

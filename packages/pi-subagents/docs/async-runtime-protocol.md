@@ -15,10 +15,10 @@ Omitting the field or using `background` preserves prior behavior and does not c
 Tool-result `details.agent.completionRequirements` provides fork-sensitive branch evidence.
 Session restoration retains exact requirements found on the active branch and treats sessions without visible subagent state as a possible compacted continuation.
 The successful lifecycle tool result and delivered completion message are the ordinary model-visible requirement handoff.
-When an uncompacted resume changes a retained pending run to cancelled and interrupted, `before_agent_start` appends one hidden versioned transition that supersedes the stale pending handoff.
-The retained transition prevents duplicate publication on later turns and participates in fork-sensitive branch reconstruction.
-If leading compaction or branch summaries remove equivalent current evidence, the `context` hook restores one canonical hidden `pi-subagent-required-completions` fallback immediately after the summaries.
-The fallback remains at that fixed boundary across ordinary turns and is removed when equivalent current evidence becomes visible or no retained requirement remains.
+When a resume changes a pending run to cancelled and interrupted while its stale handoff remains in model context, `before_agent_start` appends one hidden versioned transition after that handoff.
+This append-only transition also applies when leading summaries retain the stale handoff, prevents duplicate publication on later turns, and participates in fork-sensitive branch reconstruction.
+If leading compaction or branch summaries remove the handoff, the `context` hook restores one canonical hidden `pi-subagent-required-completions` fallback immediately after the summaries.
+The fallback remains at that fixed boundary for the leading-summary epoch, while a later completion or cancellation transition supersedes it at the conversation tail.
 `CompletionDeliveryBroker` owns exact completion visibility acknowledgement and asks the registry to mark the corresponding requirement visible.
 No timer, waiter, or UI object owns requirement truth.
 
@@ -35,7 +35,8 @@ The runtime bounds retained requirement records per agent and rejects a sixty-fi
 ## Parent behavior
 
 Pending and available requirements remain final-answer dependencies.
-Visible requirements no longer appear in the canonical fallback block.
+A newly established canonical fallback omits requirements already visible at that boundary.
+A fallback retained from an earlier request remains historical prefix context after visibility changes, and the later completion message supplies the superseding state.
 Cancelled requirements are terminal and must be reported rather than silently treated as successful evidence.
 A failed, partial, interrupted, stale, or cancelled child never satisfies mutating acceptance or independent-verification requirements merely because its turn settled.
 
