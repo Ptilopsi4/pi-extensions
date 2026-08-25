@@ -28,7 +28,7 @@ Use `subagent-v2-start` only for a bounded job that can run independently while 
 
 Do not start a background job when no useful main-agent work can proceed before its result is needed.
 
-Each background job has one task, one turn sequence, one execution deadline, and no follow-up conversation.
+Each background job has one task, one turn sequence, an optional execution deadline, and no follow-up conversation.
 
 ## Write self-contained tasks
 
@@ -50,13 +50,17 @@ Return findings with severity, exact file and line references, and any unverifie
 
 ## Choose timeouts
 
-Set `timeoutMs` to the shortest realistic execution deadline for the bounded task.
+Set `timeout` in seconds to the shortest realistic execution deadline for the bounded task.
+
+Execution timeouts accept positive finite numbers and have no default.
+
+Omit `timeout` only when the child may run until completion, explicit cancellation, session shutdown, or process exit.
 
 Use short deadlines for extraction and focused review, moderate deadlines for ordinary multi-file work, and longer deadlines only when the scoped work genuinely requires them.
 
 Split an oversized task instead of extending its deadline to compensate for unclear scope.
 
-The execution timeout belongs to the job and terminates its child when exceeded.
+The execution timeout, when set, belongs to the job and terminates its child when exceeded.
 
 ## Start independent jobs in parallel
 
@@ -76,7 +80,7 @@ Use `subagent-v2-wait` only when a specific job result is required for the next 
 
 A wait timeout stops only the caller's wait.
 
-A wait timeout does not cancel, close, or shorten the job's execution deadline.
+A wait timeout does not cancel, close, or shorten the job's optional execution deadline.
 
 Do not poll repeatedly because asynchronous completion delivery remains active.
 

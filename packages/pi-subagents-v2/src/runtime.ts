@@ -52,9 +52,9 @@ export class SubagentRuntime {
 		agent: AgentDefinition;
 		task: string;
 		cwd: string;
-		timeoutMs: number;
+		timeout?: number;
 		projectTrusted: boolean;
-	}): { jobId: string; agent: string; state: "queued"; timeoutMs: number } {
+	}): { jobId: string; agent: string; state: "queued"; timeout?: number } {
 		this.prune();
 		const active = [...this.jobs.values()].filter((job) => !isTerminal(job.state)).length;
 		if (active >= MAX_ACTIVE_JOBS) {
@@ -71,7 +71,7 @@ export class SubagentRuntime {
 			agent: input.agent.name,
 			state: "queued",
 			createdAt: this.now(),
-			timeoutMs: input.timeoutMs,
+			...(input.timeout !== undefined ? { timeout: input.timeout } : {}),
 			controller,
 			terminal,
 			resolveTerminal,
@@ -90,7 +90,7 @@ export class SubagentRuntime {
 					agent: input.agent,
 					task: input.task,
 					cwd: input.cwd,
-					timeoutMs: input.timeoutMs,
+					timeout: input.timeout,
 					projectTrusted: input.projectTrusted,
 					readOnly: false,
 					signal: controller.signal,
@@ -106,7 +106,12 @@ export class SubagentRuntime {
 			if (job.state !== "running" || job.generation !== this.generation) return;
 			this.finish(job, child, true);
 		});
-		return { jobId, agent: job.agent, state: "queued", timeoutMs: job.timeoutMs };
+		return {
+			jobId,
+			agent: job.agent,
+			state: "queued",
+			...(job.timeout !== undefined ? { timeout: job.timeout } : {}),
+		};
 	}
 
 	inspectJobs(): { jobs: JobSummary[]; omitted: number } {
@@ -246,7 +251,7 @@ export class SubagentRuntime {
 			createdAt: job.createdAt,
 			...(job.startedAt !== undefined ? { startedAt: job.startedAt } : {}),
 			...(job.finishedAt !== undefined ? { finishedAt: job.finishedAt } : {}),
-			timeoutMs: job.timeoutMs,
+			...(job.timeout !== undefined ? { timeout: job.timeout } : {}),
 			...(job.resultSummary !== undefined ? { resultSummary: job.resultSummary } : {}),
 			...(job.errorSummary !== undefined ? { errorSummary: job.errorSummary } : {}),
 		};

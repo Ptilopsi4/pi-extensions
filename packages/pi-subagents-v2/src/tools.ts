@@ -1,13 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
 import { discoverAgents } from "./agents.js";
-import { runChild } from "./process.js";
+import { resolveTimeoutMs, runChild } from "./process.js";
 import { type RuntimeDependencies, SubagentRuntime } from "./runtime.js";
 import type { AgentDefinition, ChildResult } from "./types.js";
 
 const MAX_TASK_BYTES = 50 * 1024;
-const DEFAULT_EXECUTION_TIMEOUT_MS = 60_000;
-const MAX_EXECUTION_TIMEOUT_MS = 3_600_000;
 const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
 const MAX_WAIT_TIMEOUT_MS = 300_000;
 const MAX_INSPECTED_AGENTS = 32;
@@ -19,14 +17,12 @@ const StartParameters = Type.Object({
 		description: "Self-contained task, constraints, and expected result. Maximum 50 KiB.",
 		maxLength: MAX_TASK_BYTES,
 	}),
-	timeoutMs: Type.Optional(
-		Type.Integer({
-			description: "Maximum execution time in milliseconds.",
-			minimum: 1,
-			maximum: MAX_EXECUTION_TIMEOUT_MS,
-		}),
+	timeout: Type.Optional(
+		Type.Number({ description: "Timeout in seconds (optional, no default timeout)" }),
 	),
 });
+
+type ExecutionArguments = Static<typeof StartParameters>;
 
 const InspectParameters = Type.Object({});
 
@@ -52,12 +48,8 @@ const ConsultParameters = Type.Object({
 		description: "Self-contained research or review question. Maximum 50 KiB.",
 		maxLength: MAX_TASK_BYTES,
 	}),
-	timeoutMs: Type.Optional(
-		Type.Integer({
-			description: "Maximum execution time in milliseconds.",
-			minimum: 1,
-			maximum: MAX_EXECUTION_TIMEOUT_MS,
-		}),
+	timeout: Type.Optional(
+		Type.Number({ description: "Timeout in seconds (optional, no default timeout)" }),
 	),
 });
 
@@ -82,23 +74,21 @@ export function registerSubagentTools(
 		name: "subagent-v2-start",
 		label: "Subagent v2 · Start",
 		description:
-			"Start one bounded background subagent job and return its jobId immediately. The job has no follow-up turns and publishes one asynchronous completion when terminal.",
+			"Start one bounded background subagent job and return its jobId immediately. The job has no follow-up turns and publishes one asynchronous completion when terminal. Optionally provide a timeout in seconds.",
 		promptSnippet: "Start one bounded background subagent job",
 		parameters: StartParameters,
+		prepareArguments: prepareExecutionArguments,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			throwIfAborted(signal, "Subagent start was cancelled");
 			assertNotNested();
 			const task = validateTask(params.task, "subagent-v2-start");
 			const agent = requireAgent(ctx.cwd, ctx.isProjectTrusted(), params.agent);
-			const timeoutMs = validateExecutionTimeout(
-				params.timeoutMs ?? agent.timeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
-				"subagent-v2-start",
-			);
+			resolveTimeoutMs(params.timeout);
 			const result = runtime.start({
 				agent,
 				task,
 				cwd: ctx.cwd,
-				timeoutMs,
+				timeout: params.timeout,
 				projectTrusted: ctx.isProjectTrusted(),
 			});
 			return toolResult(result);
@@ -164,19 +154,17 @@ export function registerSubagentTools(
 		name: "subagent-v2-consult",
 		label: "Subagent v2 · Consult",
 		description:
-			"Run one synchronous ephemeral consultation with only enforced read-only Pi tools. Shell commands, writes, extensions, detached lifecycle tools, and session persistence are unavailable.",
+			"Run one synchronous ephemeral consultation with only enforced read-only Pi tools. Shell commands, writes, extensions, detached lifecycle tools, and session persistence are unavailable. Optionally provide a timeout in seconds.",
 		promptSnippet: "Run one synchronous read-only subagent consultation",
 		parameters: ConsultParameters,
+		prepareArguments: prepareExecutionArguments,
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			throwIfAborted(signal, "Subagent consultation was cancelled");
 			assertNotNested();
 			const ownerGeneration = generation;
 			const task = validateTask(params.task, "subagent-v2-consult");
 			const agent = requireAgent(ctx.cwd, ctx.isProjectTrusted(), params.agent);
-			const timeoutMs = validateExecutionTimeout(
-				params.timeoutMs ?? agent.timeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
-				"subagent-v2-consult",
-			);
+			resolveTimeoutMs(params.timeout);
 			const lifecycleController = new AbortController();
 			activeConsultControllers.add(lifecycleController);
 			const effectiveSignal = signal
@@ -191,7 +179,7 @@ export function registerSubagentTools(
 				agent,
 				task,
 				cwd: ctx.cwd,
-				timeoutMs,
+				timeout: params.timeout,
 				projectTrusted: ctx.isProjectTrusted(),
 				readOnly: true,
 				signal: effectiveSignal,
@@ -252,11 +240,15 @@ function validateTask(value: string, toolName: string): string {
 	return task;
 }
 
-function validateExecutionTimeout(value: number, toolName: string): number {
-	if (!Number.isSafeInteger(value) || value < 1 || value > MAX_EXECUTION_TIMEOUT_MS) {
-		throw new Error(`${toolName} timeoutMs must be between 1 and ${MAX_EXECUTION_TIMEOUT_MS}.`);
+function prepareExecutionArguments(args: unknown): ExecutionArguments {
+	if (!args || typeof args !== "object" || !Object.hasOwn(args, "timeoutMs")) {
+		return args as ExecutionArguments;
 	}
-	return value;
+	const { timeoutMs, ...prepared } = args as Record<string, unknown>;
+	if (prepared.timeout === undefined && typeof timeoutMs === "number") {
+		return { ...prepared, timeout: timeoutMs / 1000 } as ExecutionArguments;
+	}
+	return prepared as unknown as ExecutionArguments;
 }
 
 function validateWaitTimeout(value: number): number {

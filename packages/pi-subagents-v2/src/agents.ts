@@ -137,7 +137,6 @@ function parseAgent(
 	const thinkingLevel = THINKING_LEVELS.has(frontmatter.thinkingLevel as ThinkingLevel)
 		? (frontmatter.thinkingLevel as ThinkingLevel)
 		: undefined;
-	const timeoutMs = validTimeout(frontmatter.timeoutMs) ? frontmatter.timeoutMs : undefined;
 	return {
 		name,
 		description,
@@ -147,7 +146,6 @@ function parseAgent(
 		...(tools !== undefined ? { tools } : {}),
 		...(model ? { model } : {}),
 		...(thinkingLevel ? { thinkingLevel } : {}),
-		...(timeoutMs ? { timeoutMs } : {}),
 	};
 }
 
@@ -189,10 +187,4 @@ function hasControlCharacter(value: string): boolean {
 		const codePoint = character.codePointAt(0) ?? 0;
 		return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
 	});
-}
-
-function validTimeout(value: unknown): value is number {
-	return (
-		typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 3_600_000
-	);
 }

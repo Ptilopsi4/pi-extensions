@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | `agent` | `string` | Yes | Configured subagent name. |
 | `task` | `string` | Yes | Self-contained task, up to 50 KiB of UTF-8 text. |
-| `timeoutMs` | `integer` | No | `1`–`3,600,000`; defaults to the agent definition or `60,000`. |
+| `timeout` | `number` | No | Seconds; `> 0` through `2,147,483.647`; no default timeout. |
 
 ## `subagent-v2-inspect`
 
@@ -31,4 +31,4 @@ No parameters.
 | --- | --- | --- | --- |
 | `agent` | `string` | Yes | Configured subagent name. |
 | `task` | `string` | Yes | Self-contained research or review question, up to 50 KiB of UTF-8 text. |
-| `timeoutMs` | `integer` | No | `1`–`3,600,000`; defaults to the agent definition or `60,000`. |
+| `timeout` | `number` | No | Seconds; `> 0` through `2,147,483.647`; no default timeout. |

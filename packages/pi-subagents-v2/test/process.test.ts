@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "vitest";
-import { buildPiArgs, runChild } from "../src/process.js";
+import { buildPiArgs, resolveTimeoutMs, runChild } from "../src/process.js";
 import type { AgentDefinition, ChildRequest } from "../src/types.js";
 
 const agent: AgentDefinition = {
@@ -95,13 +95,22 @@ console.log(JSON.stringify({
 	assert.match(result.limitations.join("\n"), /truncated/i);
 });
 
-test("runChild enforces execution timeout and caller cancellation", async () => {
+test("resolves optional execution timeouts with Pi bash semantics", () => {
+	assert.equal(resolveTimeoutMs(undefined), undefined);
+	assert.equal(resolveTimeoutMs(0.025), 25);
+	assert.equal(resolveTimeoutMs(2_147_483.647), 2_147_483_647);
+	assert.throws(() => resolveTimeoutMs(0), /finite number of seconds/);
+	assert.throws(() => resolveTimeoutMs(Number.POSITIVE_INFINITY), /finite number of seconds/);
+	assert.throws(() => resolveTimeoutMs(2_147_483.648), /maximum is 2147483\.647 seconds/);
+});
+
+test("runChild enforces an optional execution timeout and caller cancellation", async () => {
 	installFakePi("setInterval(() => {}, 1000);\n");
-	const timedOut = await runChild(childRequest({ timeoutMs: 25 }));
+	const timedOut = await runChild(childRequest({ timeout: 0.025 }));
 	assert.equal(timedOut.state, "timed_out");
 
 	const controller = new AbortController();
-	const work = runChild(childRequest({ timeoutMs: 1000, signal: controller.signal }));
+	const work = runChild(childRequest({ signal: controller.signal }));
 	setTimeout(() => controller.abort(), 25);
 	const cancelled = await work;
 	assert.equal(cancelled.state, "cancelled");
@@ -112,7 +121,6 @@ function childRequest(overrides: Partial<ChildRequest> = {}): ChildRequest {
 		agent,
 		task: "task",
 		cwd: directory,
-		timeoutMs: 1000,
 		projectTrusted: false,
 		readOnly: false,
 		signal: new AbortController().signal,
