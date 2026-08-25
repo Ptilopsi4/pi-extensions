@@ -51,9 +51,9 @@ Options:
   --output <file>                Redacted JSON record path (required with --run)
   --pi <command>                 Pi executable (default: pi)
   --workspace <path>             Source repository root (default: current repository)
-  --job-version <v2|v3>          Bounded-job arm version (default: v2)
+  --job-version <v2|v3>          Bounded-job arm version (default: v3)
   --v1-extension <path>          pi-subagents entrypoint override
-  --v2-extension <path>          pi-subagents-v2 entrypoint override
+  --v2-extension <path>          Historical v2 entrypoint (required for v2)
   --v3-extension <path>          pi-subagents-v3 entrypoint override
   --run                          Execute live-provider trials; otherwise preview only
   --resume                       Continue missing trials from a compatible output file
@@ -69,10 +69,13 @@ const options = parseCapabilityBenchmarkArgs(process.argv.slice(2));
 const root = path.resolve(options.workspace ?? sourceRoot);
 const v1Extension = path.resolve(root, options.v1Extension ?? "packages/pi-subagents/src/index.ts");
 const jobArm: CapabilityBenchmarkArm = options.jobVersion === "v2" ? "v2-job" : "v3-job";
-const jobExtension =
-	options.jobVersion === "v2"
-		? path.resolve(root, options.v2Extension ?? "packages/pi-subagents-v2/src/index.ts")
-		: path.resolve(root, options.v3Extension ?? "packages/pi-subagents-v3/src/index.ts");
+let jobExtension: string;
+if (options.jobVersion === "v2") {
+	if (!options.v2Extension) throw new Error("Historical v2 benchmarks require --v2-extension");
+	jobExtension = path.resolve(root, options.v2Extension);
+} else {
+	jobExtension = path.resolve(root, options.v3Extension ?? "packages/pi-subagents-v3/src/index.ts");
+}
 const extensions: Partial<Record<CapabilityBenchmarkArm, string | undefined>> = {
 	"parent-only": undefined,
 	"v1-sync": v1Extension,

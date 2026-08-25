@@ -78,19 +78,18 @@ A replacement or default decision requires preregistered repeated trials, unifor
 
 ## Commands
 
-The runner defaults to the historical v2 protocol, so every v3 command must pass `--job-version v3`.
+The runner defaults to the current v3 protocol.
 
 Preview sixteen trials without making a provider request:
 
 ```bash
-just benchmark-subagent-capabilities --job-version v3 --model provider/model
+just benchmark-subagent-capabilities --model provider/model
 ```
 
 Run one diagnostic repetition:
 
 ```bash
 just benchmark-subagent-capabilities \
-  --job-version v3 \
   --run \
   --thinking low \
   --model provider/model \
@@ -101,7 +100,6 @@ If an external runner deadline stops a compatible partial run, continue only its
 
 ```bash
 just benchmark-subagent-capabilities \
-  --job-version v3 \
   --run \
   --resume \
   --thinking low \
@@ -115,7 +113,6 @@ Run five repetitions only after reviewing provider budget and the diagnostic res
 
 ```bash
 just benchmark-subagent-capabilities \
-  --job-version v3 \
   --run \
   --repetitions 5 \
   --thinking low \

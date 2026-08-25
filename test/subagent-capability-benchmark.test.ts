@@ -81,7 +81,7 @@ test("argument parsing fixes model and bounded matched repetitions", () => {
 			outputPath: "result.json",
 			run: true,
 			resume: false,
-			jobVersion: "v2",
+			jobVersion: "v3",
 		},
 	);
 	assert.throws(() => parseCapabilityBenchmarkArgs([]), /--model is required/i);
@@ -98,8 +98,8 @@ test("argument parsing fixes model and bounded matched repetitions", () => {
 		"v3",
 	);
 	assert.throws(
-		() => parseCapabilityBenchmarkArgs(["--model", "p/m", "--v3-extension", "v3.ts"]),
-		/--v3-extension requires --job-version v3/i,
+		() => parseCapabilityBenchmarkArgs(["--model", "p/m", "--job-version", "v2"]),
+		/requires --v2-extension/i,
 	);
 });
 
@@ -112,16 +112,16 @@ test("trial plan rotates all four arms across every matched workload", () => {
 			["single-research", "parent-only"],
 			["single-research", "v1-sync"],
 			["single-research", "v1-async"],
-			["single-research", "v2-job"],
+			["single-research", "v3-job"],
 			["parallel-research", "v1-sync"],
 			["parallel-research", "v1-async"],
-			["parallel-research", "v2-job"],
+			["parallel-research", "v3-job"],
 			["parallel-research", "parent-only"],
 			["security-review", "v1-async"],
-			["security-review", "v2-job"],
+			["security-review", "v3-job"],
 			["security-review", "parent-only"],
 			["security-review", "v1-sync"],
-			["worker-fix", "v2-job"],
+			["worker-fix", "v3-job"],
 			["worker-fix", "parent-only"],
 			["worker-fix", "v1-sync"],
 			["worker-fix", "v1-async"],
@@ -134,8 +134,8 @@ test("trial plan rotates all four arms across every matched workload", () => {
 		);
 	}
 	assert.deepEqual(
-		new Set(createCapabilityTrialPlan(1, "v3").map((trial) => trial.arm)),
-		new Set(capabilityBenchmarkArms("v3")),
+		new Set(createCapabilityTrialPlan(1, "v2").map((trial) => trial.arm)),
+		new Set(capabilityBenchmarkArms("v2")),
 	);
 });
 
@@ -369,7 +369,7 @@ test("summary keeps four arms, quality, latency, and budget limitations separate
 		version: SUBAGENT_CAPABILITY_BENCHMARK_VERSION,
 		pairIndex: 0,
 		repetition: 0,
-		orderIndex: capabilityBenchmarkArms("v2").indexOf(arm),
+		orderIndex: capabilityBenchmarkArms("v3").indexOf(arm),
 		arm,
 		taskId: "single-research",
 		outcome: "completed",
@@ -395,7 +395,7 @@ test("summary keeps four arms, quality, latency, and budget limitations separate
 	assert.equal(summary.equalInferenceBudget, false);
 	assert.equal(summary.pairedInstances, 1);
 	assert.equal(summary.arms["parent-only"].successRate, 1);
-	assert.equal(summary.arms["v2-job"].successRate, 0);
+	assert.equal(summary.arms["v3-job"].successRate, 0);
 });
 
 test("manual runner executes all four RPC arms and cleans temporary directories", async () => {
@@ -409,12 +409,12 @@ test("manual runner executes all four RPC arms and cleans temporary directories"
 			'import fs from "node:fs";',
 			'import readline from "node:readline";',
 			'const extensionIndex=process.argv.indexOf("-e");const extension=extensionIndex>=0?process.argv[extensionIndex+1]||"":"";',
-			'const settings=extension&&!extension.includes("v2")?JSON.parse(fs.readFileSync(process.env.PI_CODING_AGENT_DIR+"/pi-subagents.json","utf8")):undefined;',
-			'const runtimeArm=!extension?"parent-only":extension.includes("v2")?"v2-job":settings.stateful.enabled?"v1-async":"v1-sync";',
+			'const settings=extension&&!extension.includes("v3")?JSON.parse(fs.readFileSync(process.env.PI_CODING_AGENT_DIR+"/pi-subagents.json","utf8")):undefined;',
+			'const runtimeArm=!extension?"parent-only":extension.includes("v3")?"v3-job":settings.stateful.enabled?"v1-async":"v1-sync";',
 			'const send=(value)=>process.stdout.write(JSON.stringify(value)+"\\n");',
 			"const lines=readline.createInterface({input:process.stdin});",
 			'const final=(taskId)=>["src/queue.ts RETRY_ATTEMPTS 4","src/delivery.ts COMPLETION_CHANNEL steer","src/shutdown.ts stop-delivery abort-children await-streams","src/protocol.ts PROTOCOL_VERSION job-v3 MAX_FRAME_BYTES 49152","src/retention.ts MAX_TERMINAL_JOBS 32 RETENTION_HOURS 24","src/review.ts startsWith owner path.join traversal slice(0, 8) token","src/math.mjs clamp pass isEven pass","node --test test/math.test.mjs pass","CAPABILITY_BENCHMARK_RESULT: "+JSON.stringify({taskId,complete:true})].join("\\n");',
-			'lines.on("line",(line)=>{const request=JSON.parse(line);if(request.type==="get_state"){send({id:request.id,type:"response",success:true,data:{}});return;}if(request.type==="get_session_stats"){send({id:request.id,type:"response",success:true,data:{cost:0.01}});return;}if(request.type!=="prompt")return;const arm=/Arm: ([a-z0-9-]+)/.exec(request.message)?.[1]||"unknown";if(arm!==runtimeArm){send({id:request.id,type:"response",success:false,error:"wrong runtime arm"});return;}send({id:request.id,type:"response",success:true,data:{}});const taskId=/Task ID: ([a-z-]+)/.exec(request.message)?.[1]||"unknown";const count=taskId==="parallel-research"?2:1;const tool=(name)=>send({type:"message_end",message:{role:"toolResult",toolName:name,isError:false,details:{state:"completed",timedOut:false},content:[]}});if(arm==="v1-sync")tool("subagent");if(arm==="v1-async"){for(let index=0;index<count;index++)tool("subagent_spawn");for(let index=0;index<count;index++)tool("subagent_await");}if(arm==="v2-job"){for(let index=0;index<count;index++)tool("subagent-v2-start");for(let index=0;index<count;index++)tool("subagent-v2-wait");}if(taskId==="worker-fix")fs.writeFileSync("src/math.mjs","export function clamp(value, minimum, maximum) { return Math.min(maximum, Math.max(minimum, value)); }\\nexport function isEven(value) { return value % 2 === 0; }\\n");send({type:"message_end",message:{role:"assistant",content:[{type:"text",text:final(taskId)}]}});});',
+			'lines.on("line",(line)=>{const request=JSON.parse(line);if(request.type==="get_state"){send({id:request.id,type:"response",success:true,data:{}});return;}if(request.type==="get_session_stats"){send({id:request.id,type:"response",success:true,data:{cost:0.01}});return;}if(request.type!=="prompt")return;const arm=/Arm: ([a-z0-9-]+)/.exec(request.message)?.[1]||"unknown";if(arm!==runtimeArm){send({id:request.id,type:"response",success:false,error:"wrong runtime arm"});return;}send({id:request.id,type:"response",success:true,data:{}});const taskId=/Task ID: ([a-z-]+)/.exec(request.message)?.[1]||"unknown";const count=taskId==="parallel-research"?2:1;const tool=(name)=>send({type:"message_end",message:{role:"toolResult",toolName:name,isError:false,details:{state:"completed",timedOut:false},content:[]}});if(arm==="v1-sync")tool("subagent");if(arm==="v1-async"){for(let index=0;index<count;index++)tool("subagent_spawn");for(let index=0;index<count;index++)tool("subagent_await");}if(arm==="v3-job"){for(let index=0;index<count;index++)tool("subagent-v3-start");for(let index=0;index<count;index++)tool("subagent-v3-wait");}if(taskId==="worker-fix")fs.writeFileSync("src/math.mjs","export function clamp(value, minimum, maximum) { return Math.min(maximum, Math.max(minimum, value)); }\\nexport function isEven(value) { return value % 2 === 0; }\\n");send({type:"message_end",message:{role:"assistant",content:[{type:"text",text:final(taskId)}]}});});',
 		].join("\n"),
 		{ mode: 0o700 },
 	);
@@ -510,7 +510,7 @@ test("manual runner preview exposes four-arm controls without a provider request
 	);
 });
 
-test("manual runner selects the separately versioned v3 protocol explicitly", async () => {
+test("manual runner selects the historical v2 protocol explicitly", async () => {
 	const { stdout } = await execFileAsync(
 		process.execPath,
 		[
@@ -518,9 +518,9 @@ test("manual runner selects the separately versioned v3 protocol explicitly", as
 			"--model",
 			"provider/model",
 			"--job-version",
-			"v3",
-			"--v3-extension",
-			"custom-v3.ts",
+			"v2",
+			"--v2-extension",
+			"custom-v2.ts",
 		],
 		{ cwd: path.resolve(import.meta.dirname, ".."), timeout: 3_000 },
 	);
@@ -530,19 +530,19 @@ test("manual runner selects the separately versioned v3 protocol explicitly", as
 		capabilityMatrix: Array<Record<string, unknown>>;
 		environment: { extensions: Record<string, string | null> };
 	};
-	assert.equal(preview.version, capabilityBenchmarkVersion("v3"));
+	assert.equal(preview.version, capabilityBenchmarkVersion("v2"));
 	assert.deepEqual(
 		new Set(preview.order.map((trial) => trial.arm)),
-		new Set(capabilityBenchmarkArms("v3")),
+		new Set(capabilityBenchmarkArms("v2")),
 	);
-	assert.equal(preview.environment.extensions["v3-job"], "custom-v3.ts");
-	assert.deepEqual(preview.capabilityMatrix, capabilityMatrix("v3"));
+	assert.equal(preview.environment.extensions["v2-job"], "custom-v2.ts");
+	assert.deepEqual(preview.capabilityMatrix, capabilityMatrix("v2"));
 });
 
 for (const testCase of [
 	{ protocol: [] as string[], option: "--v1-extension", name: "v1" },
-	{ protocol: [] as string[], option: "--v2-extension", name: "v2" },
-	{ protocol: ["--job-version", "v3"], option: "--v3-extension", name: "v3" },
+	{ protocol: ["--job-version", "v2"], option: "--v2-extension", name: "v2" },
+	{ protocol: [] as string[], option: "--v3-extension", name: "v3" },
 ]) {
 	test(`resume rejects a changed ${testCase.name} extension identity`, async () => {
 		const directory = mkdtempSync(path.join(os.tmpdir(), "subagent-capability-resume-identity-"));
