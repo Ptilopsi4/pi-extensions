@@ -83,16 +83,16 @@ New implementation work should respond to demonstrated user needs rather than ex
 
 ## Current reference notes
 
-- The [completed main-agent-led guidance plan](../plans/archived/2026-08-17_pi-subagents-main-agent-led-delegation-guidance-plan.md) records the accepted delegation rubric and verification evidence.
-- The [completed async-first tool-surface plan](../plans/archived/2026-08-17_pi-subagents-async-first-tool-surface-plan.md) records the compatibility and recommendation decisions.
+- Git history for the completed main-agent-led delegation guidance records the accepted delegation rubric and verification evidence.
+- Git history for the completed async-first tool-surface work records the compatibility and recommendation decisions.
 - [`pi-subagents-capability-matrix.md`](pi-subagents-capability-matrix.md) records maintained capability, detached lifecycle, transport, trust, and runtime-ownership boundaries.
 - [`pi-subagents-rpc-v1.md`](pi-subagents-rpc-v1.md) records the persistent RPC transport contract.
 
 ## Historical evidence
 
-The consolidated [research synthesis](../research/coding-agent-subagents-research.md) records the architecture conclusions available at the research cutoff.
+The consolidated [research synthesis](../../../../docs/research/coding-agent-subagents-research.md) records the architecture conclusions available at the research cutoff.
 
-The companion [evidence catalog](../research/coding-agent-subagents-evidence-catalog.md) preserves paper-level results, caveats, and primary sources.
+The companion [evidence catalog](../../../../docs/research/coding-agent-subagents-evidence-catalog.md) preserves paper-level results, caveats, and primary sources.
 
 Superseded automation, proactivity, and old runtime notes were removed to keep the active docs small.
 

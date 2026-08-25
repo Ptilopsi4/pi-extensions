@@ -1,7 +1,7 @@
 # Coding-Agent Subagents: Research Synthesis
 
 > **Historical research input:** This document synthesizes research available through 2026-08-10 and does not define current `pi-subagents` built-ins, tools, or routing.
-> See the [current direction](../implementation-notes/pi-subagents-current-direction.md) for maintained product behavior.
+> See the [current direction](../../packages/pi-subagents/docs/implementation-notes/pi-subagents-current-direction.md) for maintained product behavior.
 
 ## Purpose
 
