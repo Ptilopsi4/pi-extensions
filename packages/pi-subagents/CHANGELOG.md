@@ -1,5 +1,22 @@
 # @narumitw/pi-subagents
 
+## 2.1.0
+
+### Minor Changes
+
+- 4ae6dcf: Add exact required-run tracking for detached completion dependencies, preserve usable budget-stopped evidence as typed partial outcomes, and provide a paired async-versus-sync quality benchmark.
+- a385642: Deprecate the blocking `subagent` tool for new work while preserving its compatibility schema and execution behavior.
+- 430faae: Add opt-in, local-only, content-free usage recording with a 30-day retention window and status reporting.
+- a53e6eb: Add `subagent_await` for intentionally joining one retained subagent turn with a bounded wait that never interrupts the child.
+
+### Patch Changes
+
+- baaeed7: Replace the `/subagents` menu with a novice-friendly five-action manager, task-oriented settings groups, concise help, and clearly labeled diagnostics.
+- 29095f1: Guide ordinary detached spawns away from unsupported enforced guarantees, preserve practical evidence budgets and concise interim progress, report safe contract-repair recovery, and suppress same-session completion re-enqueue after acknowledgement.
+- b536cac: Steer detached completions into active parent work and strengthen final-synthesis guidance without adding a blocking barrier.
+- 0b73f9d: Present async-only delegation as a neutral optional workflow instead of the recommended choice.
+- afcb2f5: Keep `subagent` and `subagent_spawn` tool schemas compatible with llama.cpp by omitting large nested string repetitions while retaining runtime input bounds.
+
 ## 2.0.6
 
 ### Patch Changes
