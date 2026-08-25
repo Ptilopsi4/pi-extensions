@@ -15,8 +15,12 @@ The maintained implementation and tests are authoritative:
 - `packages/pi-goal/src/prompts.ts`
 - `packages/pi-goal/src/goal-contract.ts`
 - `packages/pi-goal/src/workflow-mutex.ts`
-- `packages/pi-goal/test/goal.test.ts`
+- `packages/pi-goal/test/goal-continuation.test.ts`
+- `packages/pi-goal/test/goal-error-lifecycle.test.ts`
+- `packages/pi-goal/test/goal-wait.test.ts`
+- `packages/pi-goal/test/goal-run-protocol.test.ts`
 - `packages/pi-goal/test/goal-cache-contract.test.ts`
+- `packages/pi-goal/test/workflow-mutex.test.ts`
 - `test/plan-goal-coexistence.test.ts`
 - `packages/pi-goal/test/goal-runtime-smoke.mjs`
 
@@ -32,8 +36,8 @@ keeps only the internal lifecycle rationale and remaining Pi-core boundary.
 2. `agent_end` records final usage, classifies the run outcome, applies the no-progress guard, and
    creates an in-memory continuation intent for an eligible active goal. It does not send the normal
    continuation.
-3. `agent_settled` runs after retry, automatic compaction, steering, and follow-up work drains. It
-   first finalizes matching exhausted recovery, then may dispatch an ordinary continuation.
+3. `agent_settled` runs after retry, automatic compaction, steering, and follow-up work drains.
+   It moves exhausted provider recovery into deadline-free waiting, blocks exhausted compaction recovery, and then may dispatch an ordinary continuation.
 4. Continuation dispatch re-reads the active goal, requires matching ownership, `ctx.isIdle()`, and
    no pending messages. Repeated settled events cannot consume one intent twice.
 
@@ -72,15 +76,16 @@ Retryable provider failures and context-overflow compaction remain Pi-owned reco
   recovery ownership instead of blocking retry tools.
 - A retry or compaction start consumes or carries that ownership into the replacement run so
   automatic accounting cannot be bypassed.
-- If matching recovery remains when `agent_settled` proves no retry, compaction, or follow-up is
-  pending, the goal becomes `blocked`.
-- Explicit subscription, quota, credit, or billing exhaustion becomes `usage_limited`; transient
-  rate limits and server failures remain retryable.
+- If matching provider recovery remains when `agent_settled` proves no retry or follow-up is pending, the Goal enters deadline-free waiting while remaining canonically active.
+- A non-Goal follow-up wakes the same Goal and preserves its stale-turn guard so the next model run can continue, complete, or wait again.
+- If matching compaction recovery remains at settlement, the Goal becomes `blocked` because another model turn can repeat the same context-overflow failure without corrective compaction.
+- Explicit subscription, quota, credit, or billing exhaustion becomes `usage_limited`; transient rate limits and server failures remain retryable.
 - User interruption becomes `paused`. Other terminal non-usage failures become `blocked`.
 
+Provider-exhaustion waiting cancels continuation pressure but retains Goal identity and Workflow Mutex ownership.
 Stopped transitions cancel current continuation ownership and block stale Goal-owned tool calls.
-Successful resume rotates the goal id and starts a fresh blocker and safety audit. Clear removes Goal
-state and stale guards without aborting unrelated work.
+Successful stopped-state resume rotates the goal id and starts a fresh blocker and safety audit.
+Waiting resume preserves the goal id, while clear removes Goal state and stale guards without aborting unrelated work.
 
 ## Compaction persistence
 
@@ -102,10 +107,9 @@ For each persisted assistant message, accounting prefers a finite non-negative
 `input + output + cacheRead + cacheWrite`, without adding fields already included in those totals.
 Goal usage subtracts the branch baseline captured at activation and clamps branch rewinds at zero.
 
-`tool_execution_end` is the earliest reliable in-turn budget boundary because Pi persists the
-assistant message before this hook. It can transition once to `budget_limited` and inject one bounded
-wrap-up instruction; `agent_end` is the no-tool fallback. Active elapsed time is accumulated only
-while status is `active`, excluding stopped, shutdown, and offline periods.
+`tool_execution_end` is the earliest reliable in-turn budget boundary because Pi persists the assistant message before this hook.
+It can transition once to `budget_limited` and inject one bounded wrap-up instruction; `agent_end` is the no-tool fallback.
+Active elapsed time is accumulated only while status is `active` and not waiting, excluding quiet waits, stopped states, shutdown, and offline periods.
 
 Automatic-work safety is separate from the token budget:
 
@@ -134,13 +138,12 @@ settled, retry, compaction, accounting, and stale-delivery guarantees.
 
 ## Verification map
 
-- Settled exactly-once dispatch, pending-message priority, replacement, pause, clear, and lost-start
-  races: `packages/pi-goal/test/goal.test.ts` settled-continuation cases.
-- Workflow Mutex acquisition, rejection before mutation, restore fallbacks, load-order independence, release, and reacquisition: `test/plan-goal-coexistence.test.ts` and `test/workflow-mutex-runtime.test.ts`.
+- Settled exactly-once dispatch, pending-message priority, replacement, pause, clear, and lost-start races: `packages/pi-goal/test/goal-continuation.test.ts`.
+- Workflow Mutex acquisition, rejection before mutation, restore fallbacks, release, and reacquisition: `packages/pi-goal/test/workflow-mutex.test.ts` and the Goal package lifecycle tests.
 - Stable leading prompt prefix, canonical context reinjection, and compaction-sensitive Goal contract: `packages/pi-goal/test/goal-cache-contract.test.ts`.
-- Retry, overflow, compaction, stopped-state, and exhausted-recovery classification: the retry and
-  compaction lifecycle cases in `goal.test.ts`.
-- Usage totals, active time, tool-boundary budgets, wrap-up ownership, and safety epochs: accounting,
-  budget, and automatic-turn cases in `goal.test.ts`, plus persistence/settings tests.
+- Retry, overflow, compaction, provider-exhaustion waiting, wake-up, restored waiting, and stopped-state classification: `packages/pi-goal/test/goal-error-lifecycle.test.ts`.
+- External-wait deadlines, cleanup, quiet elapsed time, and wake boundaries: `packages/pi-goal/test/goal-wait.test.ts`.
+- Managed-run active waiting and later terminal completion: `packages/pi-goal/test/goal-run-protocol.test.ts`.
+- Usage totals, active time, tool-boundary budgets, wrap-up ownership, and safety epochs: the accounting, budget, safety, persistence, and settings tests under `packages/pi-goal/test/`.
 - Real Pi event ordering, retries, manual compaction, no-progress stopping, automatic tool loops, and
   bounded pre-aborted cleanup: `packages/pi-goal/test/goal-runtime-smoke.mjs`.
