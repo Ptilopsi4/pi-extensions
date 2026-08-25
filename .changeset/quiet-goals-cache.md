@@ -2,4 +2,4 @@
 "@narumitw/pi-goal": patch
 ---
 
-Preserve retained conversation cache prefixes by persisting Goal contracts after existing history and removing only stale Goal-era contracts across identity and lifecycle transitions.
+Preserve retained conversation cache prefixes with append-only superseding Goal contracts, atomic handoff-boundary persistence, and current-state restoration after lifecycle transitions and compaction.
