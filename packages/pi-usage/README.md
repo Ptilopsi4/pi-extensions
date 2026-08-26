@@ -152,7 +152,7 @@ OpenRouter documents the distinction between credit and rate limits in its [API 
 - Displayed data: used percentage and reset time for each window; `rate-limited` windows remain visible at their reported usage, while unknown statuses are reported as unavailable notes
 - Statusline examples: `zen 0% r 4% w 2% m`
 
-The fixed OpenCode Go usage endpoint is only queried when the resolved model origin is `https://opencode.ai`; other origins fail before sending the credential.
+The fixed endpoint is queried only when the candidate OpenCode Go model and the resolved provider-auth base URL, when present, use the official `https://opencode.ai` origin; other origins fail before sending the credential.
 
 ## 🧭 Current and configured accounts
 
