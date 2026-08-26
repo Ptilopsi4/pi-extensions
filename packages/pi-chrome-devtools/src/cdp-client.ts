@@ -50,6 +50,7 @@ export interface CdpConnectOptions extends CdpOperationOptions {
 }
 
 const MAX_BUFFERED_EVENTS_PER_METHOD = 32;
+const MAX_CDP_MESSAGE_BYTES = 8 * 1024 * 1024;
 
 export async function listPages(
 	options: { signal?: AbortSignal; waitMs?: number; webMcpOwner?: object } = {},
@@ -342,9 +343,22 @@ export class CdpClient {
 	};
 
 	private readonly onMessage = (event: MessageEvent) => {
+		if (typeof event.data !== "string") {
+			this.rejectAll(new Error("Chrome DevTools WebSocket sent an unsupported binary message"));
+			this.#eventBuffers.clear();
+			return;
+		}
+		if (
+			event.data.length > MAX_CDP_MESSAGE_BYTES ||
+			Buffer.byteLength(event.data, "utf8") > MAX_CDP_MESSAGE_BYTES
+		) {
+			this.rejectAll(new Error("Chrome DevTools WebSocket message exceeds the 8 MB limit"));
+			this.#eventBuffers.clear();
+			return;
+		}
 		let payload: unknown;
 		try {
-			payload = JSON.parse(String(event.data)) as unknown;
+			payload = JSON.parse(event.data) as unknown;
 		} catch {
 			this.close(new Error("Chrome DevTools WebSocket sent malformed JSON"));
 			return;

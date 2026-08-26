@@ -11,7 +11,13 @@ import { createMockContext, createMockPi } from "../../../test/support.js";
 import { showChromeDevtoolsBrowserSettings } from "../src/browser-settings-menu.js";
 import chromeDevtools from "../src/chrome-devtools.js";
 import { initializeAvailableChromeDevtoolsTools } from "../src/lazy-tools.js";
-import { beginWebMcpOperation, DEFAULT_HOST, DEFAULT_PORT, state } from "../src/runtime.js";
+import {
+	beginWebMcpOperation,
+	DEFAULT_HOST,
+	DEFAULT_PORT,
+	state,
+	webMcpEnabled,
+} from "../src/runtime.js";
 import { projectSettingsFilePath, settingsFilePath } from "../src/settings.js";
 import { CHROME_DEVTOOLS_TOOL_NAMES, WEBMCP_TOOL_NAMES } from "../src/tool-names.js";
 
@@ -52,7 +58,6 @@ function resetBrowserRuntimeState() {
 	state.launchPromise = undefined;
 	state.lastLaunchAttempt = undefined;
 	state.settingsNotice = undefined;
-	state.webMcpEnabled = false;
 }
 
 async function withBrowserSettingsMenu(
@@ -168,7 +173,7 @@ test("WebMCP settings toggle the experimental gate, tool exposure, and active op
 		await tui.waitForPending();
 		await tui.waitForOpen();
 
-		assert.equal(state.webMcpEnabled, true);
+		assert.equal(webMcpEnabled(sessionOwner(ctx)), true);
 		assert.deepEqual((readSettings().webmcp as Record<string, unknown>).enabled, true);
 		assert.ok(WEBMCP_TOOL_NAMES.every((name) => mockPi.rawPi.getActiveTools().includes(name)));
 		assert.match(notifications.at(-1)?.message ?? "", /Experimental WebMCP enabled/i);
@@ -177,7 +182,7 @@ test("WebMCP settings toggle the experimental gate, tool exposure, and active op
 		tui.press("tui.select.confirm");
 		await tui.waitForPending();
 		await tui.waitForOpen();
-		assert.equal(state.webMcpEnabled, false);
+		assert.equal(webMcpEnabled(sessionOwner(ctx)), false);
 		assert.equal(operation.signal.aborted, true);
 		assert.ok(WEBMCP_TOOL_NAMES.every((name) => !mockPi.rawPi.getActiveTools().includes(name)));
 		assert.match(notifications.at(-1)?.message ?? "", /WebMCP disabled/i);
@@ -207,7 +212,7 @@ test("a failed WebMCP runtime transition restores the file, gate, and displayed 
 		await tui.waitForPending();
 		await tui.waitForOpen();
 
-		assert.equal(state.webMcpEnabled, false);
+		assert.equal(webMcpEnabled(sessionOwner(ctx)), false);
 		assert.equal((readSettings().webmcp as Record<string, unknown>).enabled, false);
 		assert.match(tui.render().join("\n"), /WebMCP · Experimental\s+Off/);
 		assert.match(notifications.at(-1)?.message ?? "", /save failed.*rollback failed/i);

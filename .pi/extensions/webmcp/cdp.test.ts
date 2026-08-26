@@ -84,6 +84,35 @@ test("does not start execution when cancellation wins the connection-ready race"
 	assert.equal(socket.closed, true);
 });
 
+test("rejects oversized CDP messages before parsing", async () => {
+	const sockets: FakeWebSocket[] = [];
+	class RecordingWebSocket extends FakeWebSocket {
+		constructor(url: string | URL) {
+			super(url);
+			sockets.push(this);
+		}
+	}
+	const bridge = createCdpBridge({
+		endpoint: "http://127.0.0.1:9222",
+		webSocketConstructor: RecordingWebSocket as unknown as new (url: string | URL) => WebSocket,
+	});
+	const inspection = bridge.inspectPage({
+		id: "page-1",
+		title: "Example",
+		type: "page",
+		url: "https://example.test",
+		webSocketDebuggerUrl: "ws://127.0.0.1/devtools/page/page-1",
+	});
+	const socket = sockets[0];
+	assert.ok(socket);
+	socket.open();
+	await vi.waitFor(() => assert.equal(socket.sent.length, 1));
+	socket.message("x".repeat(8 * 1024 * 1024 + 1));
+
+	await assert.rejects(inspection, /message exceeds the 8 MB limit/u);
+	assert.equal(socket.closed, true);
+});
+
 test("starts a fresh operation deadline after WebSocket readiness", async () => {
 	const timeoutControllers: AbortController[] = [];
 	vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
@@ -141,14 +170,14 @@ class FakeWebSocket extends EventTarget {
 		this.dispatchEvent(new Event("open"));
 	}
 
+	message(data: string): void {
+		this.dispatchEvent(new MessageEvent("message", { data }));
+	}
+
 	respond(result: unknown): void {
 		const request = JSON.parse(this.sent.at(-1) ?? "null") as { id?: unknown };
 		assert.equal(typeof request.id, "number");
-		this.dispatchEvent(
-			new MessageEvent("message", {
-				data: JSON.stringify({ id: request.id, result }),
-			}),
-		);
+		this.message(JSON.stringify({ id: request.id, result }));
 	}
 
 	send(payload: string): void {

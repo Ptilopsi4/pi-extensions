@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test, vi } from "vitest";
 import { createMockContext } from "../../../test/support.js";
 import { setBrowserManagerOperationsForTests } from "../src/browser-manager.js";
-import { invalidateWebMcpOperations, state } from "../src/runtime.js";
+import { applyRuntimeWebMcpSetting, invalidateWebMcpOperations, state } from "../src/runtime.js";
 import { executeWebMcpCallTool, executeWebMcpListTool } from "../src/webmcp/tools.js";
 
 const PAGE_ID = "page-1";
@@ -20,11 +20,13 @@ interface ScenarioTool {
 
 interface Scenario {
 	currentPageUrl?: () => string;
+	onPageLookup?: (lookupIndex: number) => void;
 	protocolAvailable?: boolean;
 	frameUrl?: (socketIndex: number) => string;
 	invocation?: {
 		malformedResponse?: boolean;
 		omitResponse?: boolean;
+		oversizedResponse?: boolean;
 		onStarted?: () => void;
 		output?: unknown;
 		status?: "Canceled" | "Completed" | "Error";
@@ -53,7 +55,6 @@ afterEach(() => {
 	state.sessionController.abort();
 	state.sessionController = new AbortController();
 	state.sessionGeneration += 1;
-	state.webMcpEnabled = false;
 	state.managedBrowser = undefined;
 });
 
@@ -69,8 +70,8 @@ async function withScenario<T>(
 	state.shuttingDown = false;
 	state.sessionController = new AbortController();
 	state.sessionGeneration += 1;
-	state.webMcpEnabled = true;
 	const transport = new ScriptedTransport(scenario);
+	let pageLookups = 0;
 	vi.stubGlobal("WebSocket", transport.WebSocketConstructor);
 	restoreBrowserOperations = setBrowserManagerOperationsForTests({
 		fetch: async (input) => {
@@ -82,6 +83,8 @@ async function withScenario<T>(
 				);
 			}
 			if (url.pathname === "/json/list") {
+				scenario.onPageLookup?.(pageLookups);
+				pageLookups += 1;
 				return jsonResponse([
 					{
 						id: PAGE_ID,
@@ -110,7 +113,7 @@ test("discovers frame-aware tools with event-before-response correlation and bou
 			],
 		},
 		async () => {
-			const { ctx } = createMockContext({ mode: "tui", hasUI: true });
+			const { ctx } = createWebMcpContext({ mode: "tui", hasUI: true });
 			const result = await executeWebMcpListTool({}, undefined, ctx);
 			assert.equal(result.details.toolCount, 1);
 			assert.equal(result.details.truncated, false);
@@ -136,6 +139,37 @@ test("rejects an inventory assembled across a frame document reload", async () =
 				executeWebMcpListTool({}, undefined, approvingContext().ctx),
 				/document changed while Chrome was publishing its tool inventory/u,
 			);
+		},
+	);
+});
+
+test("rejects a same-URL reload during the final page lookup before invocation", async () => {
+	let loaderId = "loader-1";
+	let reloadOnLookup = false;
+	await withScenario(
+		{
+			loaderId: () => loaderId,
+			onPageLookup: () => {
+				if (reloadOnLookup) loaderId = "loader-reloaded";
+			},
+			tools: () => [defaultTool],
+		},
+		async (transport) => {
+			const listed = await executeWebMcpListTool({}, undefined, approvingContext().ctx);
+			const identity = listed.details.identities[0];
+			const { ctx } = createWebMcpContext({
+				mode: "tui",
+				hasUI: true,
+				confirm: async () => {
+					reloadOnLookup = true;
+					return true;
+				},
+			});
+			await assert.rejects(
+				executeWebMcpCallTool({ ...identity, toolName: identity.name, input: {} }, undefined, ctx),
+				/document changed during the final page identity check/u,
+			);
+			assert.equal(transport.invocations, 0);
 		},
 	);
 });
@@ -171,7 +205,7 @@ test("requires confirmation for both read-only and mutation-capable page tools",
 			},
 			async () => {
 				let confirmation = "";
-				const { ctx } = createMockContext({
+				const { ctx } = createWebMcpContext({
 					mode: "tui",
 					hasUI: true,
 					confirm: async (title: string, message: string) => {
@@ -196,7 +230,7 @@ test("requires confirmation for both read-only and mutation-capable page tools",
 
 test("cancellation and non-interactive modes prevent page invocation", async () => {
 	await withScenario({ tools: () => [defaultTool] }, async (transport) => {
-		const { ctx: printContext } = createMockContext({ mode: "print", hasUI: false });
+		const { ctx: printContext } = createWebMcpContext({ mode: "print", hasUI: false });
 		const listed = await executeWebMcpListTool({}, undefined, printContext);
 		const identity = listed.details.identities[0];
 		await assert.rejects(
@@ -209,7 +243,7 @@ test("cancellation and non-interactive modes prevent page invocation", async () 
 		);
 		assert.equal(transport.invocations, 0);
 
-		const { ctx: cancelledContext } = createMockContext({
+		const { ctx: cancelledContext } = createWebMcpContext({
 			mode: "rpc",
 			hasUI: true,
 			confirm: async () => false,
@@ -276,7 +310,7 @@ test("call-time rediscovery rejects changed schemas, removed tools, frames, and 
 	await withScenario({ tools: () => [defaultTool], currentPageUrl: () => pageUrl }, async () => {
 		const listed = await executeWebMcpListTool({}, undefined, approvingContext().ctx);
 		const identity = listed.details.identities[0];
-		const { ctx } = createMockContext({
+		const { ctx } = createWebMcpContext({
 			mode: "tui",
 			hasUI: true,
 			confirm: async () => {
@@ -331,6 +365,26 @@ test("cancels a started invocation when the completion event is malformed", asyn
 			await assert.rejects(
 				executeWebMcpCallTool({ ...identity, toolName: identity.name, input: {} }, undefined, ctx),
 				/malformed WebMCP\.toolResponded/u,
+			);
+			assert.equal(transport.cancelInvocations, 1);
+			assert.equal(transport.openSocketCount(), 0);
+		},
+	);
+});
+
+test("cancels a started invocation when its completion exceeds the CDP message cap", async () => {
+	await withScenario(
+		{
+			tools: () => [defaultTool],
+			invocation: { oversizedResponse: true },
+		},
+		async (transport) => {
+			const { ctx } = approvingContext();
+			const listed = await executeWebMcpListTool({}, undefined, ctx);
+			const identity = listed.details.identities[0];
+			await assert.rejects(
+				executeWebMcpCallTool({ ...identity, toolName: identity.name, input: {} }, undefined, ctx),
+				/message exceeds the 8 MB limit/u,
 			);
 			assert.equal(transport.cancelInvocations, 1);
 			assert.equal(transport.openSocketCount(), 0);
@@ -407,7 +461,7 @@ test("browser replacement aborts an active confirmation and invalidates the iden
 	await withScenario({ tools: () => [defaultTool] }, async () => {
 		const listed = await executeWebMcpListTool({}, undefined, approvingContext().ctx);
 		const identity = listed.details.identities[0];
-		const mock = createMockContext({
+		const mock = createWebMcpContext({
 			mode: "rpc",
 			hasUI: true,
 			confirm: async () => {
@@ -427,8 +481,14 @@ function sessionOwner(ctx: unknown) {
 	return (ctx as { sessionManager: object }).sessionManager;
 }
 
+function createWebMcpContext(options: Parameters<typeof createMockContext>[0]) {
+	const mock = createMockContext(options);
+	applyRuntimeWebMcpSetting(true, sessionOwner(mock.ctx));
+	return mock;
+}
+
 function approvingContext() {
-	return createMockContext({ mode: "tui", hasUI: true, confirm: async () => true });
+	return createWebMcpContext({ mode: "tui", hasUI: true, confirm: async () => true });
 }
 
 function jsonResponse(value: unknown) {
@@ -534,7 +594,7 @@ class ScriptedWebSocket extends EventTarget {
 				this.transport.invocations += 1;
 				const invocationId = `invocation-${this.index}`;
 				const invocation = this.transport.scenario.invocation ?? {};
-				if (!invocation.omitResponse) {
+				if (!invocation.oversizedResponse && !invocation.omitResponse) {
 					this.event("WebMCP.toolResponded", {
 						invocationId,
 						status: invocation.malformedResponse ? "Malformed" : (invocation.status ?? "Completed"),
@@ -545,6 +605,9 @@ class ScriptedWebSocket extends EventTarget {
 					});
 				}
 				this.response(request.id, { invocationId });
+				if (invocation.oversizedResponse) {
+					queueMicrotask(() => queueMicrotask(() => this.message("x".repeat(8 * 1024 * 1024 + 1))));
+				}
 				queueMicrotask(() => invocation.onStarted?.());
 				return;
 			}

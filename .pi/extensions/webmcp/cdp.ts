@@ -4,6 +4,7 @@
  * See docs/roadmaps/2026-08-26_pi-chrome-devtools-webmcp-integration-plan.md.
  */
 const DEFAULT_TIMEOUT_MS = 10_000;
+const MAX_CDP_MESSAGE_BYTES = 8 * 1024 * 1024;
 
 export interface DevToolsPage {
 	id: string;
@@ -306,7 +307,24 @@ class CdpClient {
 
 	private constructor(private readonly socket: WebSocket) {
 		socket.addEventListener("message", (event) => {
-			const response = JSON.parse(String(event.data)) as CdpResponse;
+			if (typeof event.data !== "string") {
+				this.rejectAll(new Error("Chrome DevTools WebSocket sent an unsupported binary message"));
+				return;
+			}
+			if (
+				event.data.length > MAX_CDP_MESSAGE_BYTES ||
+				Buffer.byteLength(event.data, "utf8") > MAX_CDP_MESSAGE_BYTES
+			) {
+				this.rejectAll(new Error("Chrome DevTools WebSocket message exceeds the 8 MB limit"));
+				return;
+			}
+			let response: CdpResponse;
+			try {
+				response = JSON.parse(event.data) as CdpResponse;
+			} catch {
+				this.close(new Error("Chrome DevTools WebSocket sent malformed JSON"));
+				return;
+			}
 			if (typeof response.id !== "number") return;
 
 			const pending = this.#pending.get(response.id);

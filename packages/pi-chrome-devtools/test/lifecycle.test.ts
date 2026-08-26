@@ -9,10 +9,16 @@ import { createMockContext, createMockPi } from "../../../test/support.js";
 import { setBrowserManagerOperationsForTests } from "../src/browser-manager.js";
 import chromeDevtools from "../src/chrome-devtools.js";
 import {
+	configureChromeDevtoolsToolExposure,
+	initializeAvailableChromeDevtoolsTools,
+	setChromeDevtoolsSessionOwner,
+} from "../src/lazy-tools.js";
+import {
+	applyRuntimeWebMcpSetting,
 	beginWebMcpOperation,
 	currentWebMcpGeneration,
-	invalidateWebMcpOperations,
 	state,
+	webMcpEnabled,
 } from "../src/runtime.js";
 import { projectSettingsFilePath, saveBrowserSettings, settingsFilePath } from "../src/settings.js";
 import { CHROME_DEVTOOLS_TOOL_NAMES, WEBMCP_TOOL_NAMES } from "../src/tool-names.js";
@@ -75,7 +81,6 @@ async function withFixture(
 		state.sessionGeneration += 1;
 		state.managedBrowser = undefined;
 		state.launchPromise = undefined;
-		state.webMcpEnabled = false;
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 		for (const name of environmentNames) {
@@ -158,7 +163,7 @@ test("session start loads the user WebMCP gate and reports its experimental safe
 		await mock.events.get("session_start")?.[0]?.({}, ctx);
 		await mock.commands.get("chrome-devtools")?.handler("status", ctx);
 
-		assert.equal(state.webMcpEnabled, true);
+		assert.equal(webMcpEnabled(sessionOwner(ctx)), true);
 		assert.ok(WEBMCP_TOOL_NAMES.every((name) => mock.rawPi.getActiveTools().includes(name)));
 		assert.ok(notifications.some(({ message }) => /Experimental WebMCP is enabled/u.test(message)));
 		assert.match(notifications.at(-1)?.message ?? "", /WebMCP: enabled · experimental/u);
@@ -211,14 +216,30 @@ test("session replacement discards the stale continuation and applies only the l
 	});
 });
 
-test("WebMCP operation invalidation is scoped to the owning session manager", () => {
+test("WebMCP enablement, exposure, and invalidation are scoped to the session manager", () => {
 	const first = sessionOwner(createMockContext().ctx);
 	const second = sessionOwner(createMockContext().ctx);
+	const firstPi = createMockPi({ activeTools: [...CHROME_DEVTOOLS_TOOL_NAMES] });
+	const secondPi = createMockPi({ activeTools: [...CHROME_DEVTOOLS_TOOL_NAMES] });
+	for (const [mock, owner] of [
+		[firstPi, first],
+		[secondPi, second],
+	] as const) {
+		setChromeDevtoolsSessionOwner(mock.pi, owner);
+		initializeAvailableChromeDevtoolsTools(mock.pi);
+		applyRuntimeWebMcpSetting(true, owner);
+		configureChromeDevtoolsToolExposure(mock.pi, CHROME_DEVTOOLS_TOOL_NAMES);
+	}
 	const firstOperation = beginWebMcpOperation(first);
 	const secondOperation = beginWebMcpOperation(second);
-	invalidateWebMcpOperations(first, "first session replaced");
-	assert.equal(firstOperation.signal.aborted, true);
-	assert.equal(secondOperation.signal.aborted, false);
+	applyRuntimeWebMcpSetting(false, second);
+	configureChromeDevtoolsToolExposure(secondPi.pi, CHROME_DEVTOOLS_TOOL_NAMES);
+	assert.equal(firstOperation.signal.aborted, false);
+	assert.equal(secondOperation.signal.aborted, true);
+	assert.equal(webMcpEnabled(first), true);
+	assert.equal(webMcpEnabled(second), false);
+	assert.ok(WEBMCP_TOOL_NAMES.every((name) => firstPi.rawPi.getActiveTools().includes(name)));
+	assert.ok(WEBMCP_TOOL_NAMES.every((name) => !secondPi.rawPi.getActiveTools().includes(name)));
 	firstOperation.dispose();
 	secondOperation.dispose();
 });

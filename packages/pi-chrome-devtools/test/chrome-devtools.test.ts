@@ -32,7 +32,12 @@ import chromeDevtools, {
 	sanitizeChromeDevtoolsDisplay,
 	selectAllowedRoot,
 } from "../src/chrome-devtools.js";
-import { beginWebMcpOperation, state } from "../src/runtime.js";
+import {
+	applyRuntimeWebMcpSetting,
+	beginWebMcpOperation,
+	state,
+	webMcpEnabled,
+} from "../src/runtime.js";
 import { saveSettings } from "../src/settings.js";
 
 const NATIVE_DEFERRED_MODEL = {
@@ -209,7 +214,7 @@ test("WebMCP stays unavailable while disabled even when stale tool names are per
 		chromeDevtools(mock.pi);
 		await mock.events.get("session_start")?.[0]?.({}, ctx);
 
-		assert.equal(state.webMcpEnabled, false);
+		assert.equal(webMcpEnabled(sessionOwner(ctx)), false);
 		assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL, ...CAPABILITY_TOOLS]);
 	});
 });
@@ -231,7 +236,7 @@ test("enabled WebMCP gateways use fixed definitions and native additive loading"
 		chromeDevtools(mock.pi);
 		const definitionsBefore = normalizedWebMcpDefinitions(mock.tools);
 		await mock.events.get("session_start")?.[0]?.({}, ctx);
-		assert.equal(state.webMcpEnabled, true);
+		assert.equal(webMcpEnabled(sessionOwner(ctx)), true);
 		assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL]);
 		assert.match(notifications.at(-1)?.message ?? "", /Experimental WebMCP is enabled/u);
 
@@ -718,9 +723,9 @@ test("chrome-devtools serializes rapid tool saves in invocation order", async ()
 
 test("removing WebMCP gateway availability aborts active page work", async () => {
 	await withTempAgentDir(async () => {
-		state.webMcpEnabled = true;
 		const mock = createMockPi({ activeTools: ["other_tool", ...WEBMCP_TOOLS] });
 		const { ctx } = createMockContext();
+		applyRuntimeWebMcpSetting(true, sessionOwner(ctx));
 		chromeDevtools(mock.pi);
 		const operation = beginWebMcpOperation(sessionOwner(ctx));
 		await mock.commands.get("chrome-devtools")?.handler("disable", ctx);
@@ -933,7 +938,6 @@ function resetRuntimeStateForTest(runtimeState: typeof state, generation: number
 	runtimeState.sessionController = new AbortController();
 	runtimeState.sessionGeneration = generation;
 	runtimeState.shuttingDown = false;
-	runtimeState.webMcpEnabled = false;
 }
 
 function writeSettings(agentDir: string, fileName: string, tools: string[]) {

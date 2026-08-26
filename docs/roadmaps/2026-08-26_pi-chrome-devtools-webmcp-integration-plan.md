@@ -212,6 +212,8 @@ Bound model-visible output to Pi's 50 KB or 2,000-line limit.
 
 Reject schemas and outputs that exceed explicit pre-normalization size, depth, or collection-count limits.
 
+Reject CDP text messages above 8 MB before JSON parsing.
+
 Reject page-controlled `pattern` and `patternProperties` schemas instead of evaluating unbounded regular expressions on Pi's main thread.
 
 Canonicalize accepted JSON schemas deterministically before computing their digest.

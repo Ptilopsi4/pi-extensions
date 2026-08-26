@@ -67,6 +67,22 @@ test("rejects page-controlled regex schemas without confusing property names for
 			}),
 		/page-controlled regular expressions cannot be evaluated safely/u,
 	);
+	for (const schema of [
+		{
+			type: "array",
+			items: [{ type: "string" }, { type: "string", pattern: "^(a+)+$" }],
+		},
+		{
+			type: "array",
+			items: [{ type: "string" }],
+			additionalItems: { type: "string", pattern: "^(a+)+$" },
+		},
+	]) {
+		assert.throws(
+			() => descriptor({ schema }),
+			/page-controlled regular expressions cannot be evaluated safely/u,
+		);
+	}
 	assert.doesNotThrow(() =>
 		descriptor({
 			schema: {

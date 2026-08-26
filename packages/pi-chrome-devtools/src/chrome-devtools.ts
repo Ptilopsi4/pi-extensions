@@ -6,6 +6,7 @@ import {
 	createChromeDevtoolsLoadTool,
 	initializeAvailableChromeDevtoolsTools,
 	requireEagerChromeDevtoolsToolExposure,
+	setChromeDevtoolsSessionOwner,
 	supportsNativeDeferredToolLoading,
 } from "./lazy-tools.js";
 import {
@@ -14,6 +15,7 @@ import {
 	invalidateWebMcpOperations,
 	setWebMcpSessionOwner,
 	state,
+	webMcpEnabled,
 } from "./runtime.js";
 import { loadSettings, waitForSettingsWrites } from "./settings.js";
 import {
@@ -73,6 +75,7 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 		description: "Open Chrome DevTools help and tool controls",
 		getArgumentCompletions: (prefix) => commandCompletions(prefix),
 		handler: async (args, ctx) => {
+			setChromeDevtoolsSessionOwner(pi, ctx.sessionManager);
 			initializeAvailableChromeDevtoolsTools(pi);
 			const generation = state.sessionGeneration;
 			await handleChromeDevtoolsCommand(pi, args, ctx, generation);
@@ -81,6 +84,7 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		const generation = ++state.sessionGeneration;
+		setChromeDevtoolsSessionOwner(pi, ctx.sessionManager);
 		initializeAvailableChromeDevtoolsTools(pi);
 		setWebMcpSessionOwner(ctx.sessionManager);
 		replaceSessionController("Chrome DevTools session replaced");
@@ -101,7 +105,7 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 		for (const warning of settings.warnings) {
 			ctx.ui.notify(sanitizeChromeDevtoolsDisplay(warning), "warning");
 		}
-		if (state.webMcpEnabled) {
+		if (webMcpEnabled(ctx.sessionManager)) {
 			ctx.ui.notify(
 				"Experimental WebMCP is enabled. Page-provided tools use the visible browser session and require confirmation for every call.",
 				"warning",
@@ -149,15 +153,15 @@ async function handleChromeDevtoolsCommand(
 			return;
 		case "help":
 			requireObservableUi(ctx, "help");
-			ctx.ui.notify(buildCommandGuide(), "info");
+			ctx.ui.notify(buildCommandGuide(ctx.sessionManager), "info");
 			return;
 		case "quickstart":
 			requireObservableUi(ctx, "quickstart");
-			ctx.ui.notify(buildQuickstartMessage(), "info");
+			ctx.ui.notify(buildQuickstartMessage(ctx.sessionManager), "info");
 			return;
 		case "status": {
 			requireObservableUi(ctx, "status");
-			const status = await buildToolStatusMessage(pi);
+			const status = await buildToolStatusMessage(pi, ctx.sessionManager);
 			if (generation !== state.sessionGeneration) return;
 			ctx.ui.notify(status, "info");
 			return;
@@ -181,7 +185,12 @@ async function handleChromeDevtoolsCommand(
 			return;
 		}
 		case "enable":
-			await updateChromeDevtoolsTools(pi, ctx, allChromeDevtoolsTools(), "made all available");
+			await updateChromeDevtoolsTools(
+				pi,
+				ctx,
+				allChromeDevtoolsTools(ctx.sessionManager),
+				"made all available",
+			);
 			return;
 		case "disable":
 			await updateChromeDevtoolsTools(pi, ctx, [], "made all unavailable");
@@ -194,7 +203,7 @@ async function handleChromeDevtoolsCommand(
 	ctx.ui.notify(
 		`Unknown /chrome-devtools command: ${args.trim()}
 
-${buildCommandGuide()}`,
+${buildCommandGuide(ctx.sessionManager)}`,
 		"warning",
 	);
 }

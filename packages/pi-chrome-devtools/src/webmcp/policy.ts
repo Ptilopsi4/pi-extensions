@@ -260,6 +260,10 @@ function canonicalAnnotations(value: WebMcpProtocolAnnotation | undefined) {
 }
 
 function rejectRegexBearingSchema(schema: unknown): void {
+	if (Array.isArray(schema)) {
+		for (const child of schema) rejectRegexBearingSchema(child);
+		return;
+	}
 	if (!isRecord(schema)) return;
 	if (schema.pattern !== undefined || schema.patternProperties !== undefined) {
 		throw new Error(
@@ -267,6 +271,7 @@ function rejectRegexBearingSchema(schema: unknown): void {
 		);
 	}
 	for (const keyword of [
+		"additionalItems",
 		"additionalProperties",
 		"contains",
 		"else",

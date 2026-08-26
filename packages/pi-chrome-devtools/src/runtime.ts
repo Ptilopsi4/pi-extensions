@@ -48,7 +48,6 @@ export interface ChromeDevToolsState {
 	sessionGeneration: number;
 	sessionController: AbortController;
 	settingsNotice?: string;
-	webMcpEnabled: boolean;
 }
 
 export interface ManagedBrowser {
@@ -98,11 +97,11 @@ export const state: ChromeDevToolsState = {
 	shuttingDown: false,
 	sessionGeneration: 0,
 	sessionController: new AbortController(),
-	webMcpEnabled: false,
 };
 
 interface WebMcpSessionRuntime {
 	controller: AbortController;
+	enabled: boolean;
 	controllers: Set<AbortController>;
 	generation: number;
 	sessionGeneration: number;
@@ -111,7 +110,9 @@ interface WebMcpSessionRuntime {
 const webMcpRuntimeByOwner = new WeakMap<object, WebMcpSessionRuntime>();
 
 export function setWebMcpSessionOwner(owner: object) {
-	webMcpRuntime(owner).sessionGeneration += 1;
+	const runtime = webMcpRuntime(owner);
+	runtime.enabled = false;
+	runtime.sessionGeneration += 1;
 }
 
 export function beginWebMcpOperation(owner: object, toolSignal?: AbortSignal) {
@@ -152,10 +153,15 @@ export function webMcpSessionSignal(owner: object) {
 }
 
 export function applyRuntimeWebMcpSetting(enabled: boolean, owner: object) {
-	if (state.webMcpEnabled !== enabled) {
+	const runtime = webMcpRuntime(owner);
+	if (runtime.enabled !== enabled) {
 		invalidateWebMcpOperations(owner, `WebMCP ${enabled ? "enabled" : "disabled"}`);
 	}
-	state.webMcpEnabled = enabled;
+	runtime.enabled = enabled;
+}
+
+export function webMcpEnabled(owner: object) {
+	return webMcpRuntime(owner).enabled;
 }
 
 export function webMcpOperationIsCurrent(operation: {
@@ -176,6 +182,7 @@ function webMcpRuntime(owner: object) {
 	const created: WebMcpSessionRuntime = {
 		controller: new AbortController(),
 		controllers: new Set(),
+		enabled: false,
 		generation: 0,
 		sessionGeneration: 0,
 	};

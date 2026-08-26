@@ -40,7 +40,7 @@ export async function discoverWebMcpTools(page: DevToolsPage, operation: WebMcpO
 	const client = await connectWebMcpPage(page, operation.signal);
 	try {
 		const tools = await readInventory(client, page, operation);
-		await requireStablePage(page, operation);
+		await requireStablePage(client, page, tools, operation);
 		return tools;
 	} finally {
 		await disableWebMcp(client);
@@ -61,7 +61,7 @@ export async function invokeDiscoveredWebMcpTool(
 	try {
 		const tools = await readInventory(client, page, operation);
 		const tool = requireMatchingWebMcpTool(tools, expected);
-		await requireStablePage(page, operation);
+		await requireStablePage(client, page, [tool], operation);
 		assertOperationCurrent(operation);
 		const response = await invokeWebMcpTool(
 			client,
@@ -159,7 +159,12 @@ function normalizeInventory(
 	return tools;
 }
 
-async function requireStablePage(page: DevToolsPage, operation: WebMcpOperationIdentity) {
+async function requireStablePage(
+	client: Awaited<ReturnType<typeof connectWebMcpPage>>,
+	page: DevToolsPage,
+	tools: readonly WebMcpToolDescriptor[],
+	operation: WebMcpOperationIdentity,
+) {
 	const current = await getPage(page.id, {
 		signal: operation.signal,
 		webMcpOwner: operation.owner,
@@ -171,6 +176,14 @@ async function requireStablePage(page: DevToolsPage, operation: WebMcpOperationI
 		current.type !== page.type
 	) {
 		throw new Error("The Chrome page navigated or was replaced during the WebMCP operation.");
+	}
+	const finalFrames = await readWebMcpFrames(client, operation.signal);
+	assertOperationCurrent(operation);
+	const finalDocuments = new Map(finalFrames.map((frame) => [frame.id, frame.loaderId]));
+	for (const tool of tools) {
+		if (finalDocuments.get(tool.frameId) !== tool.documentId) {
+			throw new Error("A WebMCP frame document changed during the final page identity check.");
+		}
 	}
 }
 

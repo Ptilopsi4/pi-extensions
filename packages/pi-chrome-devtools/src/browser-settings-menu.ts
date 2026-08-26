@@ -5,12 +5,14 @@ import { shutdownManagedBrowser } from "./browser-manager.js";
 import {
 	configureChromeDevtoolsToolExposure,
 	configuredChromeDevtoolsTools,
+	setChromeDevtoolsSessionOwner,
 } from "./lazy-tools.js";
 import {
 	applyRuntimeBrowserSettings,
 	applyRuntimeWebMcpSetting,
 	invalidateWebMcpOperations,
 	state,
+	webMcpEnabled,
 } from "./runtime.js";
 import {
 	type BrowserSettingsPatch,
@@ -44,6 +46,7 @@ export async function showChromeDevtoolsBrowserSettings(
 	ctx: CommandContext,
 	generation: number,
 ): Promise<{ closeParent: boolean }> {
+	setChromeDevtoolsSessionOwner(pi, ctx.sessionManager);
 	const ownerSignal = state.sessionController.signal;
 	const isCurrent = () => generation === state.sessionGeneration && !ownerSignal.aborted;
 	const projectTrusted = ctx.isProjectTrusted();
@@ -290,7 +293,7 @@ async function saveAndApplyWebMcpSetting(
 	projectTrusted: boolean,
 	enabled: boolean,
 ) {
-	const previousEnabled = state.webMcpEnabled;
+	const previousEnabled = webMcpEnabled(ctx.sessionManager);
 	const previousTools = configuredChromeDevtoolsTools(pi);
 	try {
 		await ctx.waitForIdle();

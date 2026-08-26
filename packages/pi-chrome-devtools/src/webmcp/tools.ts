@@ -4,6 +4,7 @@ import {
 	beginWebMcpOperation,
 	currentWebMcpGeneration,
 	state,
+	webMcpEnabled,
 	webMcpOperationIsCurrent,
 	webMcpSessionSignal,
 } from "../runtime.js";
@@ -35,7 +36,7 @@ export async function executeWebMcpListTool(
 	toolSignal: AbortSignal | undefined,
 	ctx: ExtensionContext,
 ) {
-	requireWebMcpEnabled();
+	requireWebMcpEnabled(ctx.sessionManager);
 	const preflightGeneration = currentWebMcpGeneration(ctx.sessionManager);
 	const preflightSignal = combinedSignal(ctx.sessionManager, toolSignal);
 	preflightSignal.throwIfAborted();
@@ -72,7 +73,7 @@ export async function executeWebMcpCallTool(
 	toolSignal: AbortSignal | undefined,
 	ctx: ExtensionContext,
 ) {
-	requireWebMcpEnabled();
+	requireWebMcpEnabled(ctx.sessionManager);
 	if (!ctx.hasUI || (ctx.mode !== "tui" && ctx.mode !== "rpc")) {
 		throw new Error(
 			"chrome_devtools_webmcp_call_tool requires observable confirmation in TUI or RPC mode and is unavailable in print or JSON mode.",
@@ -124,8 +125,8 @@ export async function executeWebMcpCallTool(
 	}
 }
 
-function requireWebMcpEnabled() {
-	if (!state.webMcpEnabled) {
+function requireWebMcpEnabled(owner: object) {
+	if (!webMcpEnabled(owner)) {
 		throw new Error(
 			"WebMCP is disabled. Enable the experimental user setting in /chrome-devtools settings, then make the WebMCP gateway tools available.",
 		);
@@ -138,7 +139,7 @@ function combinedSignal(owner: object, toolSignal: AbortSignal | undefined) {
 }
 
 function requireCurrentPreflight(owner: object, generation: number) {
-	requireWebMcpEnabled();
+	requireWebMcpEnabled(owner);
 	if (generation !== currentWebMcpGeneration(owner)) {
 		throw new DOMException(
 			"The WebMCP operation became stale during page resolution.",

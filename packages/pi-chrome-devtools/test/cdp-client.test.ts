@@ -196,6 +196,19 @@ test("malformed messages and target detachment reject pending work", async () =>
 	await assert.rejects(pendingDetached, /target detached.*target_closed/u);
 });
 
+test("rejects oversized messages before parsing while preserving cleanup commands", async () => {
+	const { client, socket } = await connectClient();
+	const command = client.send("WebMCP.enable", {}, { timeoutMs: 100 });
+	socket.message("x".repeat(8 * 1024 * 1024 + 1));
+
+	await assert.rejects(command, /message exceeds the 8 MB limit/u);
+	const cleanup = client.send("WebMCP.disable", {}, { timeoutMs: 100 });
+	socket.respond({});
+	await cleanup;
+	client.close();
+	assert.equal(socket.closeCalls, 1);
+});
+
 test("close is idempotent and rejects every pending command and event", async () => {
 	const { client, socket } = await connectClient();
 	const command = client.send("Page.enable", {}, { timeoutMs: 100 });
