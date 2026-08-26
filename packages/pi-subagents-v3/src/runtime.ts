@@ -17,6 +17,7 @@ const COMPLETION_MESSAGE_TYPE = "pi-subagents-v3-completion";
 
 interface InternalJob extends JobSummary {
 	controller: AbortController;
+	tools: string[];
 	terminal: Promise<void>;
 	resolveTerminal: () => void;
 	task?: Promise<void>;
@@ -30,6 +31,14 @@ interface InternalJob extends JobSummary {
 export interface RuntimeDependencies {
 	runChild?: (request: ChildRequest) => Promise<ChildResult>;
 	now?: () => number;
+}
+
+export interface ActiveJobDisplay {
+	jobId: string;
+	state: Extract<SubagentJobState, "queued" | "running">;
+	elapsedMs: number;
+	timeout?: number;
+	tools: string[];
 }
 
 export interface StartJobInput {
@@ -51,6 +60,7 @@ export class SubagentRuntime {
 	private deliveryEnabled = false;
 	private sessionActive = false;
 	private omittedJobs = 0;
+	private readonly jobListeners = new Set<() => void>();
 
 	constructor(
 		private readonly pi: ExtensionAPI,
@@ -68,6 +78,26 @@ export class SubagentRuntime {
 		this.omittedJobs = 0;
 		this.deliveryEnabled = true;
 		this.sessionActive = true;
+		this.notifyJobsChanged();
+	}
+
+	subscribeJobs(listener: () => void): () => void {
+		this.jobListeners.add(listener);
+		return () => this.jobListeners.delete(listener);
+	}
+
+	activeJobsForDisplay(): ActiveJobDisplay[] {
+		const now = this.now();
+		return [...this.jobs.values()]
+			.filter((job): job is InternalJob & { state: "queued" | "running" } => !isTerminal(job.state))
+			.sort((left, right) => left.createdAt - right.createdAt)
+			.map((job) => ({
+				jobId: job.jobId,
+				state: job.state,
+				elapsedMs: Math.max(0, now - (job.startedAt ?? job.createdAt)),
+				...(job.timeout !== undefined ? { timeout: job.timeout } : {}),
+				tools: [...job.tools],
+			}));
 	}
 
 	start(input: StartJobInput): { jobId: string; state: "queued"; timeout?: number } {
@@ -96,6 +126,7 @@ export class SubagentRuntime {
 			createdAt: this.now(),
 			...(input.timeout !== undefined ? { timeout: input.timeout } : {}),
 			controller,
+			tools: [...input.tools],
 			terminal,
 			resolveTerminal,
 			limitations: [],
@@ -103,10 +134,12 @@ export class SubagentRuntime {
 			generation: this.generation,
 		};
 		this.jobs.set(jobId, job);
+		this.notifyJobsChanged();
 		job.task = Promise.resolve().then(async () => {
 			if (job.state !== "queued" || job.generation !== this.generation) return;
 			job.state = "running";
 			job.startedAt = this.now();
+			this.notifyJobsChanged();
 			let child: ChildResult;
 			try {
 				child = await this.runChild({
@@ -240,6 +273,17 @@ export class SubagentRuntime {
 			job.controller.abort(new DOMException("Subagent session shut down", "AbortError"));
 		}
 		await Promise.allSettled(active.map((job) => job.task));
+		this.notifyJobsChanged();
+	}
+
+	private notifyJobsChanged(): void {
+		for (const listener of this.jobListeners) {
+			try {
+				listener();
+			} catch {
+				// UI observers cannot interrupt the job lifecycle.
+			}
+		}
 	}
 
 	private finish(job: InternalJob, child: ChildResult, deliver: boolean): void {
@@ -251,6 +295,7 @@ export class SubagentRuntime {
 		job.limitations = [...child.limitations];
 		this.broker.revokeJob(job.jobId);
 		job.resolveTerminal();
+		this.notifyJobsChanged();
 		if (deliver) this.deliver(job);
 		this.prune();
 	}
