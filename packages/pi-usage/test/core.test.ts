@@ -392,42 +392,114 @@ test("GitHub Copilot named credential selection is deterministic and reaches onl
 	);
 });
 
-test("OpenCode Go usage uses the canonical versioned endpoint", async (t) => {
-	const originalFetch = globalThis.fetch;
-	t.onTestFinished(() => {
-		globalThis.fetch = originalFetch;
-	});
+test("OpenCode Go usage resolves auth before using the canonical versioned endpoint", async () => {
 	const adapter = SUPPORTED_ADAPTERS.find((candidate) => candidate.id === "opencode-go");
 	assert.ok(adapter);
-	const requestedUrls: string[] = [];
-	globalThis.fetch = async (input) => {
-		requestedUrls.push(input.toString());
-		return new Response(
+	const model = {
+		id: "test-model",
+		name: "Test model",
+		provider: "opencode-go",
+		baseUrl: "https://opencode.ai/zen/v1",
+	};
+	const { ctx } = createMockContext({
+		model,
+		modelRegistry: {
+			getApiKeyAndHeaders: async () => ({
+				ok: true,
+				apiKey: "provider-default-key",
+				headers: {
+					Authorization: "Bearer current-model-key",
+					"X-Model-Secret": "must-not-leak",
+				},
+			}),
+			getProviderAuth: async () => ({
+				auth: { apiKey: "provider-default-key", baseUrl: model.baseUrl },
+			}),
+			getAvailable: () => [model],
+			getAll: () => [model],
+		},
+	});
+	const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+		new Response(
 			JSON.stringify({
 				usage: {
 					rolling: { status: "ok", percent: 1 },
 				},
 			}),
 			{ status: 200 },
-		);
-	};
-
-	const report = await queryProviderUsage(
-		adapter,
-		{
-			headers: { Authorization: "Bearer secret" },
-			fingerprint: "fingerprint",
-			secrets: ["secret"],
-			model: {} as never,
-		},
-		new AbortController().signal,
-		1_000,
+		),
 	);
+	try {
+		const auth = await resolveUsageAuth(ctx, adapter);
+		assert.ok(auth);
+		const report = await queryProviderUsage(adapter, auth, new AbortController().signal, 1_000);
 
-	assert.deepEqual(requestedUrls, ["https://opencode.ai/zen/go/v1/usage"]);
-	assert.equal(report.providerId, "opencode-go");
-	assert.equal(report.buckets[0]?.used, 1);
-	assert.equal(report.buckets[0]?.remaining, 99);
+		assert.equal(fetchMock.mock.calls.length, 1);
+		assert.equal(fetchMock.mock.calls[0]?.[0], "https://opencode.ai/zen/go/v1/usage");
+		const request = fetchMock.mock.calls[0]?.[1];
+		assert.equal(request?.method, "GET");
+		assert.deepEqual(request?.headers, {
+			Authorization: "Bearer current-model-key",
+			"User-Agent": "pi-usage",
+		});
+		assert.ok(request?.signal instanceof AbortSignal);
+		assert.equal(report.providerId, "opencode-go");
+		assert.equal(report.buckets[0]?.used, 1);
+		assert.equal(report.buckets[0]?.remaining, 99);
+	} finally {
+		fetchMock.mockRestore();
+	}
+});
+
+test("OpenCode Go usage rejects custom model and auth origins before fetching", async () => {
+	const adapter = SUPPORTED_ADAPTERS.find((candidate) => candidate.id === "opencode-go");
+	assert.ok(adapter);
+	const proxyModel = {
+		id: "proxy-model",
+		name: "Proxy model",
+		provider: "opencode-go",
+		baseUrl: "https://proxy.example.test/v1",
+	};
+	const { ctx: proxyModelContext } = createMockContext({
+		model: proxyModel,
+		modelRegistry: {
+			getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "proxy-key" }),
+			getProviderAuth: async () => ({ auth: { apiKey: "proxy-key" } }),
+			getAvailable: () => [proxyModel],
+			getAll: () => [proxyModel],
+		},
+	});
+	const officialModel = {
+		...proxyModel,
+		id: "official-model",
+		name: "Official model",
+		baseUrl: "https://opencode.ai/zen/v1",
+	};
+	const { ctx: proxyAuthContext } = createMockContext({
+		model: officialModel,
+		modelRegistry: {
+			getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "official-key" }),
+			getProviderAuth: async () => ({
+				auth: { apiKey: "proxy-key", baseUrl: "https://proxy.example.test/v1" },
+			}),
+			getAvailable: () => [officialModel],
+			getAll: () => [officialModel],
+		},
+	});
+	const fetchMock = vi.spyOn(globalThis, "fetch");
+	try {
+		await assert.rejects(
+			() => resolveUsageAuth(proxyModelContext, adapter),
+			/custom.*base URL|official/iu,
+		);
+		await assert.rejects(
+			() => resolveUsageAuth(proxyAuthContext, adapter),
+			/proxy-resolved.*official/iu,
+		);
+		assert.equal(fetchMock.mock.calls.length, 0);
+	} finally {
+		fetchMock.mockRestore();
+	}
 });
 
 test("provider cancellation preserves AbortError identity", async () => {
