@@ -357,10 +357,10 @@ function compactMenuHint(
 		[
 			...(cancelSegments.length > 0 ? cancelSegments : [cancel]),
 			...(compactOverflowText ? [safeMenuText(compactOverflowText).trim()] : []),
-			...keyedCustom,
 			...confirmSegments,
 			...hardCancelSegments,
 			...navigationSegments,
+			...keyedCustom,
 			...reminders,
 		],
 		width,

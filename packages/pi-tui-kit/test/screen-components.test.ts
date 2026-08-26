@@ -597,6 +597,31 @@ test("settings search reports no matches and all presentation remains width-safe
 	assert.ok(
 		plainRender(empty.component, 40).some((line) => line.includes("No settings available")),
 	);
+
+	const compactNoMatch = componentHarness(
+		{
+			kind: "settings",
+			title: "Compact settings",
+			items: [
+				{
+					id: "display",
+					label: "Display",
+					currentValue: "On",
+					values: ["On", "Off"],
+					action: "setting",
+				},
+			],
+		},
+		{ plainTheme: true, rows: 8, keybindings: inputFriendlyKeybindings },
+	);
+	compactNoMatch.component.handleInput("z");
+	assert.match(plainRender(compactNoMatch.component, 40).join("\n"), /No matching settings/u);
+	const compactEmpty = componentHarness(
+		{ kind: "settings", title: "Compact empty settings", items: [] },
+		{ plainTheme: true, rows: 8, keybindings: inputFriendlyKeybindings },
+	);
+	assert.match(plainRender(compactEmpty.component, 40).join("\n"), /No settings available/u);
+
 	for (const width of [1, 2, 8, 20, 40]) {
 		assert.ok(
 			harness.component.render(width).every((line) => visibleWidth(line) <= width),
@@ -1097,6 +1122,34 @@ test("searchable multi-select keeps its focused query and selected row in compac
 	assert.match(lines.join("\n"), /› \[ \] tool_7/u);
 	assert.match(lines.join("\n"), /Description for tool 7/u);
 	assert.match(lines.join("\n"), /\(8\/8\)/u);
+});
+
+test("compact searchable multi-select preserves empty states ahead of search reminders", () => {
+	const screen: MenuScreen<ScreenId, ActionId> = {
+		kind: "multiSelect",
+		title: "Searchable tools",
+		enableSearch: true,
+		items: [{ id: "read", label: "Read", selected: false }],
+		action: "toggle",
+		actions: [],
+	};
+	const noMatch = componentHarness(screen, {
+		plainTheme: true,
+		rows: 9,
+		keybindings: inputFriendlyKeybindings,
+	});
+	for (const input of ["z", "z", "z"]) noMatch.component.handleInput(input);
+	const noMatchText = plainRender(noMatch.component, 32).join("\n");
+	assert.match(noMatchText, /No matching items/u);
+	assert.doesNotMatch(noMatchText, /Type to search/u);
+
+	const empty = componentHarness(
+		{ ...screen, items: [] },
+		{ plainTheme: true, rows: 9, keybindings: inputFriendlyKeybindings },
+	);
+	const emptyText = plainRender(empty.component, 32).join("\n");
+	assert.match(emptyText, /No items available/u);
+	assert.doesNotMatch(emptyText, /No matching items|Type to search/u);
 });
 
 test("searchable multi-select keeps actions available for no matches and distinguishes empty", async () => {

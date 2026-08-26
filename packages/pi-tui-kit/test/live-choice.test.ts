@@ -91,6 +91,9 @@ test("runLiveChoice preserves supplied controls in height-compacted hints", asyn
 	assert.match(rendered, /e customize/u);
 	assert.match(rendered, /enter apply/u);
 	assert.match(rendered, /↑\/↓ inspect/u);
+	const narrow = stripVTControlCharacters(tui.resize({ width: 45 }).join("\n"));
+	assert.match(narrow, /esc back • \(1\/3\) • enter apply • ctrl\+c close/u);
+	assert.doesNotMatch(narrow, /customize|page/u);
 	tui.press("ctrl+c");
 	assert.deepEqual(await running, { kind: "closed", reason: "close" });
 });

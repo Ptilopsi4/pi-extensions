@@ -488,7 +488,7 @@ function createSettingsComponent<ScreenId extends string, ActionId extends strin
 					confirmAction: "change",
 					hint: settingsHint(options.keybindings),
 					pinnedContentRows: 1,
-					priorityTailRows: settingsRows.descriptionRows,
+					priorityTailRows: settingsRows.priorityTailRows,
 				},
 			);
 		},
@@ -532,12 +532,12 @@ function renderSettingsRows<ScreenId extends string, ActionId extends string>(
 	displayed: ReadonlyMap<string, string>,
 	width: number,
 	options: SettingsOptions<ScreenId, ActionId>,
-): { lines: string[]; descriptionRows: number } {
+): { lines: string[]; priorityTailRows: number } {
 	if (allItems.length === 0) {
-		return { lines: [options.theme.fg("dim", "  No settings available")], descriptionRows: 0 };
+		return { lines: [options.theme.fg("dim", "  No settings available")], priorityTailRows: 1 };
 	}
 	if (filteredItems.length === 0) {
-		return { lines: [options.theme.fg("dim", "  No matching settings")], descriptionRows: 0 };
+		return { lines: [options.theme.fg("dim", "  No matching settings")], priorityTailRows: 1 };
 	}
 
 	const maxVisible = Math.min(filteredItems.length, 10);
@@ -577,7 +577,7 @@ function renderSettingsRows<ScreenId extends string, ActionId extends string>(
 	if (startIndex > 0 || endIndex < filteredItems.length) {
 		lines.push(options.theme.fg("dim", `  (${selectedIndex + 1}/${filteredItems.length})`));
 	}
-	let descriptionRows = 0;
+	let priorityTailRows = 0;
 	const selected = filteredItems[selectedIndex]?.item;
 	if (selected?.description) {
 		lines.push("");
@@ -586,10 +586,10 @@ function renderSettingsRows<ScreenId extends string, ActionId extends string>(
 			Math.max(1, width - 4),
 		)) {
 			lines.push(options.theme.fg("dim", `  ${line}`));
-			descriptionRows += 1;
+			priorityTailRows += 1;
 		}
 	}
-	return { lines, descriptionRows };
+	return { lines, priorityTailRows };
 }
 
 function settingsHint(keybindings: MenuKeybindings) {

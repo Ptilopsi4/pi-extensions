@@ -194,17 +194,18 @@ export function createMultiSelectComponent<ScreenId extends string, ActionId ext
 				wrapTextWithAnsi(options.theme.fg("dim", `  ${safeMenuText(description)}`), safeWidth),
 			);
 			if (descriptionRows.length > 0) rowContent.push("", ...descriptionRows);
+			const hasMatchingItems = rows.some((candidate) => candidate.kind === "toggle");
 			const content = options.screen.enableSearch
 				? [
 						...searchInput.render(safeWidth),
 						"",
 						...(options.screen.items.length === 0
 							? [options.theme.fg("dim", "  No items available")]
-							: rows.every((candidate) => candidate.kind === "action")
+							: !hasMatchingItems
 								? [options.theme.fg("dim", "  No matching items")]
 								: []),
 						...rowContent,
-						options.theme.fg("dim", "Type to search"),
+						...(hasMatchingItems ? [options.theme.fg("dim", "Type to search")] : []),
 					]
 				: rowContent;
 			return renderFrame(
@@ -218,8 +219,9 @@ export function createMultiSelectComponent<ScreenId extends string, ActionId ext
 					compactOverflowText:
 						rows.length > 1 ? `  (${selectedIndex + 1}/${rows.length})` : undefined,
 					confirmAction: row?.kind === "action" ? "select" : "toggle",
-					pinnedContentRows: options.screen.enableSearch ? 1 : 0,
-					priorityTailRows: descriptionRows.length + (options.screen.enableSearch ? 1 : 0),
+					pinnedContentRows: options.screen.enableSearch ? (hasMatchingItems ? 1 : 2) : 0,
+					priorityTailRows:
+						descriptionRows.length + (options.screen.enableSearch && hasMatchingItems ? 1 : 0),
 				},
 			);
 		},

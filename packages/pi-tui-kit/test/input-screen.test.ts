@@ -67,6 +67,27 @@ test("input rejection preserves the draft and accepted submit transitions", asyn
 	assert.deepEqual(transitions, [{ kind: "close" }]);
 });
 
+test("compact input screens keep their saving indicator visible while submit is pending", async () => {
+	let release: (() => void) | undefined;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const harness = inputComponentHarness({
+		rows: 8,
+		onInputSubmit: async () => {
+			await gate;
+			return false;
+		},
+	});
+	harness.component.handleInput("x");
+	harness.component.handleInput("\r");
+	const rendered = stripVTControlCharacters(harness.component.render(32).join("\n"));
+	assert.match(rendered, /> x/u);
+	assert.match(rendered, /Saving…/u);
+	release?.();
+	await harness.component.waitForPending();
+});
+
 test("input screen drains a pending submit before Back and distinguishes Ctrl+C Close", async () => {
 	let release: (() => void) | undefined;
 	const gate = new Promise<void>((resolve) => {
@@ -250,12 +271,13 @@ function inputComponentHarness(
 			value: string;
 		}) => Promise<boolean | { accepted: boolean; transition: MenuTransition<ScreenId> }>;
 		onTransition?: (transition: MenuTransition<ScreenId>) => void;
+		rows?: number;
 	} = {},
 ) {
 	const events: Array<{ kind: "back" | "close" } | { kind: "activate"; itemId: string }> = [];
 	const component = createMenuScreenComponent<ScreenId, ActionId>({
 		screen: inputScreen,
-		tui: { terminal: { rows: 24 }, requestRender() {} },
+		tui: { terminal: { rows: overrides.rows ?? 24 }, requestRender() {} },
 		theme: {
 			fg: (_color: string, text: string) => text,
 			bold: (text: string) => text,
