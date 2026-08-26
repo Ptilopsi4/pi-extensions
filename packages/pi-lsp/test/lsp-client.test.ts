@@ -186,6 +186,30 @@ test("push-only diagnostics preserve a publication within the configured grace",
 	}
 });
 
+test("push diagnostics match a re-encoded publication uri", async () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "pi-lsp-push-alternate-uri-"));
+	const file = path.join(root, "main.go");
+	writeFileSync(file, "package main\n");
+	const adapter = fixtureAdapter("push-alternate-uri-encoding", 30, undefined, 100);
+	const client = new LspClient(adapter, adapter.defaultCommand, root, 1_000);
+
+	try {
+		await client.start();
+		await client.initialize(root);
+		const uri = pathToFileURL(file).href;
+		client.didOpen(uri, "package main\n", "go");
+		const diagnostics = await client.diagnostics(uri);
+		assert.deepEqual(
+			diagnostics.map(({ message }) => message),
+			["alternate uri encoding diagnostic"],
+		);
+		client.didClose(uri);
+	} finally {
+		await client.shutdown();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("push diagnostics settle on the latest publication", async () => {
 	const root = mkdtempSync(path.join(os.tmpdir(), "pi-lsp-push-sequence-"));
 	const file = path.join(root, "main.go");

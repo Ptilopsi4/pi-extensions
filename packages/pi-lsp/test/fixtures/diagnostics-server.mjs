@@ -20,6 +20,15 @@ function diagnostic(message, line = 0) {
 	};
 }
 
+// Re-encode a file URI the way editors and some servers do: a lowercase drive
+// letter with an encoded colon on Windows, plus percent-encoded unreserved
+// characters. The result addresses the same file as the URI the client sent.
+function alternateEncoding(uri) {
+	return uri
+		.replace(/^file:\/\/\/([A-Za-z]):\//, (_match, drive) => `file:///${drive.toLowerCase()}%3A/`)
+		.replace(/-/g, "%2D");
+}
+
 function publish(uri, diagnostics) {
 	send({
 		jsonrpc: "2.0",
@@ -67,10 +76,19 @@ function handle(message) {
 	if (message.method === "textDocument/didOpen") {
 		const uri = message.params.textDocument.uri;
 		openedUris.push(uri);
-		if (scenario !== "push-silent" && scenario !== "push-silent-then-diagnostic") {
+		if (
+			scenario !== "push-silent" &&
+			scenario !== "push-silent-then-diagnostic" &&
+			scenario !== "push-alternate-uri-encoding"
+		) {
 			publish(uri, []);
 		}
-		if (scenario === "push-silent-then-diagnostic") {
+		if (scenario === "push-alternate-uri-encoding") {
+			setTimeout(
+				() => publish(alternateEncoding(uri), [diagnostic("alternate uri encoding diagnostic")]),
+				40,
+			);
+		} else if (scenario === "push-silent-then-diagnostic") {
 			setTimeout(() => publish(uri, [diagnostic("late push-only diagnostic")]), 40);
 		} else if (scenario === "push-sequence") {
 			setTimeout(() => publish(uri, [diagnostic("first")]), 20);
