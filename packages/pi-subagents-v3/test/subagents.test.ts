@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
-import { afterEach, beforeEach, test } from "vitest";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { afterEach, beforeEach, test, vi } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import { createBrokerClient } from "../src/child-communication-bridge.js";
 import { MessageBroker } from "../src/message-broker.js";
+import { SUBAGENT_WIDGET_KEY } from "../src/subagent-widget.js";
 import subagentsV3, { type SubagentsV3Dependencies } from "../src/subagents.js";
 import type { ChildRequest, ChildResult } from "../src/types.js";
 
@@ -47,6 +51,7 @@ afterEach(async () => {
 		await emit(session.mock, "session_shutdown", { reason: "quit" }, session.context.ctx);
 	}
 	delete process.env.PI_SUBAGENT_DEPTH;
+	vi.restoreAllMocks();
 });
 
 test("registers five fixed main-agent tools with bounded stable schemas", async () => {
@@ -158,6 +163,76 @@ test("spawns jobs with default and explicit tools and thinking levels", async ()
 		waitFor(mock, context, String(inherited.details.jobId)),
 		waitFor(mock, context, String(explicit.details.jobId)),
 	]);
+});
+
+test("shows active job timing, timeout, and selected tools above the editor", async () => {
+	let refreshWidget: (() => void) | undefined;
+	const fakeTimer = { unref() {} } as NodeJS.Timeout;
+	vi.spyOn(globalThis, "setInterval").mockImplementation((callback, delay) => {
+		assert.equal(delay, 1_000);
+		refreshWidget = callback as () => void;
+		return fakeTimer;
+	});
+	const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
+	let now = 0;
+	const { mock, context } = await setup(
+		{ now: () => now, runChild: waitForCancellation },
+		{},
+		{ mode: "tui" },
+	);
+	const first = await tool(mock, "subagent-spawn").execute(
+		"first",
+		{ task: "First", tools: ["read", "edit"], timeout: 120 },
+		undefined,
+		undefined,
+		context.ctx,
+	);
+	await Promise.resolve();
+	now = 65_000;
+	const second = await spawnJob(mock, context, "Second");
+
+	const factory = context.widgets.get(SUBAGENT_WIDGET_KEY) as
+		| ((_tui: unknown, theme: Theme) => Component)
+		| undefined;
+	assert.equal(typeof factory, "function");
+	const lines = factory?.({}, identityTheme()).render(80) ?? [];
+	assert.equal(lines[0], "─".repeat(80));
+	assert.equal(lines[1], "Subagents · 2 active");
+	assert.match(
+		lines[2] ?? "",
+		new RegExp(
+			`^▶ ${String(first.details.jobId)} · running · 1m 5s / 2m · tools: read, edit$`,
+			"u",
+		),
+	);
+	assert.match(
+		lines[3] ?? "",
+		new RegExp(
+			`^▶ ${String(second.details.jobId)} · running · 0s / no timeout · tools: read, grep, find, ls$`,
+			"u",
+		),
+	);
+	now = 66_000;
+	assert.ok(refreshWidget);
+	refreshWidget();
+	const refreshedFactory = context.widgets.get(SUBAGENT_WIDGET_KEY) as
+		| ((_tui: unknown, theme: Theme) => Component)
+		| undefined;
+	const refreshedLines = refreshedFactory?.({}, identityTheme()).render(80) ?? [];
+	assert.match(refreshedLines[2] ?? "", /running · 1m 6s \/ 2m/u);
+	assert.match(refreshedLines[3] ?? "", /running · 1s \/ no timeout/u);
+	for (const line of refreshedFactory?.({}, identityTheme()).render(24) ?? []) {
+		assert.ok(visibleWidth(line) <= 24);
+	}
+
+	await emit(mock, "session_shutdown", { reason: "reload" }, context.ctx);
+	assert.equal(context.widgets.get(SUBAGENT_WIDGET_KEY), undefined);
+	assert.ok(clearIntervalSpy.mock.calls.length > 0);
+});
+
+test("does not install the component widget outside TUI mode", async () => {
+	const { context } = await setup({}, {}, { mode: "rpc", hasUI: true });
+	assert.equal(context.widgets.has(SUBAGENT_WIDGET_KEY), false);
 });
 
 test("falls back to the Pi thinking level when context has none", async () => {
@@ -516,6 +591,12 @@ async function waitForCancellation(request: Pick<ChildRequest, "signal">): Promi
 
 function completed(result: string): ChildResult {
 	return { state: "completed", result, limitations: [], truncated: false };
+}
+
+function identityTheme(): Theme {
+	return {
+		fg: (_role: string, text: string) => text,
+	} as Theme;
 }
 
 function cancelled(): ChildResult {
