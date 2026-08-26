@@ -20,13 +20,21 @@ function diagnostic(message, line = 0) {
 	};
 }
 
-// Re-encode a file URI the way editors and some servers do: a lowercase drive
-// letter with an encoded colon on Windows, plus percent-encoded unreserved
-// characters. The result addresses the same file as the URI the client sent.
+// Re-encode a file URI the way editors and some servers do, addressing the same
+// file as the URI the client sent. Percent-encoding the first letter of the file
+// name keeps the result different from the input on every platform, so the test
+// cannot pass by comparing a URI to itself. Windows additionally gets the
+// lowercase drive letter and encoded colon that marksman and VS Code send.
 function alternateEncoding(uri) {
-	return uri
-		.replace(/^file:\/\/\/([A-Za-z]):\//, (_match, drive) => `file:///${drive.toLowerCase()}%3A/`)
-		.replace(/-/g, "%2D");
+	const withEncodedDrive = uri.replace(
+		/^file:\/\/\/([A-Za-z]):\//,
+		(_match, drive) => `file:///${drive.toLowerCase()}%3A/`,
+	);
+	const lastSeparator = withEncodedDrive.lastIndexOf("/");
+	const fileName = withEncodedDrive
+		.slice(lastSeparator + 1)
+		.replace(/[A-Za-z]/, (letter) => `%${letter.charCodeAt(0).toString(16).toUpperCase()}`);
+	return `${withEncodedDrive.slice(0, lastSeparator + 1)}${fileName}`;
 }
 
 function publish(uri, diagnostics) {

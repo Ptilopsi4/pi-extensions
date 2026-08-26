@@ -28,11 +28,11 @@ export function resolveSpawnCommand(
 // Quiet period (ms) after each publish before treating push diagnostics as settled.
 const PUBLISHED_DIAGNOSTICS_SETTLE_MS = 800;
 
-// Servers may answer about a file using a different but equivalent encoding of
-// the URI the client sent, so diagnostics must be keyed by a canonical form.
-// marksman, like VS Code, publishes `file:///c%3A/dir/a.md` where Node's
-// pathToFileURL produces `file:///C:/dir/a.md`; keying by the raw strings
-// silently drops every publication. Non-file URIs keep their original text.
+// Key diagnostics by a canonical path: a server may answer using a different but
+// equivalent encoding of the URI the client sent. marksman, like VS Code, sends
+// `file:///c%3A/dir/a.md` where pathToFileURL produces `file:///C:/dir/a.md`.
+// normalize() also collapses the doubled separators a URI may carry.
+// Non-file URIs such as untitled: and jdt: keep their original text.
 function documentKey(uri: string) {
 	try {
 		const filePath = path.normalize(fileURLToPath(uri));
