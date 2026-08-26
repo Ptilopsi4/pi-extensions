@@ -10,7 +10,11 @@ import {
 	createMockPi,
 } from "../../../test/support.js";
 import chromeDevtools from "../src/chrome-devtools.js";
-import { applyAvailableChromeDevtoolsTools } from "../src/lazy-tools.js";
+import {
+	applyAvailableChromeDevtoolsTools,
+	setChromeDevtoolsSessionOwner,
+} from "../src/lazy-tools.js";
+import { loadChromeDevtoolsMenuSnapshot } from "../src/menu.js";
 import { applyRuntimeWebMcpSetting, state } from "../src/runtime.js";
 import { settingsFilePath } from "../src/settings.js";
 import { buildBrowserStatusMessage } from "../src/tool-selector.js";
@@ -90,12 +94,41 @@ test("enabled WebMCP appears as an experimental seven-tool selection surface", a
 	});
 });
 
+test("returning from browser settings refreshes the parent WebMCP tool snapshot", async () => {
+	await withTempAgentDir(async () => {
+		const allTools = [...CHROME_TOOLS, ...WEBMCP_TOOLS];
+		writeFileSync(
+			settingsFilePath(),
+			`${JSON.stringify({ tools: allTools, updatedAt: 1, webmcp: { enabled: true } })}\n`,
+		);
+		const mock = createMockPi({ activeTools: ["other_tool", ...allTools] });
+		const { ctx } = createMockContext({ hasUI: true, mode: "tui" });
+		const owner = (ctx as { sessionManager: object }).sessionManager;
+		setChromeDevtoolsSessionOwner(mock.pi, owner);
+		applyRuntimeWebMcpSetting(true, owner);
+		applyAvailableChromeDevtoolsTools(mock.pi, allTools);
+		const initial = await loadChromeDevtoolsMenuSnapshot(mock.pi, ctx);
+		assert.equal(initial.activeTools.length, 7);
+
+		writeFileSync(
+			settingsFilePath(),
+			`${JSON.stringify({ tools: allTools, updatedAt: 2, webmcp: { enabled: false } })}\n`,
+		);
+		applyRuntimeWebMcpSetting(false, owner);
+		applyAvailableChromeDevtoolsTools(mock.pi, allTools);
+		const refreshed = await loadChromeDevtoolsMenuSnapshot(mock.pi, ctx);
+
+		assert.deepEqual(refreshed.activeTools, [...CHROME_TOOLS]);
+		assert.equal(refreshed.activeTools.length, 5);
+	});
+});
+
 test("browser status distinguishes unobserved, running, exited, and failed states without probing", () => {
 	const owner = {};
 	state.managedBrowser = undefined;
 	state.launchPromise = undefined;
 	state.lastLaunchAttempt = undefined;
-	assert.match(buildBrowserStatusMessage(owner), /not started; connection has not been checked/);
+	assert.match(buildBrowserStatusMessage(), /not started; connection has not been checked/);
 	applyRuntimeWebMcpSetting(true, owner);
 	assert.match(
 		buildBrowserStatusMessage(owner),
@@ -109,8 +142,9 @@ test("browser status distinguishes unobserved, running, exited, and failed state
 		exited: false,
 		ready: true,
 		ownerGeneration: state.sessionGeneration,
+		sessionOwner: owner,
 	};
-	assert.match(buildBrowserStatusMessage(owner), /managed browser running/);
+	assert.match(buildBrowserStatusMessage(), /managed browser running/);
 
 	state.managedBrowser.exited = true;
 	state.lastLaunchAttempt = {
@@ -119,7 +153,7 @@ test("browser status distinguishes unobserved, running, exited, and failed state
 		selectedCandidate: "Chromium",
 		userDataDir: "/tmp/test-profile",
 	};
-	const exited = buildBrowserStatusMessage(owner);
+	const exited = buildBrowserStatusMessage();
 	assert.match(exited, /managed browser exited/);
 	assert.match(exited, /If no endpoint is available/);
 
@@ -129,7 +163,7 @@ test("browser status distinguishes unobserved, running, exited, and failed state
 		mode: "dynamic-port",
 		lastError: "browser unavailable",
 	};
-	const failed = buildBrowserStatusMessage(owner);
+	const failed = buildBrowserStatusMessage();
 	assert.match(failed, /last launch failed/);
 	assert.match(failed, /Last launch error: browser unavailable/);
 	assert.match(failed, /does not probe the endpoint or launch Chrome/);

@@ -38,7 +38,7 @@ export interface WebMcpInvocationResult {
 
 export async function discoverWebMcpTools(page: DevToolsPage, operation: WebMcpOperationIdentity) {
 	assertOperationCurrent(operation);
-	await requireWebMcpDomain(operation.signal);
+	await requireWebMcpDomain(operation.signal, operation.owner);
 	assertOperationCurrent(operation);
 	const client = await connectWebMcpPage(page, operation.signal);
 	try {
@@ -58,7 +58,7 @@ export async function invokeDiscoveredWebMcpTool(
 	operation: WebMcpOperationIdentity,
 ): Promise<WebMcpInvocationResult> {
 	assertOperationCurrent(operation);
-	await requireWebMcpDomain(operation.signal);
+	await requireWebMcpDomain(operation.signal, operation.owner);
 	assertOperationCurrent(operation);
 	const client = await connectWebMcpPage(page, operation.signal);
 	try {
@@ -182,8 +182,8 @@ async function requireStablePage(
 	operation: WebMcpOperationIdentity,
 ) {
 	const current = await getPage(page.id, {
+		sessionOwner: operation.owner,
 		signal: operation.signal,
-		webMcpOwner: operation.owner,
 	});
 	assertOperationCurrent(operation);
 	if (

@@ -9,6 +9,7 @@ import {
 	launchAttemptLines,
 	launchHint,
 	launchModeLabel,
+	managedBrowserForOwner,
 } from "./browser-manager.js";
 import {
 	applyAvailableChromeDevtoolsTools,
@@ -209,10 +210,10 @@ export async function buildToolStatusMessage(pi: ExtensionAPI, owner: object) {
 			...browserSettingsStatusLines(owner),
 			...(state.settingsNotice ? [`Settings note: ${state.settingsNotice}`] : []),
 			`Other active tools preserved: ${summary.activeNonChromeToolCount}`,
-			`Endpoint: ${devToolsEndpoint()}`,
+			`Endpoint: ${devToolsEndpoint(owner)}`,
 			`Endpoint source: ${endpointSourceLabel()}`,
-			`Launch mode: ${launchModeLabel()}`,
-			...launchAttemptLines(),
+			`Launch mode: ${launchModeLabel(owner)}`,
+			...launchAttemptLines(owner),
 		].join("\n"),
 	);
 }
@@ -221,8 +222,9 @@ export function buildQuickstartMessage(owner: object) {
 	return buildSettingsSetupMessage(owner);
 }
 
-export function buildBrowserStatusMessage(owner: object) {
-	const lifecycle = browserLifecycleState();
+export function buildBrowserStatusMessage(owner?: object) {
+	const lifecycle = browserLifecycleState(owner);
+	const webMcpIsEnabled = owner ? webMcpEnabled(owner) : false;
 	const browserState =
 		lifecycle === "starting"
 			? "starting managed browser"
@@ -238,12 +240,12 @@ export function buildBrowserStatusMessage(owner: object) {
 		[
 			`Browser: ${browserState}`,
 			"Viewing this status does not probe the endpoint or launch Chrome.",
-			`Endpoint: ${devToolsEndpoint()}`,
+			`Endpoint: ${devToolsEndpoint(owner)}`,
 			`Endpoint source: ${endpointSourceLabel()}`,
-			`Launch mode: ${launchModeLabel()}`,
+			`Launch mode: ${launchModeLabel(owner)}`,
 			`Unpacked extensions: ${state.extensionPaths.length} (${state.extensionPathsSource})`,
-			`WebMCP: ${webMcpEnabled(owner) ? "enabled · experimental" : "disabled · experimental"}`,
-			...(webMcpEnabled(owner) && !state.managedBrowser?.ready
+			`WebMCP: ${webMcpIsEnabled ? "enabled · experimental" : "disabled · experimental"}`,
+			...(webMcpIsEnabled && !managedBrowserForOwner(owner)?.ready
 				? [
 						"WebMCP warning: attached browser profiles may contain everyday authenticated sessions and sensitive state.",
 					]
@@ -251,7 +253,7 @@ export function buildBrowserStatusMessage(owner: object) {
 			...(state.extensionPaths.length > 0
 				? ["Unpacked extensions execute trusted browser code in an isolated managed browser."]
 				: []),
-			...launchAttemptLines(),
+			...launchAttemptLines(owner),
 			...(needsRecovery ? [launchHint(), endpointConfigHint()] : []),
 		].join("\n"),
 	);
@@ -260,13 +262,13 @@ export function buildBrowserStatusMessage(owner: object) {
 export function buildSettingsSetupMessage(owner: object) {
 	return sanitizeChromeDevtoolsDisplay(
 		[
-			`Chrome DevTools endpoint: ${devToolsEndpoint()}`,
+			`Chrome DevTools endpoint: ${devToolsEndpoint(owner)}`,
 			`Endpoint source: ${endpointSourceLabel()}`,
-			`Launch mode: ${launchModeLabel()}`,
+			`Launch mode: ${launchModeLabel(owner)}`,
 			...browserSettingsStatusLines(owner),
 			launchHint(),
 			browserCandidateHint(),
-			...launchAttemptLines(),
+			...launchAttemptLines(owner),
 			endpointConfigHint(),
 		].join("\n"),
 	);

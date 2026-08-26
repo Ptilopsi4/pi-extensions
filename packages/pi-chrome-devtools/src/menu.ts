@@ -1,6 +1,11 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { defineMenu, runMenu, runTask } from "@narumitw/pi-tui-kit";
-import { browserLifecycleState, devToolsEndpoint, launchModeLabel } from "./browser-manager.js";
+import {
+	browserLifecycleState,
+	devToolsEndpoint,
+	launchAttemptLines,
+	launchModeLabel,
+} from "./browser-manager.js";
 import { availableChromeDevtoolsTools } from "./lazy-tools.js";
 import { state, webMcpEnabled } from "./runtime.js";
 import { loadSettings, type SettingsLoadResult } from "./settings.js";
@@ -166,11 +171,14 @@ export async function showChromeDevtoolsMenu(
 				if (result?.applied && isCurrent()) updateSnapshotAfterApply(current, result.selectedTools);
 				return result?.closeParent ? { kind: "close" } : { kind: "stay" };
 			},
-			settings: async () => {
+			settings: async ({ state: current }) => {
 				const { showChromeDevtoolsBrowserSettings } = await import("./browser-settings-menu.js");
 				if (!isCurrent()) return { kind: "stay" };
 				const result = await showChromeDevtoolsBrowserSettings(pi, ctx, generation);
 				if (!isCurrent()) return { kind: "stay" };
+				const refreshed = await loadChromeDevtoolsMenuSnapshot(pi, ctx);
+				if (!isCurrent()) return { kind: "stay" };
+				Object.assign(current, refreshed);
 				return result.closeParent ? { kind: "close" } : { kind: "stay" };
 			},
 		},
@@ -361,6 +369,17 @@ async function loadSnapshotWithFeedback(pi: ExtensionAPI, ctx: CommandContext, g
 	return result.kind === "completed" ? result.value : undefined;
 }
 
+export async function loadChromeDevtoolsMenuSnapshot(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+) {
+	const settings = await loadSettings({
+		cwd: ctx.cwd,
+		projectTrusted: ctx.isProjectTrusted(),
+	});
+	return buildMenuSnapshot(pi, settings);
+}
+
 function buildMenuSnapshot(pi: ExtensionAPI, settings: SettingsLoadResult): MenuSnapshot {
 	const activeTools = activeChromeTools(pi);
 	const persistedTools =
@@ -389,25 +408,26 @@ function buildMenuSnapshot(pi: ExtensionAPI, settings: SettingsLoadResult): Menu
 }
 
 function mainStateLines(snapshot: MenuSnapshot, owner: object) {
+	const launchError = launchAttemptLines(owner).find((line) =>
+		line.startsWith("Last launch error:"),
+	);
 	return sanitizeLines([
 		`Tool catalog: ${snapshot.activeTools.length} of ${availableCatalogNames(owner).length} available · ${snapshot.persistenceLabel}`,
 		`WebMCP: ${webMcpEnabled(owner) ? "enabled · experimental · confirmation required for every call" : "disabled · experimental"}`,
-		`Browser: ${browserLifecycleSummary()}`,
-		`Endpoint: ${devToolsEndpoint()}`,
+		`Browser: ${browserLifecycleSummary(owner)}`,
+		`Endpoint: ${devToolsEndpoint(owner)}`,
 		...(snapshot.settingsWarning ? [`Settings warning: ${snapshot.settingsWarning}`] : []),
-		...(state.lastLaunchAttempt?.lastError
-			? [`Launch warning: ${state.lastLaunchAttempt.lastError}`]
-			: []),
+		...(launchError ? [`Launch warning: ${launchError.slice("Last launch error: ".length)}`] : []),
 	]);
 }
 
-function browserLifecycleSummary() {
-	const lifecycle = browserLifecycleState();
+function browserLifecycleSummary(owner: object) {
+	const lifecycle = browserLifecycleState(owner);
 	if (lifecycle === "starting") return "starting managed browser";
 	if (lifecycle === "running") return "managed browser running";
 	if (lifecycle === "exited") return "managed browser exited · open Browser status to recover";
 	if (lifecycle === "failed") return "last launch failed · open Browser status to recover";
-	const launchMode = launchModeLabel();
+	const launchMode = launchModeLabel(owner);
 	return launchMode.startsWith("attach first")
 		? "not started · attaches or launches on first use"
 		: `not started · ${launchMode}`;

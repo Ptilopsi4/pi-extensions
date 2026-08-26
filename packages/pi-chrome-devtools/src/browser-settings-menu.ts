@@ -271,7 +271,7 @@ async function saveAndApplyBrowserPatch(
 		await saveBrowserSettings(patch);
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
 		invalidateWebMcpOperations(ctx.sessionManager, "Chrome DevTools browser configuration changed");
-		await shutdownManagedBrowser();
+		await shutdownManagedBrowser(undefined, { owner: ctx.sessionManager });
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
 		const loaded = await loadSettings({ cwd: ctx.cwd, projectTrusted });
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;

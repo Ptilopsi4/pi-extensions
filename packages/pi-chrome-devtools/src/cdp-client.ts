@@ -52,16 +52,22 @@ export interface CdpConnectOptions extends CdpOperationOptions {
 const MAX_BUFFERED_EVENTS_PER_METHOD = 32;
 const MAX_CDP_MESSAGE_BYTES = 8 * 1024 * 1024;
 
-export async function listPages(
-	options: { signal?: AbortSignal; waitMs?: number; webMcpOwner?: object } = {},
-) {
+interface PageOperationOptions {
+	sessionOwner?: object;
+	signal?: AbortSignal;
+	waitMs?: number;
+}
+
+export async function listPages(options: PageOperationOptions = {}) {
 	const waitMs = options.waitMs ?? DEFAULT_ENDPOINT_WAIT_MS;
-	await ensureDevToolsEndpoint(waitMs, options.signal, options.webMcpOwner);
+	await ensureDevToolsEndpoint(waitMs, options.signal, options.sessionOwner);
 	return withEndpointRetry(
 		async () => {
-			const pages = await fetchDevToolsJson<DevToolsPage[]>("/json/list", {
-				signal: options.signal,
-			});
+			const pages = await fetchDevToolsJson<DevToolsPage[]>(
+				"/json/list",
+				{ signal: options.signal },
+				options.sessionOwner,
+			);
 			return pages.filter((page) => page.type === "page" && page.webSocketDebuggerUrl);
 		},
 		waitMs,
@@ -69,18 +75,12 @@ export async function listPages(
 	);
 }
 
-export async function getPage(
-	pageId: string,
-	options: { signal?: AbortSignal; webMcpOwner?: object } = {},
-) {
+export async function getPage(pageId: string, options: PageOperationOptions = {}) {
 	const pages = await listPages(options);
 	return requirePage(pageId, pages);
 }
 
-export async function resolvePage(
-	pageId?: string,
-	options: { signal?: AbortSignal; webMcpOwner?: object } = {},
-) {
+export async function resolvePage(pageId?: string, options: PageOperationOptions = {}) {
 	const pages = await listPages(options);
 	if (pageId) return requirePage(pageId, pages);
 
@@ -88,7 +88,7 @@ export async function resolvePage(
 	if (!page) {
 		throw new Error(
 			[
-				`No Chrome pages found at ${devToolsEndpoint()}.`,
+				`No Chrome pages found at ${devToolsEndpoint(options.sessionOwner)}.`,
 				"Use chrome_devtools_navigate with a URL to create a page, or open a Chrome tab manually.",
 				launchHint(),
 			].join("\n"),
@@ -98,14 +98,17 @@ export async function resolvePage(
 	return page;
 }
 
-export async function resolvePageForNavigation(pageId?: string) {
-	const pages = await listPages();
+export async function resolvePageForNavigation(
+	pageId?: string,
+	options: PageOperationOptions = {},
+) {
+	const pages = await listPages(options);
 	if (pageId) return { created: false, page: requirePage(pageId, pages) };
 
 	const page = resolveDefaultPage(pages);
 	if (page) return { created: false, page };
 
-	return { created: true, page: await createPage("about:blank") };
+	return { created: true, page: await createPage("about:blank", options) };
 }
 
 function resolveDefaultPage(pages: DevToolsPage[]) {
@@ -133,18 +136,16 @@ function requirePage(pageId: string, pages: DevToolsPage[]) {
 	);
 }
 
-export async function createPage(
-	url: string,
-	options: { signal?: AbortSignal; waitMs?: number } = {},
-) {
+export async function createPage(url: string, options: PageOperationOptions = {}) {
 	const waitMs = options.waitMs ?? DEFAULT_ENDPOINT_WAIT_MS;
-	await ensureDevToolsEndpoint(waitMs, options.signal);
+	await ensureDevToolsEndpoint(waitMs, options.signal, options.sessionOwner);
 	const page = await withEndpointRetry(
 		() =>
-			fetchDevToolsJson<DevToolsPage>(`/json/new?${encodeURIComponent(url)}`, {
-				method: "PUT",
-				signal: options.signal,
-			}),
+			fetchDevToolsJson<DevToolsPage>(
+				`/json/new?${encodeURIComponent(url)}`,
+				{ method: "PUT", signal: options.signal },
+				options.sessionOwner,
+			),
 		waitMs,
 		options.signal,
 	);
@@ -418,7 +419,14 @@ export class CdpClient {
 		}
 		const buffer = this.#eventBuffers.get(event.method) ?? [];
 		buffer.push(event.params);
-		if (buffer.length > MAX_BUFFERED_EVENTS_PER_METHOD) buffer.shift();
+		if (buffer.length > MAX_BUFFERED_EVENTS_PER_METHOD) {
+			this.close(
+				new Error(
+					`Chrome DevTools WebSocket buffered more than ${MAX_BUFFERED_EVENTS_PER_METHOD} ${event.method} events`,
+				),
+			);
+			return;
+		}
 		this.#eventBuffers.set(event.method, buffer);
 	}
 

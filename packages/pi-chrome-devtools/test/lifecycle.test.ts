@@ -310,15 +310,16 @@ test("session_shutdown clears status and releases an owned browser once", async 
 				removed.push(target);
 			},
 		});
+		const mock = createMockPi();
+		const { ctx, statuses } = createMockContext();
 		state.managedBrowser = {
 			process: child as unknown as ChildProcess,
 			userDataDir: "/tmp/lifecycle-profile",
 			exited: false,
 			ready: true,
 			ownerGeneration: state.sessionGeneration,
+			sessionOwner: sessionOwner(ctx),
 		};
-		const mock = createMockPi();
-		const { ctx, statuses } = createMockContext();
 		chromeDevtools(mock.pi);
 		const webMcpOperation = beginWebMcpOperation(sessionOwner(ctx));
 		try {

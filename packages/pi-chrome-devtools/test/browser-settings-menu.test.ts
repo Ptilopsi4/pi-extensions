@@ -283,6 +283,7 @@ test("a successful browser setting closes only the extension-owned managed brows
 			exited: false,
 			ready: true,
 			ownerGeneration: generation,
+			sessionOwner: sessionOwner(ctx),
 		};
 		const running = showChromeDevtoolsBrowserSettings(createMockPi().pi, ctx, generation);
 		await tui.waitForOpen();

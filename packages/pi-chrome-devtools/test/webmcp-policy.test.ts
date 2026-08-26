@@ -93,6 +93,30 @@ test("rejects page-controlled regex schemas without confusing property names for
 	);
 });
 
+test("rejects combinatorial schemas before synchronous input validation", () => {
+	const branches = Array.from({ length: 2_600 }, () => ({ $ref: "#/$defs/x" }));
+	assert.throws(
+		() =>
+			descriptor({
+				schema: {
+					$defs: { x: { type: "array", items: { type: "number" } } },
+					oneOf: branches,
+				},
+			}),
+		/validation branch limit of 128/u,
+	);
+	assert.doesNotThrow(() =>
+		descriptor({
+			schema: {
+				oneOf: [
+					{ type: "object", properties: { value: { type: "string" } } },
+					{ type: "object", properties: { value: { type: "number" } } },
+				],
+			},
+		}),
+	);
+});
+
 test("identity validation rejects stale session, page, origin, schema, and annotation state", () => {
 	const tool = descriptor({ annotations: { readOnly: true } });
 	assert.equal(requireMatchingWebMcpTool([tool], webMcpIdentity(tool)), tool);

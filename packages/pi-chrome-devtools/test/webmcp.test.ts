@@ -19,6 +19,7 @@ interface ScenarioTool {
 }
 
 interface Scenario {
+	currentPageTitle?: () => string;
 	currentPageUrl?: () => string;
 	onPageLookup?: (lookupIndex: number) => void;
 	protocolAvailable?: boolean;
@@ -90,7 +91,7 @@ async function withScenario<T>(
 					{
 						id: PAGE_ID,
 						type: "page",
-						title: "Example",
+						title: scenario.currentPageTitle?.() ?? "Example",
 						url: scenario.currentPageUrl?.() ?? PAGE_URL,
 						webSocketDebuggerUrl: `ws://127.0.0.1/devtools/page/${PAGE_ID}`,
 					},
@@ -220,6 +221,51 @@ test("reports unsupported browsers and malformed WebMCP protocol events", async 
 				executeWebMcpListTool({}, undefined, approvingContext().ctx),
 				/malformed WebMCP\.toolsAdded/u,
 			);
+		},
+	);
+});
+
+test("sanitizes page-resolution failures before returning tool errors", async () => {
+	await withScenario(
+		{
+			currentPageTitle: () => "malicious\u001b]8;;https://evil\u0007title\u202e",
+			currentPageUrl: () => "https://example.test/\u001b[31mred",
+		},
+		async () => {
+			const stalePageId = "missing\u001b]8;;https://evil\u0007page\u202e";
+			const { ctx } = approvingContext();
+			const operations = [
+				() => executeWebMcpListTool({ pageId: stalePageId }, undefined, ctx),
+				() =>
+					executeWebMcpCallTool(
+						{
+							documentId: "loader-1",
+							frameId: FRAME_ID,
+							frameOrigin: "https://example.test",
+							input: {},
+							pageId: stalePageId,
+							schemaDigest: "0".repeat(64),
+							sessionGeneration: "0:0",
+							toolName: defaultTool.name,
+						},
+						undefined,
+						ctx,
+					),
+			];
+			for (const operation of operations) {
+				let caught: unknown;
+				try {
+					await operation();
+				} catch (error) {
+					caught = error;
+				}
+				assert.ok(caught instanceof Error);
+				assert.match(caught.message, /Chrome DevTools page not found/u);
+				assert.match(caught.message, /malicioustitle�/u);
+				for (const control of ["\u001b", "\u0007", "\u202e"]) {
+					assert.equal(caught.message.includes(control), false);
+				}
+			}
 		},
 	);
 });

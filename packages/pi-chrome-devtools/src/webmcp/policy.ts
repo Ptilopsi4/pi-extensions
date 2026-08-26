@@ -17,6 +17,7 @@ const MAX_OUTPUT_BYTES = 1024 * 1024;
 const MAX_JSON_DEPTH = 32;
 const MAX_JSON_NODES = 10_000;
 const MAX_OUTPUT_NODES = 100_000;
+const MAX_SCHEMA_VALIDATION_BRANCHES = 128;
 
 export interface WebMcpToolDescriptor {
 	annotations: WebMcpProtocolAnnotation;
@@ -74,6 +75,7 @@ export function normalizeWebMcpTool(
 		maxDepth: MAX_JSON_DEPTH,
 		maxNodes: MAX_JSON_NODES,
 	});
+	rejectExpensiveValidationSchema(canonicalSchema);
 	const annotations = canonicalAnnotations(tool.annotations);
 	const schemaDigest = createHash("sha256")
 		.update(canonicalStringify({ inputSchema: canonicalSchema, annotations }))
@@ -300,6 +302,29 @@ function rejectRegexBearingSchema(schema: unknown): void {
 		if (!isRecord(schema[keyword])) continue;
 		for (const child of Object.values(schema[keyword])) rejectRegexBearingSchema(child);
 	}
+}
+
+function rejectExpensiveValidationSchema(schema: unknown) {
+	let branches = 0;
+	const visit = (candidate: unknown): void => {
+		if (Array.isArray(candidate)) {
+			for (const child of candidate) visit(child);
+			return;
+		}
+		if (!isRecord(candidate)) return;
+		for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
+			const alternatives = candidate[keyword];
+			if (!Array.isArray(alternatives)) continue;
+			branches += alternatives.length;
+			if (branches > MAX_SCHEMA_VALIDATION_BRANCHES) {
+				throw new Error(
+					`WebMCP input schema exceeds the validation branch limit of ${MAX_SCHEMA_VALIDATION_BRANCHES}.`,
+				);
+			}
+		}
+		for (const child of Object.values(candidate)) visit(child);
+	};
+	visit(schema);
 }
 
 interface JsonLimits {

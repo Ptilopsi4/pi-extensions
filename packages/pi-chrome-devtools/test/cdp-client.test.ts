@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { CdpClient, type CdpWebSocketConstructor } from "../src/cdp-client.js";
+import { enableWebMcp } from "../src/webmcp/protocol.js";
 
 class FakeWebSocket extends EventTarget {
 	closeCalls = 0;
@@ -150,6 +151,17 @@ test("buffers an event that arrives before its command response", async () => {
 	client.close();
 });
 
+test("owns an inventory waiter rejection before the enable command settles", async () => {
+	const { client, socket } = await connectClient();
+	const enabled = enableWebMcp(client, new AbortController().signal);
+	socket.message({ method: "WebMCP.toolsAdded", params: { tools: "malformed" } });
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	socket.respond({});
+
+	await assert.rejects(enabled, /malformed WebMCP\.toolsAdded/u);
+	client.close();
+});
+
 test("times out and aborts bounded event listeners without affecting later events", async () => {
 	const { client, socket } = await connectClient();
 	await assert.rejects(
@@ -212,6 +224,25 @@ test("an oversized unsolicited event closes a waiter-free socket", async () => {
 
 	assert.equal(socket.closeCalls, 1);
 	assert.throws(() => client.send("Page.enable"), /WebSocket is closed/u);
+});
+
+test("event floods fail closed instead of evicting earlier identity changes", async () => {
+	const { client, socket } = await connectClient();
+	const command = client.send("Page.getFrameTree", {}, { timeoutMs: 100 });
+	socket.message({
+		method: "WebMCP.toolsRemoved",
+		params: { tools: [{ frameId: "selected-frame", name: "selected-tool" }] },
+	});
+	for (let index = 0; index < 32; index += 1) {
+		socket.message({
+			method: "WebMCP.toolsRemoved",
+			params: { tools: [{ frameId: `other-${index}`, name: `other-${index}` }] },
+		});
+	}
+
+	await assert.rejects(command, /buffered more than 32 WebMCP\.toolsRemoved events/u);
+	assert.equal(socket.closeCalls, 1);
+	assert.throws(() => client.send("WebMCP.invokeTool"), /WebSocket is closed/u);
 });
 
 test("close is idempotent and rejects every pending command and event", async () => {

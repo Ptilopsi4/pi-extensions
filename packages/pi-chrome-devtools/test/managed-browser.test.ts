@@ -6,6 +6,7 @@ import {
 	buildManagedBrowserLaunchArguments,
 	classifyExtensionBrowserVersion,
 	ensureDevToolsEndpoint,
+	managedBrowserForOwner,
 	setBrowserManagerOperationsForTests,
 	shutdownManagedBrowser,
 } from "../src/browser-manager.js";
@@ -268,7 +269,7 @@ test("caller cancellation leaves the shared managed-browser launch available to 
 	const caller = new AbortController();
 	const owner = {};
 	try {
-		const first = ensureDevToolsEndpoint(undefined, caller.signal);
+		const first = ensureDevToolsEndpoint(undefined, caller.signal, owner);
 		await readinessStarted;
 		const second = ensureDevToolsEndpoint(undefined, undefined, owner);
 		caller.abort(new Error("first caller cancelled"));
@@ -276,14 +277,71 @@ test("caller cancellation leaves the shared managed-browser launch available to 
 		releaseReadiness?.();
 		await second;
 		assert.equal(calls.spawn.length, 1);
-		assert.equal(state.managedBrowser?.ready, true);
+		assert.equal(managedBrowserForOwner(owner)?.ready, true);
 		const operation = beginWebMcpOperation(owner);
-		await shutdownManagedBrowser();
+		await shutdownManagedBrowser(undefined, { owner });
 		assert.equal(operation.signal.aborted, true);
 		operation.dispose();
 	} finally {
 		releaseReadiness?.();
-		await shutdownManagedBrowser();
+		await shutdownManagedBrowser(undefined, { owner });
+		restore();
+	}
+});
+
+test("managed browsers and shutdown stay scoped to each session manager", async () => {
+	resetRuntime();
+	const firstOwner = {};
+	const secondOwner = {};
+	const children = [new FakeChildProcess(), new FakeChildProcess()];
+	let profileIndex = 0;
+	let spawnIndex = 0;
+	const removed: string[] = [];
+	const restore = setBrowserManagerOperationsForTests({
+		access: async () => undefined,
+		inspectBrowserVersion: async () => "Chromium 149.0.0.0",
+		mkdtemp: async () => `/tmp/session-profile-${++profileIndex}`,
+		readFile: async (filePath) =>
+			filePath.includes("session-profile-1")
+				? "9333\n/devtools/browser/first\n"
+				: "9444\n/devtools/browser/second\n",
+		rm: async (target) => {
+			removed.push(target);
+		},
+		fetch: async () =>
+			new Response(JSON.stringify({ Browser: "Chrome/149" }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		spawn: () => {
+			const child = children[spawnIndex++];
+			assert.ok(child);
+			queueMicrotask(() => child.emit("spawn"));
+			return child as unknown as ChildProcess;
+		},
+	});
+	try {
+		await ensureDevToolsEndpoint(undefined, undefined, firstOwner);
+		await ensureDevToolsEndpoint(undefined, undefined, secondOwner);
+		assert.notEqual(managedBrowserForOwner(firstOwner), managedBrowserForOwner(secondOwner));
+		assert.equal(managedBrowserForOwner(firstOwner)?.port, 9333);
+		assert.equal(managedBrowserForOwner(secondOwner)?.port, 9444);
+
+		const firstOperation = beginWebMcpOperation(firstOwner);
+		const secondOperation = beginWebMcpOperation(secondOwner);
+		await shutdownManagedBrowser(undefined, { owner: firstOwner });
+		assert.equal(children[0]?.killCalls.length, 1);
+		assert.equal(children[1]?.killCalls.length, 0);
+		assert.equal(firstOperation.signal.aborted, true);
+		assert.equal(secondOperation.signal.aborted, false);
+		assert.equal(managedBrowserForOwner(firstOwner), undefined);
+		assert.equal(managedBrowserForOwner(secondOwner)?.ready, true);
+		assert.deepEqual(removed, ["/tmp/session-profile-1"]);
+		firstOperation.dispose();
+		secondOperation.dispose();
+	} finally {
+		await shutdownManagedBrowser(undefined, { owner: firstOwner });
+		await shutdownManagedBrowser(undefined, { owner: secondOwner });
 		restore();
 	}
 });

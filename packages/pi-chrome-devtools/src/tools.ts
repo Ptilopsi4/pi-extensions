@@ -21,9 +21,9 @@ export const listPagesTool = defineTool({
 	parameters: Type.Object({}),
 	renderCall: renderToolCall("list pages"),
 	renderResult: renderTextResult,
-	async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+	async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
 		return withStatus(ctx, "list pages", async () => {
-			const pages = await listPages();
+			const pages = await listPages({ sessionOwner: ctx.sessionManager, signal });
 			return textResult(JSON.stringify(pages.map(formatPage), null, 2), { pages });
 		});
 	},
@@ -38,9 +38,9 @@ export const selectPageTool = defineTool({
 	}),
 	renderCall: renderToolCall("select page"),
 	renderResult: renderTextResult,
-	async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 		return withStatus(ctx, "select page", async () => {
-			const page = await getPage(params.pageId);
+			const page = await getPage(params.pageId, { sessionOwner: ctx.sessionManager, signal });
 			state.activePageId = page.id;
 			return textResult(`Selected page ${page.id}: ${page.title}\n${page.url}`, {
 				page: formatPage(page),
@@ -62,9 +62,12 @@ export const navigateTool = defineTool({
 	}),
 	renderCall: renderToolCall("navigate"),
 	renderResult: renderTextResult,
-	async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 		return withStatus(ctx, "navigate", async () => {
-			const { created, page } = await resolvePageForNavigation(params.pageId);
+			const { created, page } = await resolvePageForNavigation(params.pageId, {
+				sessionOwner: ctx.sessionManager,
+				signal,
+			});
 			const result = await withCdp(page, async (client) => {
 				await client.send("Page.enable");
 				return client.send("Page.navigate", { url: params.url });
@@ -96,9 +99,12 @@ export const evaluateTool = defineTool({
 	}),
 	renderCall: renderToolCall("evaluate"),
 	renderResult: renderTextResult,
-	async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 		return withStatus(ctx, "evaluate", async () => {
-			const page = await resolvePage(params.pageId);
+			const page = await resolvePage(params.pageId, {
+				sessionOwner: ctx.sessionManager,
+				signal,
+			});
 			const result = await withCdp(page, (client) =>
 				client.send("Runtime.evaluate", {
 					expression: params.expression,
@@ -202,7 +208,10 @@ export const screenshotTool = defineTool({
 	renderResult: renderScreenshotResult,
 	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 		return withStatus(ctx, "screenshot", async () => {
-			const page = await resolvePage(params.pageId);
+			const page = await resolvePage(params.pageId, {
+				sessionOwner: ctx.sessionManager,
+				signal,
+			});
 			const result = await withCdp(page, async (client) => {
 				throwIfAborted(signal);
 				await client.send("Page.enable");

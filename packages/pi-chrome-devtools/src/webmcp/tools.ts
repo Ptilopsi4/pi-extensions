@@ -1,9 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { managedBrowserForOwner } from "../browser-manager.js";
 import { getPage, resolvePage, textResult } from "../cdp-client.js";
 import {
 	beginWebMcpOperation,
 	currentWebMcpGeneration,
-	state,
 	webMcpEnabled,
 	webMcpOperationIsCurrent,
 	webMcpSessionSignal,
@@ -36,35 +36,37 @@ export async function executeWebMcpListTool(
 	toolSignal: AbortSignal | undefined,
 	ctx: ExtensionContext,
 ) {
-	requireWebMcpEnabled(ctx.sessionManager);
-	const preflightGeneration = currentWebMcpGeneration(ctx.sessionManager);
-	const preflightSignal = combinedSignal(ctx.sessionManager, toolSignal);
-	preflightSignal.throwIfAborted();
-	const page = await resolvePage(params.pageId, {
-		signal: preflightSignal,
-		webMcpOwner: ctx.sessionManager,
-	});
-	preflightSignal.throwIfAborted();
-	requireCurrentPreflight(ctx.sessionManager, preflightGeneration);
-	const operation = beginWebMcpOperation(ctx.sessionManager, toolSignal);
 	try {
-		const tools = await discoverWebMcpTools(page, operation);
-		assertCurrent(operation);
-		const published = boundedWebMcpDiscovery(
-			{ id: page.id, title: page.title, url: page.url },
-			tools,
-		);
-		return textResult(published.text, {
-			page: { id: page.id, url: page.url },
-			toolCount: tools.length,
-			publishedToolCount: published.included.length,
-			truncated: published.truncated,
-			identities: published.included.map(webMcpIdentity),
+		requireWebMcpEnabled(ctx.sessionManager);
+		const preflightGeneration = currentWebMcpGeneration(ctx.sessionManager);
+		const preflightSignal = combinedSignal(ctx.sessionManager, toolSignal);
+		preflightSignal.throwIfAborted();
+		const page = await resolvePage(params.pageId, {
+			sessionOwner: ctx.sessionManager,
+			signal: preflightSignal,
 		});
+		preflightSignal.throwIfAborted();
+		requireCurrentPreflight(ctx.sessionManager, preflightGeneration);
+		const operation = beginWebMcpOperation(ctx.sessionManager, toolSignal);
+		try {
+			const tools = await discoverWebMcpTools(page, operation);
+			assertCurrent(operation);
+			const published = boundedWebMcpDiscovery(
+				{ id: page.id, title: page.title, url: page.url },
+				tools,
+			);
+			return textResult(published.text, {
+				page: { id: page.id, url: page.url },
+				toolCount: tools.length,
+				publishedToolCount: published.included.length,
+				truncated: published.truncated,
+				identities: published.included.map(webMcpIdentity),
+			});
+		} finally {
+			operation.dispose();
+		}
 	} catch (error) {
 		throw safeToolError(error);
-	} finally {
-		operation.dispose();
 	}
 }
 
@@ -73,55 +75,62 @@ export async function executeWebMcpCallTool(
 	toolSignal: AbortSignal | undefined,
 	ctx: ExtensionContext,
 ) {
-	requireWebMcpEnabled(ctx.sessionManager);
-	if (!ctx.hasUI || (ctx.mode !== "tui" && ctx.mode !== "rpc")) {
-		throw new Error(
-			"chrome_devtools_webmcp_call_tool requires observable confirmation in TUI or RPC mode and is unavailable in print or JSON mode.",
-		);
-	}
-	const input = normalizeWebMcpInput(params.input);
-	const expected = expectedIdentity(params);
-	const preflightGeneration = currentWebMcpGeneration(ctx.sessionManager);
-	const preflightSignal = combinedSignal(ctx.sessionManager, toolSignal);
-	preflightSignal.throwIfAborted();
-	const page = await getPage(params.pageId, {
-		signal: preflightSignal,
-		webMcpOwner: ctx.sessionManager,
-	});
-	preflightSignal.throwIfAborted();
-	requireCurrentPreflight(ctx.sessionManager, preflightGeneration);
-	const operation = beginWebMcpOperation(ctx.sessionManager, toolSignal);
 	try {
-		const discovered = await discoverWebMcpTools(page, operation);
-		const current = requireMatchingWebMcpTool(discovered, expected);
-		const validatedInput = validateWebMcpInput(current.inputSchema, input);
-		assertCurrent(operation);
-		const confirmed = await ctx.ui.confirm(
-			`Allow WebMCP tool: ${sanitizeWebMcpDisplay(current.name, 256)}`,
-			webMcpConfirmationMessage(current, validatedInput, usesManagedProfile()),
-			{ signal: operation.signal },
-		);
-		assertCurrent(operation);
-		if (!confirmed) {
-			throw new DOMException("WebMCP tool call cancelled by the user.", "AbortError");
+		requireWebMcpEnabled(ctx.sessionManager);
+		if (!ctx.hasUI || (ctx.mode !== "tui" && ctx.mode !== "rpc")) {
+			throw new Error(
+				"chrome_devtools_webmcp_call_tool requires observable confirmation in TUI or RPC mode and is unavailable in print or JSON mode.",
+			);
 		}
-		const invocation = await invokeDiscoveredWebMcpTool(page, expected, validatedInput, operation);
-		assertCurrent(operation);
-		const published = boundedWebMcpJson({
-			status: "completed",
-			tool: webMcpIdentity(invocation.tool),
-			output: invocation.output,
+		const input = normalizeWebMcpInput(params.input);
+		const expected = expectedIdentity(params);
+		const preflightGeneration = currentWebMcpGeneration(ctx.sessionManager);
+		const preflightSignal = combinedSignal(ctx.sessionManager, toolSignal);
+		preflightSignal.throwIfAborted();
+		const page = await getPage(params.pageId, {
+			sessionOwner: ctx.sessionManager,
+			signal: preflightSignal,
 		});
-		return textResult(published.text, {
-			invocationId: invocation.invocationId,
-			tool: webMcpIdentity(invocation.tool),
-			truncated: published.truncated,
-			output: published.text,
-		});
+		preflightSignal.throwIfAborted();
+		requireCurrentPreflight(ctx.sessionManager, preflightGeneration);
+		const operation = beginWebMcpOperation(ctx.sessionManager, toolSignal);
+		try {
+			const discovered = await discoverWebMcpTools(page, operation);
+			const current = requireMatchingWebMcpTool(discovered, expected);
+			const validatedInput = validateWebMcpInput(current.inputSchema, input);
+			assertCurrent(operation);
+			const confirmed = await ctx.ui.confirm(
+				`Allow WebMCP tool: ${sanitizeWebMcpDisplay(current.name, 256)}`,
+				webMcpConfirmationMessage(current, validatedInput, usesManagedProfile(ctx.sessionManager)),
+				{ signal: operation.signal },
+			);
+			assertCurrent(operation);
+			if (!confirmed) {
+				throw new DOMException("WebMCP tool call cancelled by the user.", "AbortError");
+			}
+			const invocation = await invokeDiscoveredWebMcpTool(
+				page,
+				expected,
+				validatedInput,
+				operation,
+			);
+			assertCurrent(operation);
+			const published = boundedWebMcpJson({
+				status: "completed",
+				tool: webMcpIdentity(invocation.tool),
+				output: invocation.output,
+			});
+			return textResult(published.text, {
+				invocationId: invocation.invocationId,
+				tool: webMcpIdentity(invocation.tool),
+				truncated: published.truncated,
+				output: published.text,
+			});
+		} finally {
+			operation.dispose();
+		}
 	} catch (error) {
 		throw safeToolError(error);
-	} finally {
-		operation.dispose();
 	}
 }
 
@@ -167,8 +176,9 @@ function assertCurrent(operation: ReturnType<typeof beginWebMcpOperation>) {
 	}
 }
 
-function usesManagedProfile() {
-	return Boolean(state.managedBrowser?.ready && !state.managedBrowser.exited);
+function usesManagedProfile(owner: object) {
+	const managedBrowser = managedBrowserForOwner(owner);
+	return Boolean(managedBrowser?.ready && !managedBrowser.exited);
 }
 
 function safeToolError(error: unknown) {

@@ -47,9 +47,13 @@ const REQUIRED_COMMANDS = ["enable", "disable", "invokeTool", "cancelInvocation"
 const REQUIRED_EVENTS = ["toolsAdded", "toolsRemoved", "toolInvoked", "toolResponded"];
 const IDENTITY_WATCH_TIMEOUT_MS = DEFAULT_TIMEOUT_MS * 4;
 
-export async function requireWebMcpDomain(signal: AbortSignal) {
+export async function requireWebMcpDomain(signal: AbortSignal, owner: object) {
 	signal.throwIfAborted();
-	const protocol = await fetchDevToolsJson<ProtocolDescription>("/json/protocol", { signal });
+	const protocol = await fetchDevToolsJson<ProtocolDescription>(
+		"/json/protocol",
+		{ signal },
+		owner,
+	);
 	signal.throwIfAborted();
 	const domain = findDomain(protocol.domains, "WebMCP");
 	if (
@@ -87,25 +91,31 @@ export async function enableWebMcpIdentityTracking(client: CdpClient, signal: Ab
 export async function enableWebMcp(client: CdpClient, signal: AbortSignal) {
 	const eventController = new AbortController();
 	const eventSignal = AbortSignal.any([signal, eventController.signal]);
-	const toolsAdded = client.waitForEvent(
-		"WebMCP.toolsAdded",
-		(value): value is { tools: WebMcpProtocolTool[] } => {
-			const parsed = parseToolsAdded(value);
-			if (!parsed) throw new Error("Chrome sent a malformed WebMCP.toolsAdded event");
-			return true;
-		},
-		{ signal: eventSignal, timeoutMs: DEFAULT_TIMEOUT_MS },
-	);
+	const toolsAdded = client
+		.waitForEvent(
+			"WebMCP.toolsAdded",
+			(value): value is { tools: WebMcpProtocolTool[] } => {
+				const parsed = parseToolsAdded(value);
+				if (!parsed) throw new Error("Chrome sent a malformed WebMCP.toolsAdded event");
+				return true;
+			},
+			{ signal: eventSignal, timeoutMs: DEFAULT_TIMEOUT_MS },
+		)
+		.then(
+			(value) => ({ ok: true as const, value }),
+			(error: unknown) => ({ error, ok: false as const }),
+		);
 	try {
 		await client.send("WebMCP.enable", {}, { signal, timeoutMs: DEFAULT_TIMEOUT_MS });
 	} catch (error) {
 		eventController.abort();
-		await toolsAdded.catch(() => undefined);
+		await toolsAdded;
 		throw error;
 	}
 	try {
-		const event = await toolsAdded;
-		const parsed = parseToolsAdded(event);
+		const result = await toolsAdded;
+		if (!result.ok) throw result.error;
+		const parsed = parseToolsAdded(result.value);
 		if (!parsed) throw new Error("Chrome sent a malformed WebMCP.toolsAdded event");
 		return parsed.tools;
 	} finally {

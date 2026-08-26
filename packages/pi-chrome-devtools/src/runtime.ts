@@ -57,8 +57,8 @@ export interface ManagedBrowser {
 	exited: boolean;
 	ready: boolean;
 	ownerGeneration: number;
+	sessionOwner?: object;
 	cleanupPromise?: Promise<void>;
-	webMcpOwners?: Set<object>;
 }
 
 export interface BrowserLaunchAttempt {

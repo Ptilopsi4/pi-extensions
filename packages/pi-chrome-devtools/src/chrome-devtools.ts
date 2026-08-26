@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { shutdownManagedBrowser } from "./browser-manager.js";
+import { shutdownManagedBrowser, startManagedBrowserSession } from "./browser-manager.js";
 import {
 	availableChromeDevtoolsTools,
 	configureChromeDevtoolsToolExposure,
@@ -92,7 +92,11 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 		state.shuttingDown = false;
 		state.settingsNotice = undefined;
 		ctx.ui.setStatus(STATUS_KEY, undefined);
-		await shutdownManagedBrowser();
+		await shutdownManagedBrowser(undefined, {
+			cancelLaunch: true,
+			owner: ctx.sessionManager,
+		});
+		startManagedBrowserSession(ctx.sessionManager);
 		if (generation !== state.sessionGeneration) return;
 		state.activePageId = undefined;
 		state.lastLaunchAttempt = undefined;
@@ -133,7 +137,10 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 		replaceSessionController("Chrome DevTools session shut down");
 		invalidateWebMcpOperations(ctx.sessionManager, "Chrome DevTools session shut down");
 		ctx.ui.setStatus(STATUS_KEY, undefined);
-		const browserShutdown = shutdownManagedBrowser(undefined, { cancelLaunch: true });
+		const browserShutdown = shutdownManagedBrowser(undefined, {
+			cancelLaunch: true,
+			owner: ctx.sessionManager,
+		});
 		await waitForChromeDevtoolsSettings();
 		await waitForSettingsWrites();
 		await browserShutdown;
