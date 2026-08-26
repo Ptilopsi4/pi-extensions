@@ -10,8 +10,10 @@ import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import { showChromeDevtoolsBrowserSettings } from "../src/browser-settings-menu.js";
 import chromeDevtools from "../src/chrome-devtools.js";
-import { DEFAULT_HOST, DEFAULT_PORT, state } from "../src/runtime.js";
+import { initializeAvailableChromeDevtoolsTools } from "../src/lazy-tools.js";
+import { beginWebMcpOperation, DEFAULT_HOST, DEFAULT_PORT, state } from "../src/runtime.js";
 import { projectSettingsFilePath, settingsFilePath } from "../src/settings.js";
+import { CHROME_DEVTOOLS_TOOL_NAMES, WEBMCP_TOOL_NAMES } from "../src/tool-names.js";
 
 class OwnedBrowserChild extends EventEmitter {
 	killCalls = 0;
@@ -50,6 +52,9 @@ function resetBrowserRuntimeState() {
 	state.launchPromise = undefined;
 	state.lastLaunchAttempt = undefined;
 	state.settingsNotice = undefined;
+	state.webMcpEnabled = false;
+	state.webMcpGeneration += 1;
+	state.webMcpOperationControllers.clear();
 }
 
 async function withBrowserSettingsMenu(
@@ -103,7 +108,7 @@ test("browser settings save endpoint and auto-launch immediately while preservin
 			settingsFilePath(),
 			'{"future":{"kept":true},"browser":{"futureBrowserField":"kept"}}\n',
 		);
-		const running = showChromeDevtoolsBrowserSettings(ctx, generation);
+		const running = showChromeDevtoolsBrowserSettings(createMockPi().pi, ctx, generation);
 		await tui.waitForOpen();
 		const initial = tui.render().join("\n");
 		assert.match(initial, /Browser settings/);
@@ -149,10 +154,69 @@ test("browser settings save endpoint and auto-launch immediately while preservin
 	});
 });
 
+test("WebMCP settings toggle the experimental gate, tool exposure, and active operations", async () => {
+	await withBrowserSettingsMenu(async ({ ctx, notifications, tui, generation }) => {
+		const mockPi = createMockPi({ activeTools: ["other_tool", ...CHROME_DEVTOOLS_TOOL_NAMES] });
+		initializeAvailableChromeDevtoolsTools(mockPi.pi);
+		const running = showChromeDevtoolsBrowserSettings(mockPi.pi, ctx, generation);
+		await tui.waitForOpen();
+		assert.match(tui.render().join("\n"), /WebMCP · Experimental\s+Off/);
+		for (let index = 0; index < 3; index += 1) tui.press("tui.select.down");
+		tui.press("tui.select.confirm");
+		await tui.waitForPending();
+		await tui.waitForOpen();
+
+		assert.equal(state.webMcpEnabled, true);
+		assert.deepEqual((readSettings().webmcp as Record<string, unknown>).enabled, true);
+		assert.ok(WEBMCP_TOOL_NAMES.every((name) => mockPi.rawPi.getActiveTools().includes(name)));
+		assert.match(notifications.at(-1)?.message ?? "", /Experimental WebMCP enabled/i);
+
+		const operation = beginWebMcpOperation();
+		tui.press("tui.select.confirm");
+		await tui.waitForPending();
+		await tui.waitForOpen();
+		assert.equal(state.webMcpEnabled, false);
+		assert.equal(operation.signal.aborted, true);
+		assert.ok(WEBMCP_TOOL_NAMES.every((name) => !mockPi.rawPi.getActiveTools().includes(name)));
+		assert.match(notifications.at(-1)?.message ?? "", /WebMCP disabled/i);
+		operation.dispose();
+
+		tui.press("ctrl+c");
+		await running;
+	});
+});
+
+test("a failed WebMCP runtime transition restores the file, gate, and displayed value", async () => {
+	await withBrowserSettingsMenu(async ({ ctx, notifications, tui, generation }) => {
+		const mockPi = createMockPi({ activeTools: ["other_tool", ...CHROME_DEVTOOLS_TOOL_NAMES] });
+		initializeAvailableChromeDevtoolsTools(mockPi.pi);
+		const setActiveTools = mockPi.rawPi.setActiveTools.bind(mockPi.rawPi);
+		let failExposure = false;
+		mockPi.rawPi.setActiveTools = (names) => {
+			if (failExposure) throw new Error("injected exposure failure");
+			setActiveTools(names);
+		};
+		const running = showChromeDevtoolsBrowserSettings(mockPi.pi, ctx, generation);
+		await tui.waitForOpen();
+		for (let index = 0; index < 3; index += 1) tui.press("tui.select.down");
+		failExposure = true;
+		tui.press("tui.select.confirm");
+		await tui.waitForPending();
+		await tui.waitForOpen();
+
+		assert.equal(state.webMcpEnabled, false);
+		assert.equal((readSettings().webmcp as Record<string, unknown>).enabled, false);
+		assert.match(tui.render().join("\n"), /WebMCP · Experimental\s+Off/);
+		assert.match(notifications.at(-1)?.message ?? "", /save failed.*rollback failed/i);
+		tui.press("ctrl+c");
+		await running;
+	});
+});
+
 test("browser settings report the effective value when an environment override shadows a save", async () => {
 	await withBrowserSettingsMenu(async ({ ctx, notifications, tui, generation }) => {
 		process.env.PI_CHROME_DEVTOOLS_AUTO_LAUNCH = "1";
-		const running = showChromeDevtoolsBrowserSettings(ctx, generation);
+		const running = showChromeDevtoolsBrowserSettings(createMockPi().pi, ctx, generation);
 		await tui.waitForOpen();
 		tui.press("tui.select.down");
 		tui.press("tui.select.confirm");
@@ -184,7 +248,7 @@ test("a successful browser setting closes only the extension-owned managed brows
 			ready: true,
 			ownerGeneration: generation,
 		};
-		const running = showChromeDevtoolsBrowserSettings(ctx, generation);
+		const running = showChromeDevtoolsBrowserSettings(createMockPi().pi, ctx, generation);
 		await tui.waitForOpen();
 		tui.press("tui.select.down");
 		tui.press("tui.select.confirm");
@@ -203,7 +267,7 @@ test("browser settings edit and reset the executable through the same user JSON"
 	await withBrowserSettingsMenu(async ({ directory, ctx, tui, generation }) => {
 		const executable = path.join(directory, "chrome-for-testing");
 		writeFileSync(executable, "browser");
-		const running = showChromeDevtoolsBrowserSettings(ctx, generation);
+		const running = showChromeDevtoolsBrowserSettings(createMockPi().pi, ctx, generation);
 		await tui.waitForOpen();
 		tui.press("tui.select.down");
 		tui.press("tui.select.down");
@@ -235,14 +299,14 @@ test("browser settings edit and reset the executable through the same user JSON"
 
 test("browser settings cancellation and invalid files remain read-only", async () => {
 	await withBrowserSettingsMenu(async ({ ctx, tui, generation }) => {
-		const cancelled = showChromeDevtoolsBrowserSettings(ctx, generation);
+		const cancelled = showChromeDevtoolsBrowserSettings(createMockPi().pi, ctx, generation);
 		await tui.waitForOpen();
 		tui.press("tui.select.cancel");
 		assert.deepEqual(await cancelled, { closeParent: false });
 		assert.equal(existsSync(settingsFilePath()), false);
 
 		writeFileSync(settingsFilePath(), "{ invalid\n");
-		const invalid = showChromeDevtoolsBrowserSettings(ctx, generation);
+		const invalid = showChromeDevtoolsBrowserSettings(createMockPi().pi, ctx, generation);
 		await tui.waitForOpen();
 		assert.match(tui.render().join("\n"), /Read only/);
 		assert.match(tui.render().join("\n"), /invalid JSON/);
@@ -264,7 +328,7 @@ test("an invalid trusted project file warns without blocking user browser settin
 			custom: tui.custom,
 			isProjectTrusted: () => true,
 		});
-		const running = showChromeDevtoolsBrowserSettings(mock.ctx, generation);
+		const running = showChromeDevtoolsBrowserSettings(createMockPi().pi, mock.ctx, generation);
 		await tui.waitForOpen();
 		const rendered = tui.render().join("\n");
 		assert.match(rendered, /DevTools endpoint/);
@@ -290,7 +354,7 @@ test("an invalid trusted project file warns without blocking user browser settin
 
 test("a failed browser settings save restores the accepted value and retains the input draft", async () => {
 	await withBrowserSettingsMenu(async ({ ctx, notifications, tui, generation }) => {
-		const running = showChromeDevtoolsBrowserSettings(ctx, generation);
+		const running = showChromeDevtoolsBrowserSettings(createMockPi().pi, ctx, generation);
 		await tui.waitForOpen();
 		tui.press("tui.select.confirm");
 		await tui.waitForPending();
@@ -351,7 +415,7 @@ test("RPC browser settings use standard selectors and input without custom TUI",
 			},
 		});
 
-		await showChromeDevtoolsBrowserSettings(mock.ctx, generation);
+		await showChromeDevtoolsBrowserSettings(createMockPi().pi, mock.ctx, generation);
 
 		assert.equal(customCalls, 0);
 		assert.equal(

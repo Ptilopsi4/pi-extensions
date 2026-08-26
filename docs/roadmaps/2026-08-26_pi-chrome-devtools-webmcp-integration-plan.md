@@ -128,9 +128,9 @@ Do not add `promptSnippet` or `promptGuidelines` to the WebMCP gateway tools.
 
 The list tool should accept an optional `pageId` and default to the existing selected-or-first-page behavior.
 
-The list result should include page ID, frame ID, frame origin, tool name, title, description, input schema, annotations, and a deterministic schema digest.
+The list result should include session generation, page ID, frame ID, frame origin, tool name, optional title, description, input schema, annotations, and a deterministic schema-and-annotation digest.
 
-The call tool should accept page ID, frame ID, frame origin, tool name, schema digest, and a JSON object input.
+The call tool should accept session generation, page ID, frame ID, frame origin, tool name, schema digest, and a JSON object input.
 
 The call tool should rediscover the exact tool immediately before invocation and reject when its page, frame, origin, name, schema digest, or session generation changed.
 
@@ -252,53 +252,53 @@ Revalidate generation and target state after every `await` that can outlive navi
 
 ### Phase 1: Add event-aware CDP primitives
 
-- [ ] Extend `cdp-client.ts` with bounded event listeners, event-before-response handling, cancellation, and idempotent close behavior.
-- [ ] Add typed protocol guards for the experimental WebMCP domain without embedding a generated full CDP schema.
-- [ ] Add deterministic tests for connect failure, command failure, malformed events, event ordering, timeout, abort, repeated close, and target detachment.
-- [ ] Preserve every existing list, navigation, evaluation, and screenshot behavior.
+- [x] Extend `cdp-client.ts` with bounded event listeners, event-before-response handling, cancellation, and idempotent close behavior.
+- [x] Add typed protocol guards for the experimental WebMCP domain without embedding a generated full CDP schema.
+- [x] Add deterministic tests for connect failure, command failure, malformed events, event ordering, timeout, abort, repeated close, and target detachment.
+- [x] Preserve every existing list, navigation, evaluation, and screenshot behavior.
 
 **Exit criterion:** Existing Chrome DevTools tests remain green and a fake CDP target deterministically exercises one WebMCP command/event round trip.
 
 ### Phase 2: Implement discovery and invocation
 
-- [ ] Add frame-aware discovery through `WebMCP.enable` and `toolsAdded`.
-- [ ] Normalize bounded metadata and compute the schema digest.
-- [ ] Add call-time rediscovery and exact identity revalidation.
-- [ ] Invoke through `WebMCP.invokeTool` and correlate `toolResponded` by invocation ID.
-- [ ] Forward cancellation through `WebMCP.cancelInvocation` and close every operation-owned resource.
-- [ ] Register the two fixed gateway definitions without active-only prompt metadata.
+- [x] Add frame-aware discovery through `WebMCP.enable` and `toolsAdded`.
+- [x] Normalize bounded metadata and compute the schema-and-annotation digest.
+- [x] Add call-time rediscovery and exact identity revalidation.
+- [x] Invoke through `WebMCP.invokeTool` and correlate `toolResponded` by invocation ID.
+- [x] Forward cancellation through `WebMCP.cancelInvocation` and close every operation-owned resource.
+- [x] Register the two fixed gateway definitions without active-only prompt metadata.
 
 **Exit criterion:** Deterministic tests cover successful discovery, successful read-only and mutation calls, stale definitions, navigation, frame removal, tool removal, tool exceptions, browser cancellation, Pi cancellation, and output truncation.
 
 ### Phase 3: Add opt-in settings and safety UX
 
-- [ ] Extend settings normalization and persistence with user-only `webmcp.enabled`.
-- [ ] Add the experimental setting to the existing settings screen and status/help summaries.
-- [ ] Add both gateways to the availability menu, lazy loader search catalog, and active-tool transitions.
-- [ ] Require and revalidate confirmation for every page-provided tool call regardless of annotations.
-- [ ] Reject every WebMCP call safely in non-interactive modes.
-- [ ] Test invalid-file protection, unknown-field preservation, save ordering, rollback, project-scope rejection, reload, replacement, and shutdown.
+- [x] Extend settings normalization and persistence with user-only `webmcp.enabled`.
+- [x] Add the experimental setting to the existing settings screen and status/help summaries.
+- [x] Add both gateways to the availability menu, lazy loader search catalog, and active-tool transitions.
+- [x] Require and revalidate confirmation for every page-provided tool call regardless of annotations.
+- [x] Reject every WebMCP call safely in non-interactive modes.
+- [x] Test invalid-file protection, unknown-field preservation, save ordering, rollback, project-scope rejection, reload, replacement, and shutdown.
 
 **Exit criterion:** WebMCP remains absent from the effective capability set by default, explicit user enablement is durable, and disabling it aborts active work without affecting unrelated Chrome tools.
 
 ### Phase 4: Document, package, and smoke
 
-- [ ] Update the package README with browser requirements, tool usage, experimental warnings, security boundaries, local testing flags, Origin Trial behavior, and troubleshooting.
-- [ ] Update package keywords and changelog only when they improve discovery without implying general browser support.
-- [ ] Add a minor Changeset for the new opt-in published capability.
-- [ ] Build the generated runtime and validate every emitted relative import.
-- [ ] Exercise a generated lazy boundary through Pi's Jiti loader.
-- [ ] Pack the package and inspect the tarball.
-- [ ] Run an isolated package load smoke.
-- [ ] Run an opt-in live Chrome smoke against one official GoogleChromeLabs demo and one production origin-trial site when the environment supports it.
+- [x] Update the package README with browser requirements, tool usage, experimental warnings, security boundaries, local testing flags, Origin Trial behavior, and troubleshooting.
+- [x] Add the `webmcp` package keyword without implying general WebMCP browser support or manually editing the generated changelog.
+- [x] Add a minor Changeset for the new opt-in published capability.
+- [x] Build the generated runtime and validate every emitted relative import.
+- [x] Exercise a generated lazy boundary through Pi's Jiti loader.
+- [x] Pack the package and inspect the tarball.
+- [x] Run an isolated package load smoke.
+- [x] Run an opt-in live Chrome smoke against one official GoogleChromeLabs demo and one production origin-trial site.
 
 **Exit criterion:** Both repository gates, package build, generated-entry tests, package load, pack inspection, and documented live smoke evidence pass.
 
 ### Phase 5: Decide prototype retirement
 
-- [ ] Compare packaged discovery, invocation, cancellation, reload, managed dynamic endpoint, and browser shutdown evidence with the prototype evidence.
-- [ ] Confirm that no workflow still requires the project-local bridge.
-- [ ] Obtain an explicit follow-up decision before deleting or deprecating the predecessor.
+- [x] Compare packaged discovery, invocation, cancellation, reload, managed dynamic endpoint, and browser shutdown evidence with the prototype evidence.
+- [x] Confirm that no workflow still requires the project-local bridge; the packaged runtime owns the endpoint and the reference has no entrypoint.
+- [x] Retain the predecessor because no separate explicit deletion or deprecation decision was requested.
 
 **Exit criterion:** The predecessor is retained or removed through a separate explicit decision with migration evidence.
 
@@ -354,16 +354,30 @@ A future split that still shares one browser must first define an extension-neut
 
 Extract a reusable CDP library only after a second real consumer needs command/event transport independent of extension settings, selected-page state, and UI.
 
-## Plan-PR Scope
+## Implementation Evidence
 
-This plan PR intentionally includes only this document, `.pi/extensions/webmcp/cdp.ts`, its focused regression test, and the test's local Vitest configuration.
+The packaged implementation adds fixed `chrome_devtools_webmcp_list_tools` and `chrome_devtools_webmcp_call_tool` definitions, while the event-aware implementation remains behind a first-use dynamic import.
 
-The reference file records the proven prototype transport, cancellation, output parsing, and Chrome argument compatibility work.
+Deterministic package tests cover CDP connection and command failures, malformed messages, response/event ordering, timeouts, cancellation, repeated cleanup, target detachment, discovery, invocation, stale identities, navigation, frame changes, tool removal, exceptions, confirmation, non-interactive rejection, terminal safety, output limits, settings, exposure, reload, replacement, and shutdown.
 
-The focused regression test covers cancellation during discovery, the connection-readiness race, and independent post-readiness operation deadlines.
+The generated runtime build validates every emitted relative import and crosses the lazy WebMCP boundary through Pi's Jiti resource loader.
 
-The reference file has no committed project-local extension entrypoint in this PR and therefore is not an auto-discovered runnable extension by itself.
+The package dry-run contains the authoritative `src/webmcp/` modules and generated lazy chunks.
 
-This plan PR changes no package manifest, package runtime, settings behavior, active tool definition, generated output, or published behavior.
+An isolated RPC load smoke registers `/chrome-devtools` from `dist/index.ts` without extension errors.
 
-A Changeset is therefore not required for this plan PR.
+Chrome for Testing `151.0.7922.138` exposed `enable`, `disable`, `invokeTool`, and `cancelInvocation`, plus `toolsAdded`, `toolsRemoved`, `toolInvoked`, and `toolResponded`.
+
+The GoogleChromeLabs Pizza Maker smoke discovered seven tools and completed `set_pizza_style` with `{ "style": "Pesto" }`, returning `Changed pizza style to Pesto`.
+
+The World Monitor production smoke discovered two tools and completed `getWorldMonitorMcpEndpoint`, returning its authenticated Streamable HTTP endpoint metadata.
+
+The repository build, Biome, boundary, workspace typecheck, and full test gates pass with the implementation.
+
+## Implementation Scope
+
+The implementation changes the published `@narumitw/pi-chrome-devtools` runtime, settings, fixed tool catalog, menus, documentation, package keyword, generated-runtime verification, and deterministic tests.
+
+The minor Changeset is `.changeset/bright-browsers-connect.md`.
+
+The reviewed `.pi/extensions/webmcp/cdp.ts` prototype remains a non-entrypoint compatibility reference and is not auto-discovered.

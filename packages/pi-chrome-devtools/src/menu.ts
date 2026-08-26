@@ -4,7 +4,11 @@ import { browserLifecycleState, devToolsEndpoint, launchModeLabel } from "./brow
 import { availableChromeDevtoolsTools } from "./lazy-tools.js";
 import { state } from "./runtime.js";
 import { loadSettings, type SettingsLoadResult } from "./settings.js";
-import { CHROME_DEVTOOLS_TOOL_NAMES, type ChromeDevToolsToolName } from "./tool-names.js";
+import {
+	CHROME_DEVTOOLS_TOOL_NAMES,
+	type ChromeDevToolsToolName,
+	CORE_CHROME_DEVTOOLS_TOOL_NAMES,
+} from "./tool-names.js";
 import {
 	buildBrowserStatusMessage,
 	buildCommandGuide,
@@ -54,6 +58,14 @@ const TOOL_PRESENTATION: Record<ChromeDevToolsToolName, { label: string; descrip
 		label: "Capture a screenshot",
 		description: "Save a PNG of the selected page (chrome_devtools_screenshot).",
 	},
+	chrome_devtools_webmcp_list_tools: {
+		label: "List page WebMCP tools · Experimental",
+		description: "Discover page-provided WebMCP capabilities (chrome_devtools_webmcp_list_tools).",
+	},
+	chrome_devtools_webmcp_call_tool: {
+		label: "Call a page WebMCP tool · Experimental",
+		description: "Invoke a listed page tool after confirmation (chrome_devtools_webmcp_call_tool).",
+	},
 };
 
 export async function showChromeDevtoolsMenu(
@@ -84,13 +96,13 @@ export async function showChromeDevtoolsMenu(
 					{
 						id: "bulk",
 						label:
-							current.activeTools.length === CHROME_DEVTOOLS_TOOL_NAMES.length
+							current.activeTools.length === availableCatalogNames().length
 								? "Make all browser tools unavailable…"
 								: "Make all browser tools available…",
 						description:
-							current.activeTools.length === CHROME_DEVTOOLS_TOOL_NAMES.length
-								? "Preview 0 of 5; other active tools stay enabled."
-								: "Preview 5 of 5; other active tools stay enabled.",
+							current.activeTools.length === availableCatalogNames().length
+								? `Preview 0 of ${availableCatalogNames().length}; other active tools stay enabled.`
+								: `Preview ${availableCatalogNames().length} of ${availableCatalogNames().length}; other active tools stay enabled.`,
 						disabled: Boolean(current.mutationBlockedReason),
 						disabledReason: current.mutationBlockedReason,
 						action: "bulk",
@@ -143,9 +155,9 @@ export async function showChromeDevtoolsMenu(
 			},
 			bulk: async ({ state: current }) => {
 				const selectedTools =
-					current.activeTools.length === CHROME_DEVTOOLS_TOOL_NAMES.length
+					current.activeTools.length === availableCatalogNames().length
 						? []
-						: [...CHROME_DEVTOOLS_TOOL_NAMES];
+						: availableCatalogNames();
 				const result = await showChromeDevtoolsToolWorkflow(pi, ctx, generation, {
 					snapshot: current,
 					initialDraft: selectedTools,
@@ -157,7 +169,7 @@ export async function showChromeDevtoolsMenu(
 			settings: async () => {
 				const { showChromeDevtoolsBrowserSettings } = await import("./browser-settings-menu.js");
 				if (!isCurrent()) return { kind: "stay" };
-				const result = await showChromeDevtoolsBrowserSettings(ctx, generation);
+				const result = await showChromeDevtoolsBrowserSettings(pi, ctx, generation);
 				if (!isCurrent()) return { kind: "stay" };
 				return result.closeParent ? { kind: "close" } : { kind: "stay" };
 			},
@@ -204,9 +216,9 @@ export async function showChromeDevtoolsToolWorkflow(
 		screens: {
 			tools: ({ state: current }) => ({
 				kind: "multiSelect",
-				title: `Browser tools (${current.draft.size}/${CHROME_DEVTOOLS_TOOL_NAMES.length})`,
+				title: `Browser tools (${current.draft.size}/${availableCatalogNames().length})`,
 				lines: toolDraftLines(current),
-				items: CHROME_DEVTOOLS_TOOL_NAMES.map((toolName) => ({
+				items: availableCatalogNames().map((toolName) => ({
 					id: toolName,
 					label: TOOL_PRESENTATION[toolName].label,
 					description: TOOL_PRESENTATION[toolName].description,
@@ -249,8 +261,8 @@ export async function showChromeDevtoolsToolWorkflow(
 				kind: "review",
 				title: "Review tool changes",
 				lines: [
-					`Currently available: ${current.accepted.size}/${CHROME_DEVTOOLS_TOOL_NAMES.length}`,
-					`Proposed availability: ${current.draft.size}/${CHROME_DEVTOOLS_TOOL_NAMES.length}`,
+					`Currently available: ${current.accepted.size}/${availableCatalogNames().length}`,
+					`Proposed availability: ${current.draft.size}/${availableCatalogNames().length}`,
 				],
 				content: buildToolReview(current),
 				format: { kind: "text" },
@@ -276,7 +288,7 @@ export async function showChromeDevtoolsToolWorkflow(
 				return { kind: "stay" };
 			},
 			selectAll: ({ state: current }) => {
-				current.draft = new Set(CHROME_DEVTOOLS_TOOL_NAMES);
+				current.draft = new Set(availableCatalogNames());
 				return { kind: "stay" };
 			},
 			selectNone: ({ state: current }) => {
@@ -306,7 +318,7 @@ export async function showChromeDevtoolsToolWorkflow(
 				current.draft = new Set(selectedTools);
 				current.applied = true;
 				ctx.ui.notify(
-					`Saved: ${selectedTools.length} of ${CHROME_DEVTOOLS_TOOL_NAMES.length} browser tools available.`,
+					`Saved: ${selectedTools.length} of ${availableCatalogNames().length} browser tools available.`,
 					"info",
 				);
 				return { kind: "close" };
@@ -378,7 +390,8 @@ function buildMenuSnapshot(pi: ExtensionAPI, settings: SettingsLoadResult): Menu
 
 function mainStateLines(snapshot: MenuSnapshot) {
 	return sanitizeLines([
-		`Tool catalog: ${snapshot.activeTools.length} of ${CHROME_DEVTOOLS_TOOL_NAMES.length} available · ${snapshot.persistenceLabel}`,
+		`Tool catalog: ${snapshot.activeTools.length} of ${availableCatalogNames().length} available · ${snapshot.persistenceLabel}`,
+		`WebMCP: ${state.webMcpEnabled ? "enabled · experimental · confirmation required for every call" : "disabled · experimental"}`,
 		`Browser: ${browserLifecycleSummary()}`,
 		`Endpoint: ${devToolsEndpoint()}`,
 		...(snapshot.settingsWarning ? [`Settings warning: ${snapshot.settingsWarning}`] : []),
@@ -405,21 +418,23 @@ function toolDraftLines(current: ToolWorkflowState) {
 		return sanitizeLines([`Unavailable: ${current.mutationBlockedReason}`]);
 	const changes = symmetricDifferenceSize(current.accepted, current.draft);
 	return [
-		`Currently available: ${current.accepted.size}/${CHROME_DEVTOOLS_TOOL_NAMES.length}`,
+		`Currently available: ${current.accepted.size}/${availableCatalogNames().length}`,
 		changes === 0
 			? "No unapplied changes · Escape cancels"
 			: `${changes} unapplied ${changes === 1 ? "change" : "changes"} · Escape cancels`,
+		`WebMCP gateways: ${state.webMcpEnabled ? "available for selection · experimental" : "hidden while experimental WebMCP is disabled"}`,
 		"Changes are not applied until Review changes and Apply tool changes.",
 	];
 }
 
 function buildToolReview(current: ToolWorkflowState) {
-	const available = CHROME_DEVTOOLS_TOOL_NAMES.filter((name) => current.draft.has(name));
-	const unavailable = CHROME_DEVTOOLS_TOOL_NAMES.filter((name) => !current.draft.has(name));
+	const catalog = availableCatalogNames();
+	const available = catalog.filter((name) => current.draft.has(name));
+	const unavailable = catalog.filter((name) => !current.draft.has(name));
 	return sanitizeChromeDevtoolsDisplay(
 		[
-			`Current available browser tools: ${current.accepted.size}/${CHROME_DEVTOOLS_TOOL_NAMES.length}`,
-			`Proposed available browser tools: ${current.draft.size}/${CHROME_DEVTOOLS_TOOL_NAMES.length}`,
+			`Current available browser tools: ${current.accepted.size}/${catalog.length}`,
+			`Proposed available browser tools: ${current.draft.size}/${catalog.length}`,
 			"",
 			"Available after apply:",
 			...(available.length > 0
@@ -476,6 +491,12 @@ function arraysEqual<T>(left: readonly T[], right: readonly T[]) {
 
 function sanitizeLines(lines: readonly string[]) {
 	return sanitizeChromeDevtoolsDisplay(lines.join("\n")).split("\n");
+}
+
+function availableCatalogNames(): ChromeDevToolsToolName[] {
+	return state.webMcpEnabled
+		? [...CHROME_DEVTOOLS_TOOL_NAMES]
+		: [...CORE_CHROME_DEVTOOLS_TOOL_NAMES];
 }
 
 function formatError(error: unknown) {

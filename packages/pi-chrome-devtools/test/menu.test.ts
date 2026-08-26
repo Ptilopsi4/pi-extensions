@@ -15,6 +15,11 @@ import { state } from "../src/runtime.js";
 import { settingsFilePath } from "../src/settings.js";
 import { buildBrowserStatusMessage } from "../src/tool-selector.js";
 
+const WEBMCP_TOOLS = [
+	"chrome_devtools_webmcp_list_tools",
+	"chrome_devtools_webmcp_call_tool",
+] as const;
+
 const CHROME_TOOLS = [
 	"chrome_devtools_list_pages",
 	"chrome_devtools_select_page",
@@ -57,11 +62,42 @@ test("main menu presents consequential state and five goal-oriented actions with
 	});
 });
 
+test("enabled WebMCP appears as an experimental seven-tool selection surface", async () => {
+	await withTempAgentDir(async () => {
+		state.webMcpEnabled = true;
+		const mock = createMockPi({
+			activeTools: ["other_tool", ...CHROME_TOOLS, ...WEBMCP_TOOLS],
+		});
+		chromeDevtools(mock.pi);
+		let rendered = "";
+		const { ctx } = createMockContext({
+			hasUI: true,
+			mode: "tui",
+			custom: async (factory: unknown) => {
+				const harness = createCustomSelectorHarness(factory, 80);
+				if (!harness.isPiTuiKitScreen) return harness.resultPromise;
+				rendered = harness.render().join("\n");
+				harness.handleInput("\u0003");
+				return harness.result;
+			},
+		});
+		await mock.commands.get("chrome-devtools")?.handler("tools", ctx);
+
+		assert.match(rendered, /Browser tools \(7\/7\)/u);
+		assert.match(rendered, /List page WebMCP tools · Experimental/u);
+		assert.match(rendered, /Call a page WebMCP tool · Experimental/u);
+		assert.match(rendered, /WebMCP gateways: available for selection · experimental/u);
+	});
+});
+
 test("browser status distinguishes unobserved, running, exited, and failed states without probing", () => {
 	state.managedBrowser = undefined;
 	state.launchPromise = undefined;
 	state.lastLaunchAttempt = undefined;
 	assert.match(buildBrowserStatusMessage(), /not started; connection has not been checked/);
+	state.webMcpEnabled = true;
+	assert.match(buildBrowserStatusMessage(), /attached browser profiles.*authenticated sessions/u);
+	state.webMcpEnabled = false;
 
 	state.managedBrowser = {
 		process: {} as never,
@@ -617,6 +653,9 @@ async function withTempAgentDir(run: () => Promise<void>) {
 		state.launchPromise = undefined;
 		state.lastLaunchAttempt = undefined;
 		state.settingsNotice = undefined;
+		state.webMcpEnabled = false;
+		state.webMcpGeneration += 1;
+		state.webMcpOperationControllers.clear();
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 		rmSync(directory, { recursive: true, force: true });

@@ -1,8 +1,17 @@
 import { isAbsolute } from "node:path";
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { defineMenu, runMenu } from "@narumitw/pi-tui-kit";
 import { shutdownManagedBrowser } from "./browser-manager.js";
-import { applyRuntimeBrowserSettings, state } from "./runtime.js";
+import {
+	configureChromeDevtoolsToolExposure,
+	configuredChromeDevtoolsTools,
+} from "./lazy-tools.js";
+import {
+	applyRuntimeBrowserSettings,
+	applyRuntimeWebMcpSetting,
+	invalidateWebMcpOperations,
+	state,
+} from "./runtime.js";
 import {
 	type BrowserSettingsPatch,
 	type BrowserSettingsSource,
@@ -10,6 +19,7 @@ import {
 	parseBrowserEndpoint,
 	type SettingsLoadResult,
 	saveBrowserSettings,
+	saveWebMcpSettings,
 } from "./settings.js";
 import { sanitizeChromeDevtoolsDisplay } from "./tool-selector.js";
 
@@ -18,6 +28,7 @@ type BrowserSettingsAction =
 	| "open-endpoint"
 	| "save-endpoint"
 	| "set-auto-launch"
+	| "set-webmcp"
 	| "open-executable"
 	| "save-executable"
 	| "show-extensions";
@@ -29,6 +40,7 @@ interface BrowserSettingsMenuState {
 type CommandContext = ExtensionCommandContext;
 
 export async function showChromeDevtoolsBrowserSettings(
+	pi: ExtensionAPI,
 	ctx: CommandContext,
 	generation: number,
 ): Promise<{ closeParent: boolean }> {
@@ -70,6 +82,15 @@ export async function showChromeDevtoolsBrowserSettings(
 								'Absolute executable path; enter "automatic" to restore browser discovery.',
 							currentValue: sanitizeChromeDevtoolsDisplay(browser.executablePath ?? "Automatic"),
 							action: "open-executable",
+						},
+						{
+							id: "webmcp",
+							label: "WebMCP · Experimental",
+							description:
+								"Allow user-confirmed calls to page-provided WebMCP tools in this browser session.",
+							currentValue: current.load.effectiveWebMcpEnabled ? "On" : "Off",
+							values: ["On", "Off"],
+							action: "set-webmcp",
 						},
 						{
 							id: "extensions",
@@ -163,6 +184,26 @@ export async function showChromeDevtoolsBrowserSettings(
 				);
 				return { kind: "stay" };
 			},
+			"set-webmcp": async ({ value, signal }) => {
+				if (value !== "On" && value !== "Off") return { kind: "rejected" };
+				const saved = await saveAndApplyWebMcpSetting(
+					pi,
+					ctx,
+					generation,
+					ownerSignal,
+					signal,
+					projectTrusted,
+					value === "On",
+				);
+				if (!saved) return { kind: "rejected" };
+				ctx.ui.notify(
+					saved.effectiveWebMcpEnabled
+						? "Experimental WebMCP enabled. Every page-provided tool call requires confirmation. Choose gateway availability under Browser tools."
+						: "Experimental WebMCP disabled. Active WebMCP work was aborted and both gateway tools are unavailable.",
+					"warning",
+				);
+				return { kind: "stay" };
+			},
 			"open-executable": () => ({ kind: "to", screen: "executable" }),
 			"save-executable": async ({ value, signal }) => {
 				if (value === undefined) return { kind: "rejected" };
@@ -226,6 +267,7 @@ async function saveAndApplyBrowserPatch(
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
 		await saveBrowserSettings(patch);
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
+		invalidateWebMcpOperations("Chrome DevTools browser configuration changed");
 		await shutdownManagedBrowser();
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
 		const loaded = await loadSettings({ cwd: ctx.cwd, projectTrusted });
@@ -235,6 +277,61 @@ async function saveAndApplyBrowserPatch(
 		return loaded;
 	} catch (error) {
 		if (isCurrent(generation, ownerSignal, actionSignal)) notifySaveFailure(ctx, error);
+		return false;
+	}
+}
+
+async function saveAndApplyWebMcpSetting(
+	pi: ExtensionAPI,
+	ctx: CommandContext,
+	generation: number,
+	ownerSignal: AbortSignal,
+	actionSignal: AbortSignal,
+	projectTrusted: boolean,
+	enabled: boolean,
+) {
+	const previousEnabled = state.webMcpEnabled;
+	const previousTools = configuredChromeDevtoolsTools(pi);
+	try {
+		await ctx.waitForIdle();
+		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
+		await saveWebMcpSettings(enabled);
+		if (!isCurrent(generation, ownerSignal, actionSignal)) {
+			await saveWebMcpSettings(previousEnabled);
+			return false;
+		}
+		const loaded = await loadSettings({ cwd: ctx.cwd, projectTrusted });
+		if (!isCurrent(generation, ownerSignal, actionSignal)) {
+			await saveWebMcpSettings(previousEnabled);
+			return false;
+		}
+		applyRuntimeWebMcpSetting(loaded.effectiveWebMcpEnabled);
+		const selectedTools =
+			loaded.kind === "loaded" && loaded.settings.tools ? loaded.settings.tools : previousTools;
+		configureChromeDevtoolsToolExposure(pi, selectedTools, ctx.model);
+		state.settingsNotice = loaded.notice;
+		return loaded;
+	} catch (error) {
+		let rollbackError: unknown;
+		try {
+			await saveWebMcpSettings(previousEnabled);
+			if (isCurrent(generation, ownerSignal, actionSignal)) {
+				applyRuntimeWebMcpSetting(previousEnabled);
+				configureChromeDevtoolsToolExposure(pi, previousTools, ctx.model);
+			}
+		} catch (caught) {
+			rollbackError = caught;
+		}
+		if (isCurrent(generation, ownerSignal, actionSignal)) {
+			notifySaveFailure(
+				ctx,
+				rollbackError
+					? new Error(
+							`${formatError(error)}; WebMCP rollback failed: ${formatError(rollbackError)}`,
+						)
+					: error,
+			);
+		}
 		return false;
 	}
 }

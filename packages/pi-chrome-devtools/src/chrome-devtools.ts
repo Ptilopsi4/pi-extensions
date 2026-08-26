@@ -8,7 +8,12 @@ import {
 	requireEagerChromeDevtoolsToolExposure,
 	supportsNativeDeferredToolLoading,
 } from "./lazy-tools.js";
-import { applyRuntimeBrowserSettings, state } from "./runtime.js";
+import {
+	applyRuntimeBrowserSettings,
+	applyRuntimeWebMcpSetting,
+	invalidateWebMcpOperations,
+	state,
+} from "./runtime.js";
 import { loadSettings, waitForSettingsWrites } from "./settings.js";
 import {
 	allChromeDevtoolsTools,
@@ -25,6 +30,8 @@ import {
 	navigateTool,
 	screenshotTool,
 	selectPageTool,
+	webMcpCallTool,
+	webMcpListToolsTool,
 } from "./tools.js";
 
 type CommandAction =
@@ -57,6 +64,8 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 	pi.registerTool(navigateTool);
 	pi.registerTool(evaluateTool);
 	pi.registerTool(screenshotTool);
+	pi.registerTool(webMcpListToolsTool);
+	pi.registerTool(webMcpCallTool);
 	pi.registerTool(createChromeDevtoolsLoadTool(pi));
 
 	pi.registerCommand("chrome-devtools", {
@@ -73,6 +82,7 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 		const generation = ++state.sessionGeneration;
 		initializeAvailableChromeDevtoolsTools(pi);
 		replaceSessionController("Chrome DevTools session replaced");
+		invalidateWebMcpOperations("Chrome DevTools session replaced");
 		state.shuttingDown = false;
 		state.settingsNotice = undefined;
 		ctx.ui.setStatus(STATUS_KEY, undefined);
@@ -84,9 +94,16 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 		const settings = await loadSettings({ cwd: ctx.cwd, projectTrusted });
 		if (generation !== state.sessionGeneration) return;
 		applyRuntimeBrowserSettings(settings.effectiveBrowser, settings.paths, projectTrusted);
+		applyRuntimeWebMcpSetting(settings.effectiveWebMcpEnabled);
 		state.settingsNotice = settings.notice;
 		for (const warning of settings.warnings) {
 			ctx.ui.notify(sanitizeChromeDevtoolsDisplay(warning), "warning");
+		}
+		if (state.webMcpEnabled) {
+			ctx.ui.notify(
+				"Experimental WebMCP is enabled. Page-provided tools use the visible browser session and require confirmation for every call.",
+				"warning",
+			);
 		}
 		const availableTools =
 			settings.kind === "loaded" && settings.settings.tools
@@ -96,6 +113,7 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 	});
 
 	pi.on("model_select", (event) => {
+		invalidateWebMcpOperations("Chrome DevTools model and tool exposure changed");
 		if (!supportsNativeDeferredToolLoading(event.model)) {
 			requireEagerChromeDevtoolsToolExposure(pi);
 		}
@@ -104,6 +122,7 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 	pi.on("session_shutdown", async (_event, ctx) => {
 		state.sessionGeneration += 1;
 		replaceSessionController("Chrome DevTools session shut down");
+		invalidateWebMcpOperations("Chrome DevTools session shut down");
 		ctx.ui.setStatus(STATUS_KEY, undefined);
 		const browserShutdown = shutdownManagedBrowser(undefined, { cancelLaunch: true });
 		await waitForChromeDevtoolsSettings();
@@ -144,7 +163,7 @@ async function handleChromeDevtoolsCommand(
 			}
 			const { showChromeDevtoolsBrowserSettings } = await import("./browser-settings-menu.js");
 			if (generation !== state.sessionGeneration) return;
-			await showChromeDevtoolsBrowserSettings(ctx, generation);
+			await showChromeDevtoolsBrowserSettings(pi, ctx, generation);
 			return;
 		}
 		case "tools": {

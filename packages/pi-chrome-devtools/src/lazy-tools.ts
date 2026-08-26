@@ -4,7 +4,12 @@ import {
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { CHROME_DEVTOOLS_TOOL_NAMES, type ChromeDevToolsToolName } from "./tool-names.js";
+import { state } from "./runtime.js";
+import {
+	CHROME_DEVTOOLS_TOOL_NAMES,
+	type ChromeDevToolsToolName,
+	isWebMcpToolName,
+} from "./tool-names.js";
 
 export const CHROME_DEVTOOLS_LOAD_TOOL_NAME = "chrome_devtools_load";
 
@@ -25,6 +30,10 @@ const SEARCH_TEXT: Record<ChromeDevToolsToolName, string> = {
 	chrome_devtools_navigate: "navigate open create chrome browser page url website",
 	chrome_devtools_evaluate: "evaluate run javascript expression dom inspect chrome browser page",
 	chrome_devtools_screenshot: "capture screenshot png image visual chrome browser page",
+	chrome_devtools_webmcp_list_tools:
+		"list discover page provided website webmcp tools capabilities experimental",
+	chrome_devtools_webmcp_call_tool:
+		"call invoke page provided website webmcp tool confirmation experimental",
 };
 
 export function initializeAvailableChromeDevtoolsTools(pi: ExtensionAPI) {
@@ -41,7 +50,8 @@ export function configureChromeDevtoolsToolExposure(
 	availableTools: readonly ChromeDevToolsToolName[],
 	model?: ExtensionContext["model"],
 ) {
-	const available = setAvailableTools(pi, availableTools);
+	setAvailableTools(pi, availableTools);
+	const available = effectiveAvailableTools(pi);
 	const lazyExposure = supportsNativeDeferredToolLoading(model);
 	lazyExposureByApi.set(pi, lazyExposure);
 	const exposedTools = lazyExposure
@@ -66,7 +76,8 @@ export function applyAvailableChromeDevtoolsTools(
 	pi: ExtensionAPI,
 	availableTools: readonly ChromeDevToolsToolName[],
 ) {
-	const available = setAvailableTools(pi, availableTools);
+	setAvailableTools(pi, availableTools);
+	const available = effectiveAvailableTools(pi);
 	const lazyExposure = lazyExposureByApi.get(pi) === true;
 	const active = pi
 		.getActiveTools()
@@ -110,6 +121,11 @@ export function supportsNativeDeferredToolLoading(model: ExtensionContext["model
 }
 
 export function availableChromeDevtoolsTools(pi: ExtensionAPI) {
+	const available = effectiveAvailableTools(pi);
+	return CHROME_DEVTOOLS_TOOL_NAMES.filter((name) => available.has(name));
+}
+
+export function configuredChromeDevtoolsTools(pi: ExtensionAPI) {
 	const available = availableToolsByApi.get(pi) ?? new Set();
 	return CHROME_DEVTOOLS_TOOL_NAMES.filter((name) => available.has(name));
 }
@@ -188,6 +204,15 @@ function setAvailableTools(pi: ExtensionAPI, availableTools: readonly ChromeDevT
 	const available = new Set(availableTools);
 	availableToolsByApi.set(pi, available);
 	return available;
+}
+
+function effectiveAvailableTools(pi: ExtensionAPI) {
+	const configured = availableToolsByApi.get(pi) ?? new Set();
+	return new Set(
+		CHROME_DEVTOOLS_TOOL_NAMES.filter(
+			(name) => configured.has(name) && (state.webMcpEnabled || !isWebMcpToolName(name)),
+		),
+	);
 }
 
 function compatBoolean(value: unknown, key: string) {

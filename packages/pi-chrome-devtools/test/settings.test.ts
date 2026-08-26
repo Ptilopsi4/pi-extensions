@@ -16,6 +16,7 @@ import {
 	projectSettingsFilePath,
 	saveBrowserSettings,
 	saveSettings,
+	saveWebMcpSettings,
 	settingsFilePath,
 } from "../src/settings.js";
 
@@ -120,6 +121,7 @@ test("missing user and project settings are side-effect free defaults", async ()
 
 		assert.equal(loaded.kind, "missing");
 		assert.equal(loaded.effectiveBrowser.endpoint, "http://127.0.0.1:9222");
+		assert.equal(loaded.effectiveWebMcpEnabled, false);
 		assert.equal(loaded.effectiveBrowser.autoLaunchEnabled, true);
 		assert.equal(loaded.effectiveBrowser.endpointSource, "default");
 		assert.deepEqual(loaded.effectiveBrowser.extensionPaths, []);
@@ -136,6 +138,46 @@ test("an explicit empty tool selection remains a loaded global setting", async (
 
 		assert.equal(loaded.kind, "loaded");
 		assert.deepEqual(loaded.settings?.tools, []);
+	});
+});
+
+test("WebMCP is user-only, default-off, validated, and project settings cannot enable it", async () => {
+	await withSettingsFixture(async ({ cwd }) => {
+		writeJson(projectSettingsFilePath(cwd), { webmcp: { enabled: true } });
+		let loaded = await loadSettings({ cwd, projectTrusted: true });
+		assert.equal(loaded.effectiveWebMcpEnabled, false);
+		assert.match(loaded.warnings.join("\n"), /project webmcp settings ignored/i);
+
+		writeJson(settingsFilePath(), { webmcp: { enabled: true } });
+		loaded = await loadSettings({ cwd, projectTrusted: true });
+		assert.equal(loaded.kind, "loaded");
+		assert.equal(loaded.effectiveWebMcpEnabled, true);
+		assert.equal(loaded.settings?.webmcp.enabled, true);
+
+		writeJson(settingsFilePath(), { webmcp: { enabled: "yes" } });
+		loaded = await loadSettings({ cwd, projectTrusted: false });
+		assert.equal(loaded.kind, "invalid");
+		assert.match(loaded.warnings.join("\n"), /webmcp\.enabled.*boolean/i);
+	});
+});
+
+test("WebMCP saves preserve unknown fields and block malformed-file replacement", async () => {
+	await withSettingsFixture(async () => {
+		writeJson(settingsFilePath(), {
+			future: { kept: true },
+			webmcp: { enabled: false, futureWebMcpField: { kept: true } },
+		});
+		await saveWebMcpSettings(true);
+		const saved = JSON.parse(readFileSync(settingsFilePath(), "utf8")) as Record<string, unknown>;
+		assert.deepEqual(saved.future, { kept: true });
+		assert.deepEqual(saved.webmcp, {
+			enabled: true,
+			futureWebMcpField: { kept: true },
+		});
+
+		writeFileSync(settingsFilePath(), "{ malformed\n");
+		await assert.rejects(saveWebMcpSettings(false), /Cannot save.*invalid JSON/u);
+		assert.equal(readFileSync(settingsFilePath(), "utf8"), "{ malformed\n");
 	});
 });
 
@@ -357,6 +399,46 @@ test("global tool saves preserve valid browser and unknown sibling fields", asyn
 		});
 		assert.deepEqual(saved.future, { kept: true });
 		assert.deepEqual(saved.tools, [LIST_PAGES_TOOL]);
+	});
+});
+
+test("WebMCP saves publish in invocation order and recover after a failed save", async () => {
+	await withSettingsFixture(async () => {
+		let releaseFirst: (() => void) | undefined;
+		const firstBlocked = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		let firstStarted: (() => void) | undefined;
+		const started = new Promise<void>((resolve) => {
+			firstStarted = resolve;
+		});
+		const first = saveWebMcpSettings(true, {
+			write: async (temporaryPath, data) => {
+				writeFileSync(temporaryPath, data);
+				firstStarted?.();
+				await firstBlocked;
+			},
+		});
+		await started;
+		const second = saveWebMcpSettings(false);
+		releaseFirst?.();
+		await Promise.all([first, second]);
+		assert.equal(
+			(JSON.parse(readFileSync(settingsFilePath(), "utf8")) as { webmcp?: { enabled?: unknown } })
+				.webmcp?.enabled,
+			false,
+		);
+
+		await assert.rejects(
+			saveWebMcpSettings(true, { write: async () => Promise.reject(new Error("write failed")) }),
+			/write failed/u,
+		);
+		await saveWebMcpSettings(true);
+		assert.equal(
+			(JSON.parse(readFileSync(settingsFilePath(), "utf8")) as { webmcp?: { enabled?: unknown } })
+				.webmcp?.enabled,
+			true,
+		);
 	});
 });
 

@@ -32,6 +32,7 @@ import chromeDevtools, {
 	sanitizeChromeDevtoolsDisplay,
 	selectAllowedRoot,
 } from "../src/chrome-devtools.js";
+import { beginWebMcpOperation, state } from "../src/runtime.js";
 import { saveSettings } from "../src/settings.js";
 
 const NATIVE_DEFERRED_MODEL = {
@@ -51,6 +52,10 @@ const LIST_PAGES_TOOL = "chrome_devtools_list_pages";
 const EVALUATE_TOOL = "chrome_devtools_evaluate";
 const SCREENSHOT_TOOL = "chrome_devtools_screenshot";
 const LOAD_TOOL = "chrome_devtools_load";
+const WEBMCP_TOOLS = [
+	"chrome_devtools_webmcp_list_tools",
+	"chrome_devtools_webmcp_call_tool",
+] as const;
 const CAPABILITY_TOOLS = [
 	"chrome_devtools_list_pages",
 	"chrome_devtools_select_page",
@@ -76,7 +81,7 @@ test("chrome-devtools registers deferred CDP tools and one loader", () => {
 	const mock = createMockPi();
 	chromeDevtools(mock.pi);
 
-	assert.equal(mock.tools.length, 6);
+	assert.equal(mock.tools.length, 8);
 	assert.deepEqual(
 		mock.tools.map((tool) => tool.name),
 		[
@@ -85,6 +90,8 @@ test("chrome-devtools registers deferred CDP tools and one loader", () => {
 			"chrome_devtools_navigate",
 			"chrome_devtools_evaluate",
 			"chrome_devtools_screenshot",
+			"chrome_devtools_webmcp_list_tools",
+			"chrome_devtools_webmcp_call_tool",
 			LOAD_TOOL,
 		],
 	);
@@ -180,6 +187,67 @@ test("chrome-devtools loader additively activates matching allowed tools", async
 		);
 		assert.deepEqual(second.details, { matches: [SCREENSHOT_TOOL], added: [] });
 		assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL, SCREENSHOT_TOOL]);
+	});
+});
+
+test("WebMCP stays unavailable while disabled even when stale tool names are persisted", async () => {
+	await withTempAgentDir(async (agentDir) => {
+		writeFileSync(
+			path.join(agentDir, NEW_SETTINGS_FILE),
+			JSON.stringify({
+				tools: [...CAPABILITY_TOOLS, ...WEBMCP_TOOLS],
+				updatedAt: 1,
+				webmcp: { enabled: false },
+			}),
+		);
+		const mock = createMockPi({
+			activeTools: ["other_tool", ...CAPABILITY_TOOLS, ...WEBMCP_TOOLS],
+		});
+		const { ctx } = createMockContext({
+			model: { api: "openai-completions", provider: "other", id: "eager" },
+		});
+		chromeDevtools(mock.pi);
+		await mock.events.get("session_start")?.[0]?.({}, ctx);
+
+		assert.equal(state.webMcpEnabled, false);
+		assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL, ...CAPABILITY_TOOLS]);
+	});
+});
+
+test("enabled WebMCP gateways use fixed definitions and native additive loading", async () => {
+	await withTempAgentDir(async (agentDir) => {
+		writeFileSync(
+			path.join(agentDir, NEW_SETTINGS_FILE),
+			JSON.stringify({
+				tools: [...CAPABILITY_TOOLS, ...WEBMCP_TOOLS],
+				updatedAt: 1,
+				webmcp: { enabled: true },
+			}),
+		);
+		const mock = createMockPi({
+			activeTools: ["other_tool", ...CAPABILITY_TOOLS, ...WEBMCP_TOOLS],
+		});
+		const { ctx, notifications } = createMockContext();
+		chromeDevtools(mock.pi);
+		const definitionsBefore = normalizedWebMcpDefinitions(mock.tools);
+		await mock.events.get("session_start")?.[0]?.({}, ctx);
+		assert.equal(state.webMcpEnabled, true);
+		assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL]);
+		assert.match(notifications.at(-1)?.message ?? "", /Experimental WebMCP is enabled/u);
+
+		const loader = mock.tools.find((tool) => tool.name === LOAD_TOOL) as {
+			execute: (...args: unknown[]) => Promise<{ details: { added: string[] } }>;
+		};
+		const loaded = await loader.execute(
+			"load-webmcp",
+			{ query: "list call page WebMCP tools", limit: 2 },
+			new AbortController().signal,
+			undefined,
+			ctx,
+		);
+		assert.deepEqual(loaded.details.added, [...WEBMCP_TOOLS]);
+		assert.deepEqual(mock.rawPi.getActiveTools(), ["other_tool", LOAD_TOOL, ...WEBMCP_TOOLS]);
+		assert.deepEqual(normalizedWebMcpDefinitions(mock.tools), definitionsBefore);
 	});
 });
 
@@ -648,11 +716,26 @@ test("chrome-devtools serializes rapid tool saves in invocation order", async ()
 	});
 });
 
+test("removing WebMCP gateway availability aborts active page work", async () => {
+	await withTempAgentDir(async () => {
+		state.webMcpEnabled = true;
+		const mock = createMockPi({ activeTools: ["other_tool", ...WEBMCP_TOOLS] });
+		const { ctx } = createMockContext();
+		chromeDevtools(mock.pi);
+		const operation = beginWebMcpOperation();
+		await mock.commands.get("chrome-devtools")?.handler("disable", ctx);
+		assert.equal(operation.signal.aborted, true);
+		assert.ok(WEBMCP_TOOLS.every((name) => !mock.rawPi.getActiveTools().includes(name)));
+		operation.dispose();
+	});
+});
+
 test("status display strips terminal controls and remains bounded", () => {
 	assert.equal(
 		sanitizeChromeDevtoolsDisplay("safe\u001b]8;;https://evil\u0007link\u001b]8;;\u0007"),
 		"safelink",
 	);
+	assert.equal(sanitizeChromeDevtoolsDisplay("safe\u202eend"), "safe�end");
 	assert.equal(sanitizeChromeDevtoolsDisplay("12345", 4), "123…");
 });
 
@@ -807,6 +890,18 @@ test("resolveScreenshotPath confines explicit paths to cwd or temp", () => {
 	assert.equal(isPathInsideRoot(path.join(cwd, "screens", "out.png"), cwd), true);
 });
 
+function normalizedWebMcpDefinitions(tools: readonly Record<string, unknown>[]) {
+	return tools
+		.filter((tool) => WEBMCP_TOOLS.includes(tool.name as (typeof WEBMCP_TOOLS)[number]))
+		.map((tool) => ({
+			name: tool.name,
+			description: tool.description,
+			parameters: tool.parameters,
+			promptSnippet: tool.promptSnippet,
+			promptGuidelines: tool.promptGuidelines,
+		}));
+}
+
 async function importFreshChromeDevtools() {
 	vi.resetModules();
 	return import("../src/chrome-devtools.js");
@@ -819,10 +914,24 @@ async function withTempAgentDir<T>(fn: (agentDir: string) => Promise<T>) {
 	try {
 		return await fn(agentDir);
 	} finally {
+		const nextGeneration = state.sessionGeneration + 1;
+		resetRuntimeStateForTest(state, nextGeneration);
+		const currentState = (await import("../src/runtime.js")).state;
+		if (currentState !== state) resetRuntimeStateForTest(currentState, nextGeneration);
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 		rmSync(agentDir, { recursive: true, force: true });
 	}
+}
+
+function resetRuntimeStateForTest(runtimeState: typeof state, generation: number) {
+	runtimeState.sessionController.abort();
+	runtimeState.sessionController = new AbortController();
+	runtimeState.sessionGeneration = generation;
+	runtimeState.shuttingDown = false;
+	runtimeState.webMcpEnabled = false;
+	runtimeState.webMcpGeneration += 1;
+	runtimeState.webMcpOperationControllers.clear();
 }
 
 function writeSettings(agentDir: string, fileName: string, tools: string[]) {

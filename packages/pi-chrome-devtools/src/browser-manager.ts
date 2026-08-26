@@ -13,11 +13,14 @@ import {
 	DEFAULT_HTTP_TIMEOUT_MS,
 	DEVTOOLS_ACTIVE_PORT_FILE,
 	type DevToolsPage,
+	invalidateWebMcpOperations,
 	MANAGED_BROWSER_PROFILE_PREFIX,
 	type ManagedBrowser,
 	state,
 } from "./runtime.js";
 
+// Endpoint attachment, managed launch, dynamic-port publication, and shutdown intentionally remain
+// together because they form one ownership state machine behind the testable operations boundary.
 interface BrowserSpawnOptions {
 	shell: false;
 	stdio: "ignore";
@@ -69,19 +72,27 @@ function normalizePathForComparison(value: string) {
 	return process.platform === "win32" ? value.toLowerCase() : value;
 }
 
-export async function ensureDevToolsEndpoint(waitMs = DEFAULT_ENDPOINT_WAIT_MS) {
+export async function ensureDevToolsEndpoint(
+	waitMs = DEFAULT_ENDPOINT_WAIT_MS,
+	callerSignal?: AbortSignal,
+) {
+	callerSignal?.throwIfAborted();
 	if (extensionsConfigured()) {
 		validateExtensionLaunchMode();
-		await ensureManagedBrowserLaunched(waitMs);
+		await ensureManagedBrowserLaunched(waitMs, callerSignal);
 		return;
 	}
 	if (canAutoLaunchBrowser()) {
 		try {
-			await withEndpointRetry(() => fetchDevToolsJson<unknown>("/json/version"), waitMs);
+			await withEndpointRetry(
+				() => fetchDevToolsJson<unknown>("/json/version", { signal: callerSignal }),
+				waitMs,
+				callerSignal,
+			);
 			return;
 		} catch (error) {
 			if (shouldAutoLaunchAfterEndpointError(error)) {
-				await ensureManagedBrowserLaunched(waitMs);
+				await ensureManagedBrowserLaunched(waitMs, callerSignal);
 				return;
 			}
 			throw error;
@@ -89,7 +100,7 @@ export async function ensureDevToolsEndpoint(waitMs = DEFAULT_ENDPOINT_WAIT_MS) 
 	}
 
 	try {
-		await fetchDevToolsJson<unknown>("/json/version");
+		await fetchDevToolsJson<unknown>("/json/version", { signal: callerSignal });
 	} catch (error) {
 		if (isRetryableEndpointError(error)) return;
 		throw error;
@@ -114,11 +125,13 @@ function validateExtensionLaunchMode() {
 	}
 }
 
-async function ensureManagedBrowserLaunched(waitMs: number) {
+async function ensureManagedBrowserLaunched(waitMs: number, callerSignal?: AbortSignal) {
 	if (state.launchPromise) return state.launchPromise;
 	if (state.managedBrowser && !state.managedBrowser.exited && state.managedBrowser.ready) return;
 	const generation = state.sessionGeneration;
-	const signal = state.sessionController.signal;
+	const signal = callerSignal
+		? AbortSignal.any([state.sessionController.signal, callerSignal])
+		: state.sessionController.signal;
 	throwIfBrowserLaunchCancelled(generation, signal);
 
 	const launchPromise = prepareManagedBrowserLaunch(waitMs, generation, signal);
@@ -278,9 +291,13 @@ async function launchBrowserCandidate(
 			ownerGeneration: generation,
 		};
 		managedBrowser = launchedBrowser;
+		invalidateWebMcpOperations("Chrome DevTools managed browser replaced");
 		state.managedBrowser = launchedBrowser;
 
 		child.once("exit", () => {
+			if (state.managedBrowser === launchedBrowser) {
+				invalidateWebMcpOperations("Chrome DevTools managed browser exited");
+			}
 			launchedBrowser.exited = true;
 			launchedBrowser.ready = false;
 			if (!state.portConfigured && launchedBrowser.port === state.port) {
@@ -457,7 +474,10 @@ export async function shutdownManagedBrowser(
 }
 
 async function cleanupManagedBrowser(managedBrowser: ManagedBrowser) {
-	if (state.managedBrowser === managedBrowser) state.managedBrowser = undefined;
+	if (state.managedBrowser === managedBrowser) {
+		invalidateWebMcpOperations("Chrome DevTools managed browser closed");
+		state.managedBrowser = undefined;
+	}
 	if (!managedBrowser.exited) {
 		killManagedBrowserProcess(managedBrowser);
 		await waitForManagedBrowserExit(managedBrowser, BROWSER_SHUTDOWN_WAIT_MS).catch(async () => {
@@ -545,9 +565,14 @@ export async function fetchDevToolsJson<T>(path: string, init?: RequestInit) {
 	}
 }
 
-export async function withEndpointRetry<T>(operation: () => Promise<T>, waitMs: number) {
+export async function withEndpointRetry<T>(
+	operation: () => Promise<T>,
+	waitMs: number,
+	signal?: AbortSignal,
+) {
 	const deadline = Date.now() + waitMs;
 	while (true) {
+		signal?.throwIfAborted();
 		try {
 			return await operation();
 		} catch (error) {
@@ -556,7 +581,10 @@ export async function withEndpointRetry<T>(operation: () => Promise<T>, waitMs: 
 			const remainingMs = deadline - Date.now();
 			if (remainingMs <= 0) throw error;
 
-			await browserManagerOperations.sleep(Math.min(DEFAULT_ENDPOINT_RETRY_MS, remainingMs));
+			await browserManagerOperations.sleep(
+				Math.min(DEFAULT_ENDPOINT_RETRY_MS, remainingMs),
+				signal,
+			);
 		}
 	}
 }

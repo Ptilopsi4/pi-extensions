@@ -8,8 +8,9 @@ import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import { setBrowserManagerOperationsForTests } from "../src/browser-manager.js";
 import chromeDevtools from "../src/chrome-devtools.js";
-import { state } from "../src/runtime.js";
+import { beginWebMcpOperation, state } from "../src/runtime.js";
 import { projectSettingsFilePath, saveBrowserSettings, settingsFilePath } from "../src/settings.js";
+import { CHROME_DEVTOOLS_TOOL_NAMES, WEBMCP_TOOL_NAMES } from "../src/tool-names.js";
 
 class LifecycleChild extends EventEmitter {
 	killCalls = 0;
@@ -69,6 +70,9 @@ async function withFixture(
 		state.sessionGeneration += 1;
 		state.managedBrowser = undefined;
 		state.launchPromise = undefined;
+		state.webMcpEnabled = false;
+		state.webMcpGeneration += 1;
+		state.webMcpOperationControllers.clear();
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 		for (const name of environmentNames) {
@@ -129,6 +133,31 @@ test("session_start applies trusted project browser settings and status reports 
 	});
 });
 
+test("session start loads the user WebMCP gate and reports its experimental safety contract", async () => {
+	await withFixture(async ({ cwdA }) => {
+		writeJson(settingsFilePath(), {
+			tools: CHROME_DEVTOOLS_TOOL_NAMES,
+			updatedAt: 1,
+			webmcp: { enabled: true },
+		});
+		const mock = createMockPi({ activeTools: ["other_tool", ...CHROME_DEVTOOLS_TOOL_NAMES] });
+		const { ctx, notifications } = createMockContext({
+			cwd: cwdA,
+			hasUI: true,
+			mode: "rpc",
+			model: { api: "openai-completions", provider: "other", id: "eager" },
+		});
+		chromeDevtools(mock.pi);
+		await mock.events.get("session_start")?.[0]?.({}, ctx);
+		await mock.commands.get("chrome-devtools")?.handler("status", ctx);
+
+		assert.equal(state.webMcpEnabled, true);
+		assert.ok(WEBMCP_TOOL_NAMES.every((name) => mock.rawPi.getActiveTools().includes(name)));
+		assert.ok(notifications.some(({ message }) => /Experimental WebMCP is enabled/u.test(message)));
+		assert.match(notifications.at(-1)?.message ?? "", /WebMCP: enabled · experimental/u);
+	});
+});
+
 test("session start warns when deprecated environment overrides remain active", async () => {
 	await withFixture(async ({ cwdA }) => {
 		writeJson(settingsFilePath(), {
@@ -172,6 +201,24 @@ test("session replacement discards the stale continuation and applies only the l
 
 		assert.deepEqual(state.extensionPaths, [extensionB]);
 		assert.equal(state.projectSettingsFilePath, projectSettingsFilePath(cwdB));
+	});
+});
+
+test("model replacement invalidates every prior WebMCP identity and active operation", async () => {
+	await withFixture(async () => {
+		const mock = createMockPi();
+		const { ctx } = createMockContext();
+		chromeDevtools(mock.pi);
+		await mock.events.get("session_start")?.[0]?.({}, ctx);
+		const operation = beginWebMcpOperation();
+		const generation = state.webMcpGeneration;
+		await mock.events.get("model_select")?.[0]?.(
+			{ model: { api: "openai-completions", provider: "other", id: "replacement" } },
+			ctx,
+		);
+		assert.equal(operation.signal.aborted, true);
+		assert.ok(state.webMcpGeneration > generation);
+		operation.dispose();
 	});
 });
 
@@ -232,6 +279,7 @@ test("session_shutdown clears status and releases an owned browser once", async 
 		const mock = createMockPi();
 		const { ctx, statuses } = createMockContext();
 		chromeDevtools(mock.pi);
+		const webMcpOperation = beginWebMcpOperation();
 		try {
 			await Promise.all([
 				mock.events.get("session_shutdown")?.[0]?.({}, ctx),
@@ -241,6 +289,7 @@ test("session_shutdown clears status and releases an owned browser once", async 
 			assert.deepEqual(removed, ["/tmp/lifecycle-profile"]);
 			assert.equal(statuses.get("chrome-devtools"), undefined);
 			assert.equal(state.managedBrowser, undefined);
+			assert.equal(webMcpOperation.signal.aborted, true);
 		} finally {
 			restore();
 		}

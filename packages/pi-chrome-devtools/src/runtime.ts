@@ -48,6 +48,9 @@ export interface ChromeDevToolsState {
 	sessionGeneration: number;
 	sessionController: AbortController;
 	settingsNotice?: string;
+	webMcpEnabled: boolean;
+	webMcpGeneration: number;
+	webMcpOperationControllers: Set<AbortController>;
 }
 
 export interface ManagedBrowser {
@@ -96,7 +99,51 @@ export const state: ChromeDevToolsState = {
 	shuttingDown: false,
 	sessionGeneration: 0,
 	sessionController: new AbortController(),
+	webMcpEnabled: false,
+	webMcpGeneration: 0,
+	webMcpOperationControllers: new Set(),
 };
+
+export function beginWebMcpOperation(toolSignal?: AbortSignal) {
+	const controller = new AbortController();
+	state.webMcpOperationControllers.add(controller);
+	const signals = [controller.signal, state.sessionController.signal];
+	if (toolSignal) signals.push(toolSignal);
+	const signal = AbortSignal.any(signals);
+	return {
+		signal,
+		sessionGeneration: state.sessionGeneration,
+		webMcpGeneration: state.webMcpGeneration,
+		dispose() {
+			state.webMcpOperationControllers.delete(controller);
+		},
+	};
+}
+
+export function invalidateWebMcpOperations(reason: string) {
+	state.webMcpGeneration += 1;
+	const controllers = [...state.webMcpOperationControllers];
+	state.webMcpOperationControllers.clear();
+	const error = new DOMException(reason, "AbortError");
+	for (const controller of controllers) controller.abort(error);
+}
+
+export function applyRuntimeWebMcpSetting(enabled: boolean) {
+	if (state.webMcpEnabled !== enabled) {
+		invalidateWebMcpOperations(`WebMCP ${enabled ? "enabled" : "disabled"}`);
+	}
+	state.webMcpEnabled = enabled;
+}
+
+export function webMcpOperationIsCurrent(operation: {
+	sessionGeneration: number;
+	webMcpGeneration: number;
+}) {
+	return (
+		operation.sessionGeneration === state.sessionGeneration &&
+		operation.webMcpGeneration === state.webMcpGeneration
+	);
+}
 
 export function applyRuntimeBrowserSettings(
 	browser: EffectiveBrowserSettings,
