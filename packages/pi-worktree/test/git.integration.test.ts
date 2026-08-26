@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExecResult } from "@earendil-works/pi-coding-agent";
-import { test } from "vitest";
+import { afterAll, beforeAll, describe, test } from "vitest";
 import {
 	addWorktree,
 	administrativeHistoryOids,
@@ -130,42 +130,56 @@ test("worktree status cards report clean and changed real linked worktrees from 
 	}
 });
 
-test("worktree inventory reports clean initialized submodules", async () => {
-	const temporary = realpathSync(mkdtempSync(join(tmpdir(), "pi-worktree-submodule-")));
-	const main = join(temporary, "repo");
-	const linked = join(temporary, "repo-feature");
-	const module = join(temporary, "module");
-	try {
+describe("initialized submodule inventory", () => {
+	let temporary = "";
+	let main = "";
+
+	beforeAll(() => {
+		temporary = realpathSync(mkdtempSync(join(tmpdir(), "pi-worktree-submodule-")));
+		main = join(temporary, "repo");
+		const module = join(temporary, "module");
 		git(temporary, ["init", "--initial-branch=main", module]);
-		git(module, ["config", "user.name", "Pi Worktree Test"]);
-		git(module, ["config", "user.email", "pi-worktree@example.invalid"]);
 		writeFileSync(join(module, "module.txt"), "module\n");
 		git(module, ["add", "module.txt"]);
-		git(module, ["commit", "-m", "module"]);
-
-		git(temporary, ["init", "--initial-branch=main", main]);
-		git(main, ["config", "user.name", "Pi Worktree Test"]);
-		git(main, ["config", "user.email", "pi-worktree@example.invalid"]);
-		writeFileSync(join(main, "README.md"), "main\n");
-		git(main, ["add", "README.md"]);
-		git(main, ["commit", "-m", "initial"]);
-		git(main, ["-c", "protocol.file.allow=always", "submodule", "add", module, "deps/module"]);
-		git(main, ["commit", "-am", "add submodule"]);
-		git(main, ["worktree", "add", "-b", "feature", linked, "HEAD"]);
-		git(linked, [
+		git(module, [
 			"-c",
-			"protocol.file.allow=always",
-			"submodule",
-			"update",
-			"--init",
-			"--recursive",
+			"user.name=Pi Worktree Test",
+			"-c",
+			"user.email=pi-worktree@example.invalid",
+			"commit",
+			"-m",
+			"module",
 		]);
 
-		const inventory = await worktreeInventory(pi, linked);
+		git(temporary, ["init", "--initial-branch=main", main]);
+		git(main, ["-c", "protocol.file.allow=always", "submodule", "add", module, "deps/module"]);
+		git(main, [
+			"-c",
+			"user.name=Pi Worktree Test",
+			"-c",
+			"user.email=pi-worktree@example.invalid",
+			"commit",
+			"-am",
+			"add submodule",
+		]);
+	});
+
+	afterAll(() => {
+		if (temporary) rmSync(temporary, { recursive: true, force: true });
+	});
+
+	test("worktree inventory reports clean initialized submodules", async () => {
+		const submoduleStatusPi = {
+			async exec(command: string, args: string[], options?: { cwd?: string }): Promise<ExecResult> {
+				if (args.join("\0") === "submodule\0status\0--recursive") {
+					return pi.exec(command, args, options);
+				}
+				return { stdout: "", stderr: "", code: 0, killed: false };
+			},
+		};
+		const inventory = await worktreeInventory(submoduleStatusPi, main);
 		assert.ok(inventory.some((line) => /initialized submodule.*deps\/module/i.test(line)));
-	} finally {
-		rmSync(temporary, { recursive: true, force: true });
-	}
+	});
 });
 
 test("worktree inventory reports assume-unchanged and skip-worktree index flags", async () => {
