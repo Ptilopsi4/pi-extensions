@@ -2,6 +2,7 @@ import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/p
 
 const STATUS_KEY = "chrome-devtools";
 interface StatusContext {
+	sessionManager: object;
 	ui: { setStatus: (key: string, value: string | undefined) => void };
 }
 interface RenderTheme {
@@ -104,9 +105,9 @@ export async function withStatus<T>(
 	callback: () => Promise<T>,
 ) {
 	const token = Symbol(status);
-	const statuses = activeStatuses.get(ctx) ?? [];
+	const statuses = activeStatuses.get(ctx.sessionManager) ?? [];
 	statuses.push({ status, token });
-	activeStatuses.set(ctx, statuses);
+	activeStatuses.set(ctx.sessionManager, statuses);
 	ctx.ui.setStatus(STATUS_KEY, status);
 	try {
 		return await callback();
@@ -114,7 +115,7 @@ export async function withStatus<T>(
 		const index = statuses.findIndex((entry) => entry.token === token);
 		if (index >= 0) statuses.splice(index, 1);
 		const remaining = statuses.at(-1)?.status;
-		if (statuses.length === 0) activeStatuses.delete(ctx);
+		if (statuses.length === 0) activeStatuses.delete(ctx.sessionManager);
 		ctx.ui.setStatus(STATUS_KEY, remaining);
 	}
 }

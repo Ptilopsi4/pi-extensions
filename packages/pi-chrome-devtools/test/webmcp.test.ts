@@ -30,7 +30,7 @@ interface Scenario {
 		status?: "Canceled" | "Completed" | "Error";
 		errorText?: string;
 	};
-	loaderId?: (socketIndex: number) => string;
+	loaderId?: (socketIndex: number, frameReadIndex: number) => string;
 	tools?: (socketIndex: number) => ScenarioTool[];
 }
 
@@ -120,6 +120,22 @@ test("discovers frame-aware tools with event-before-response correlation and bou
 			assert.equal(text.includes("read\\u001b]8;;bad\\u0007_state�"), true);
 			assert.equal(text.includes(String.fromCodePoint(0x1b)), false);
 			assert.equal(text.includes(String.fromCodePoint(0x202e)), false);
+		},
+	);
+});
+
+test("rejects an inventory assembled across a frame document reload", async () => {
+	await withScenario(
+		{
+			loaderId: (_socketIndex, frameReadIndex) =>
+				frameReadIndex === 0 ? "loader-before" : "loader-after",
+			tools: () => [defaultTool],
+		},
+		async () => {
+			await assert.rejects(
+				executeWebMcpListTool({}, undefined, approvingContext().ctx),
+				/document changed while Chrome was publishing its tool inventory/u,
+			);
 		},
 	);
 });
@@ -466,6 +482,7 @@ class ScriptedTransport {
 
 class ScriptedWebSocket extends EventTarget {
 	closed = false;
+	private frameReads = 0;
 	readonly sentMethods: string[] = [];
 
 	constructor(
@@ -498,17 +515,21 @@ class ScriptedWebSocket extends EventTarget {
 				});
 				this.response(request.id, {});
 				return;
-			case "Page.getFrameTree":
+			case "Page.getFrameTree": {
+				const frameReadIndex = this.frameReads;
+				this.frameReads += 1;
 				this.response(request.id, {
 					frameTree: {
 						frame: {
 							id: FRAME_ID,
-							loaderId: this.transport.scenario.loaderId?.(this.index) ?? "loader-1",
+							loaderId:
+								this.transport.scenario.loaderId?.(this.index, frameReadIndex) ?? "loader-1",
 							url: this.transport.scenario.frameUrl?.(this.index) ?? PAGE_URL,
 						},
 					},
 				});
 				return;
+			}
 			case "WebMCP.invokeTool": {
 				this.transport.invocations += 1;
 				const invocationId = `invocation-${this.index}`;

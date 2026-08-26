@@ -93,14 +93,35 @@ async function readInventory(
 	page: DevToolsPage,
 	operation: WebMcpOperationIdentity,
 ) {
+	const framesBefore = await readWebMcpFrames(client, operation.signal);
+	assertOperationCurrent(operation);
 	const protocolTools = await enableWebMcp(client, operation.signal);
 	assertOperationCurrent(operation);
 	if (protocolTools.length > MAX_WEBMCP_TOOLS) {
 		throw new Error(`WebMCP page exposes more than ${MAX_WEBMCP_TOOLS} tools.`);
 	}
-	const frames = await readWebMcpFrames(client, operation.signal);
+	const framesAfter = await readWebMcpFrames(client, operation.signal);
 	assertOperationCurrent(operation);
-	return normalizeInventory(protocolTools, frames, page, operation);
+	requireStableInventoryDocuments(protocolTools, framesBefore, framesAfter);
+	return normalizeInventory(protocolTools, framesAfter, page, operation);
+}
+
+function requireStableInventoryDocuments(
+	tools: readonly WebMcpProtocolTool[],
+	before: readonly WebMcpFrame[],
+	after: readonly WebMcpFrame[],
+) {
+	const beforeLoaders = new Map(before.map((frame) => [frame.id, frame.loaderId]));
+	const afterLoaders = new Map(after.map((frame) => [frame.id, frame.loaderId]));
+	for (const frameId of new Set(tools.map((tool) => tool.frameId))) {
+		const beforeLoader = beforeLoaders.get(frameId);
+		const afterLoader = afterLoaders.get(frameId);
+		if (!beforeLoader || !afterLoader || beforeLoader !== afterLoader) {
+			throw new Error(
+				"A WebMCP frame document changed while Chrome was publishing its tool inventory.",
+			);
+		}
+	}
 }
 
 function normalizeInventory(
