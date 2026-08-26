@@ -235,9 +235,9 @@ function allocateAdaptiveReviewChrome(
 	const compactHeader = [fullHeader[0] ?? ""];
 	if (availableRows === 2) {
 		return {
-			header: compactHeader,
+			header: [],
 			separator: false,
-			hint: [],
+			hint: [criticalHint],
 			showPosition: false,
 			viewportSize: 1,
 		};

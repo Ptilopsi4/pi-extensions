@@ -1152,6 +1152,27 @@ test("compact searchable multi-select preserves empty states ahead of search rem
 	assert.doesNotMatch(emptyText, /No matching items|Type to search/u);
 });
 
+test("compact searchable multi-select keeps its selected action visible after an empty filter", () => {
+	const screen: MenuScreen<ScreenId, ActionId> = {
+		kind: "multiSelect",
+		title: "Searchable tools",
+		enableSearch: true,
+		items: [{ id: "read", label: "Read", selected: false }],
+		action: "toggle",
+		actions: [{ id: "save", label: "Save changes", action: "run" }],
+	};
+	const harness = componentHarness(screen, {
+		plainTheme: true,
+		rows: 8,
+		keybindings: inputFriendlyKeybindings,
+	});
+	for (const input of ["z", "z", "z"]) harness.component.handleInput(input);
+	const rendered = plainRender(harness.component, 32).join("\n");
+	assert.match(rendered, /> zzz/u);
+	assert.match(rendered, /› Save changes/u);
+	assert.doesNotMatch(rendered, /No matching items/u);
+});
+
 test("searchable multi-select keeps actions available for no matches and distinguishes empty", async () => {
 	const screen: MenuScreen<ScreenId, ActionId> = {
 		kind: "multiSelect",

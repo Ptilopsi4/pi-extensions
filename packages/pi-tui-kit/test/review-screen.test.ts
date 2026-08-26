@@ -139,6 +139,21 @@ test("rendered-empty fixed and default reviews preserve controls at minimum heig
 	}
 });
 
+test("two-row fixed and default reviews preserve content and cancellation", () => {
+	for (const viewportSize of [3, undefined]) {
+		const harness = reviewComponentHarness(
+			{ ...reviewScreen, content: "Important change", viewportSize },
+			false,
+			5,
+		);
+		const rendered = plainLines(harness.component, 80);
+		assert.equal(rendered.length, 2);
+		assert.match(rendered[0] ?? "", /Important change/u);
+		assert.match(rendered[1] ?? "", /q back/u);
+		assert.doesNotMatch(rendered.join("\n"), /Review changes/u);
+	}
+});
+
 test("narrow compact review hints advertise cancellation before confirmation", () => {
 	const custom = reviewComponentHarness(reviewScreen, false, 6);
 	assert.match(plainRender(custom.component, 10), /q back/u);
@@ -214,7 +229,10 @@ test("adaptive review degrades explicitly at constrained terminal heights", () =
 	assert.deepEqual(plainLines(harness.component, 80), ["row 1"]);
 
 	harness.setTerminalRows(5);
-	assert.deepEqual(plainLines(harness.component, 80), ["Review changes", "row 1"]);
+	assert.deepEqual(plainLines(harness.component, 80), [
+		"row 1",
+		"q back • ctrl+c close • l Apply • k/j navigate",
+	]);
 
 	harness.setTerminalRows(6);
 	assert.deepEqual(plainLines(harness.component, 80), [
