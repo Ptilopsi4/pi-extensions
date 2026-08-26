@@ -162,7 +162,7 @@ describe("initialized submodule inventory", () => {
 			"-am",
 			"add submodule",
 		]);
-	});
+	}, 5_000);
 
 	afterAll(() => {
 		if (temporary) rmSync(temporary, { recursive: true, force: true });
