@@ -1,5 +1,11 @@
 # @narumitw/pi-tui-kit
 
+## 0.59.0
+
+### Minor Changes
+
+- 40182e5: Add a width-safe `EditorStatusWidget` presentation frame for passive status and progress rows near Pi's editor.
+
 ## 0.58.2
 
 ### Patch Changes

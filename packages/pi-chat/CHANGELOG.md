@@ -1,5 +1,12 @@
 # @narumitw/pi-chat
 
+## 0.1.5
+
+### Patch Changes
+
+- Updated dependencies [40182e5]
+  - @narumitw/pi-tui-kit@0.59.0
+
 ## 0.1.4
 
 ### Patch Changes
