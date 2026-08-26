@@ -105,9 +105,25 @@ test("rejects combinatorial schemas before synchronous input validation", () => 
 			}),
 		/validation branch limit of 128/u,
 	);
+	for (const keyword of ["dependencies", "dependentSchemas"] as const) {
+		const dependencies = Object.fromEntries(
+			Array.from({ length: 129 }, (_value, index) => [`field_${index}`, { $ref: "#/$defs/x" }]),
+		);
+		assert.throws(
+			() =>
+				descriptor({
+					schema: {
+						$defs: { x: { type: "array", items: { type: "number" } } },
+						[keyword]: dependencies,
+					},
+				}),
+			/validation branch limit of 128/u,
+		);
+	}
 	assert.doesNotThrow(() =>
 		descriptor({
 			schema: {
+				dependencies: { value: ["other"] },
 				oneOf: [
 					{ type: "object", properties: { value: { type: "string" } } },
 					{ type: "object", properties: { value: { type: "number" } } },

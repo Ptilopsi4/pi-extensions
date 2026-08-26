@@ -6,7 +6,11 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
-import { setBrowserManagerOperationsForTests } from "../src/browser-manager.js";
+import {
+	devToolsEndpoint,
+	managedBrowserExtensionPaths,
+	setBrowserManagerOperationsForTests,
+} from "../src/browser-manager.js";
 import chromeDevtools from "../src/chrome-devtools.js";
 import {
 	configureChromeDevtoolsToolExposure,
@@ -135,6 +139,8 @@ test("session_start applies trusted project browser settings and status reports 
 		assert.deepEqual(state.extensionPaths, [extensionB]);
 		assert.equal(state.browserExecutable, executable);
 		assert.equal(state.extensionPathsSource, "project");
+		assert.equal(devToolsEndpoint(sessionOwner(ctx)), "http://localhost:9333");
+		assert.deepEqual(managedBrowserExtensionPaths(sessionOwner(ctx)), [extensionB]);
 		const status = notifications.at(-1)?.message ?? "";
 		assert.match(status, new RegExp(`Project settings: .*${path.basename(cwdA)}.*trusted`));
 		assert.match(status, /Endpoint source: user/);

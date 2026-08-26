@@ -9,6 +9,8 @@ import {
 	launchAttemptLines,
 	launchHint,
 	launchModeLabel,
+	managedBrowserExtensionPaths,
+	managedBrowserExtensionPathsSource,
 	managedBrowserForOwner,
 } from "./browser-manager.js";
 import {
@@ -243,18 +245,18 @@ export function buildBrowserStatusMessage(owner?: object) {
 			`Endpoint: ${devToolsEndpoint(owner)}`,
 			`Endpoint source: ${endpointSourceLabel()}`,
 			`Launch mode: ${launchModeLabel(owner)}`,
-			`Unpacked extensions: ${state.extensionPaths.length} (${state.extensionPathsSource})`,
+			`Unpacked extensions: ${managedBrowserExtensionPaths(owner).length} (${managedBrowserExtensionPathsSource(owner)})`,
 			`WebMCP: ${webMcpIsEnabled ? "enabled · experimental" : "disabled · experimental"}`,
 			...(webMcpIsEnabled && !managedBrowserForOwner(owner)?.ready
 				? [
 						"WebMCP warning: attached browser profiles may contain everyday authenticated sessions and sensitive state.",
 					]
 				: []),
-			...(state.extensionPaths.length > 0
+			...(managedBrowserExtensionPaths(owner).length > 0
 				? ["Unpacked extensions execute trusted browser code in an isolated managed browser."]
 				: []),
 			...launchAttemptLines(owner),
-			...(needsRecovery ? [launchHint(), endpointConfigHint()] : []),
+			...(needsRecovery ? [launchHint(owner), endpointConfigHint()] : []),
 		].join("\n"),
 	);
 }
@@ -266,8 +268,8 @@ export function buildSettingsSetupMessage(owner: object) {
 			`Endpoint source: ${endpointSourceLabel()}`,
 			`Launch mode: ${launchModeLabel(owner)}`,
 			...browserSettingsStatusLines(owner),
-			launchHint(),
-			browserCandidateHint(),
+			launchHint(owner),
+			browserCandidateHint(owner),
 			...launchAttemptLines(owner),
 			endpointConfigHint(),
 		].join("\n"),
@@ -292,9 +294,10 @@ export function sanitizeChromeDevtoolsDisplay(value: string, maxCharacters = 50_
 }
 
 function browserSettingsStatusLines(owner: object) {
+	const extensionPaths = managedBrowserExtensionPaths(owner);
 	const extensionLines =
-		state.extensionPaths.length > 0
-			? state.extensionPaths.map((extensionPath) => `  - ${extensionPath}`)
+		extensionPaths.length > 0
+			? extensionPaths.map((extensionPath) => `  - ${extensionPath}`)
 			: ["  - none"];
 	return [
 		`Settings file: ${state.settingsFilePath ?? settingsFilePath()} (user)`,
@@ -305,11 +308,11 @@ function browserSettingsStatusLines(owner: object) {
 			: []),
 		`Auto-launch: ${state.autoLaunchEnabled ? "on" : "off"} (${state.autoLaunchSource})`,
 		`Browser executable: ${state.browserExecutable ?? "automatic discovery"} (${state.browserExecutableSource})`,
-		`Unpacked extensions (${state.extensionPathsSource}):`,
+		`Unpacked extensions (${managedBrowserExtensionPathsSource(owner)}):`,
 		...extensionLines,
 		`WebMCP: ${webMcpEnabled(owner) ? "enabled · experimental · every call requires confirmation" : "disabled · experimental"}`,
 		"Confirmed menu settings apply before the next browser connection; manual JSON edits require /reload or session replacement.",
-		...(state.extensionPaths.length > 0
+		...(extensionPaths.length > 0
 			? [
 					"Unpacked extensions require Chrome for Testing or Chromium and execute trusted browser code.",
 				]

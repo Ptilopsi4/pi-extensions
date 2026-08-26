@@ -9,6 +9,8 @@ import {
 	managedBrowserForOwner,
 	setBrowserManagerOperationsForTests,
 	shutdownManagedBrowser,
+	startManagedBrowserSession,
+	syncManagedBrowserSettings,
 } from "../src/browser-manager.js";
 import { beginWebMcpOperation, state } from "../src/runtime.js";
 
@@ -294,6 +296,7 @@ test("managed browsers and shutdown stay scoped to each session manager", async 
 	const firstOwner = {};
 	const secondOwner = {};
 	const children = [new FakeChildProcess(), new FakeChildProcess()];
+	const spawnArguments: string[][] = [];
 	let profileIndex = 0;
 	let spawnIndex = 0;
 	const removed: string[] = [];
@@ -313,12 +316,43 @@ test("managed browsers and shutdown stay scoped to each session manager", async 
 				status: 200,
 				headers: { "content-type": "application/json" },
 			}),
-		spawn: () => {
+		spawn: (_executable, args) => {
+			spawnArguments.push(args);
 			const child = children[spawnIndex++];
 			assert.ok(child);
 			queueMicrotask(() => child.emit("spawn"));
 			return child as unknown as ChildProcess;
 		},
+	});
+	startManagedBrowserSession(firstOwner);
+	startManagedBrowserSession(secondOwner);
+	syncManagedBrowserSettings(firstOwner, {
+		endpoint: "http://127.0.0.1:9222",
+		host: "127.0.0.1",
+		port: 9222,
+		hostConfigured: false,
+		portConfigured: false,
+		autoLaunchEnabled: true,
+		executablePath: "/test/chrome-for-testing",
+		extensionPaths: ["/projects/first/extension"],
+		endpointSource: "default",
+		autoLaunchSource: "default",
+		executablePathSource: "user",
+		extensionPathsSource: "project",
+	});
+	syncManagedBrowserSettings(secondOwner, {
+		endpoint: "http://127.0.0.1:9222",
+		host: "127.0.0.1",
+		port: 9222,
+		hostConfigured: false,
+		portConfigured: false,
+		autoLaunchEnabled: true,
+		executablePath: "/test/chrome-for-testing",
+		extensionPaths: ["/projects/second/extension"],
+		endpointSource: "default",
+		autoLaunchSource: "default",
+		executablePathSource: "user",
+		extensionPathsSource: "project",
 	});
 	try {
 		await ensureDevToolsEndpoint(undefined, undefined, firstOwner);
@@ -326,6 +360,8 @@ test("managed browsers and shutdown stay scoped to each session manager", async 
 		assert.notEqual(managedBrowserForOwner(firstOwner), managedBrowserForOwner(secondOwner));
 		assert.equal(managedBrowserForOwner(firstOwner)?.port, 9333);
 		assert.equal(managedBrowserForOwner(secondOwner)?.port, 9444);
+		assert.ok(spawnArguments[0]?.includes("--load-extension=/projects/first/extension"));
+		assert.ok(spawnArguments[1]?.includes("--load-extension=/projects/second/extension"));
 
 		const firstOperation = beginWebMcpOperation(firstOwner);
 		const secondOperation = beginWebMcpOperation(secondOwner);

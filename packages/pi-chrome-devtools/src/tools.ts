@@ -6,11 +6,11 @@ import {
 	listPages,
 	resolvePage,
 	resolvePageForNavigation,
+	setActivePageId,
 	textResult,
 	withCdp,
 } from "./cdp-client.js";
 import { renderScreenshotResult, renderTextResult, renderToolCall, withStatus } from "./render.js";
-import { state } from "./runtime.js";
 import { formatScreenshotText, saveScreenshot, throwIfAborted } from "./screenshot.js";
 import { CHROME_DEVTOOLS_TOOL_NAMES, WEBMCP_TOOL_NAMES } from "./tool-names.js";
 
@@ -41,7 +41,7 @@ export const selectPageTool = defineTool({
 	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 		return withStatus(ctx, "select page", async () => {
 			const page = await getPage(params.pageId, { sessionOwner: ctx.sessionManager, signal });
-			state.activePageId = page.id;
+			setActivePageId(ctx.sessionManager, page.id);
 			return textResult(`Selected page ${page.id}: ${page.title}\n${page.url}`, {
 				page: formatPage(page),
 			});
@@ -73,7 +73,7 @@ export const navigateTool = defineTool({
 				return client.send("Page.navigate", { url: params.url });
 			});
 
-			state.activePageId = page.id;
+			setActivePageId(ctx.sessionManager, page.id);
 			const action = created ? "Created page and navigated" : "Navigated";
 			return textResult(`${action} ${page.id} to ${params.url}`, {
 				created,
@@ -113,7 +113,7 @@ export const evaluateTool = defineTool({
 				}),
 			);
 
-			state.activePageId = page.id;
+			setActivePageId(ctx.sessionManager, page.id);
 			return textResult(JSON.stringify(result, null, 2), { page: formatPage(page), result });
 		});
 	},
@@ -238,7 +238,7 @@ export const screenshotTool = defineTool({
 				});
 			});
 
-			state.activePageId = page.id;
+			setActivePageId(ctx.sessionManager, page.id);
 			const savedScreenshot = await saveScreenshot(result.data, params.savePath, ctx.cwd, signal);
 			return {
 				content: [

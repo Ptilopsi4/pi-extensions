@@ -1,7 +1,7 @@
 import { isAbsolute } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { defineMenu, runMenu } from "@narumitw/pi-tui-kit";
-import { shutdownManagedBrowser } from "./browser-manager.js";
+import { shutdownManagedBrowser, syncManagedBrowserSettings } from "./browser-manager.js";
 import {
 	applyAvailableChromeDevtoolsTools,
 	configuredChromeDevtoolsTools,
@@ -276,6 +276,7 @@ async function saveAndApplyBrowserPatch(
 		const loaded = await loadSettings({ cwd: ctx.cwd, projectTrusted });
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
 		applyRuntimeBrowserSettings(loaded.effectiveBrowser, loaded.paths, projectTrusted);
+		syncManagedBrowserSettings(ctx.sessionManager, loaded.effectiveBrowser);
 		state.settingsNotice = loaded.notice;
 		return loaded;
 	} catch (error) {

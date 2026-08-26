@@ -9,6 +9,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { createTuiHarness } from "@narumitw/pi-tui-kit/testing";
 import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
+import { devToolsEndpoint } from "../src/browser-manager.js";
 import { showChromeDevtoolsBrowserSettings } from "../src/browser-settings-menu.js";
 import chromeDevtools from "../src/chrome-devtools.js";
 import {
@@ -150,6 +151,7 @@ test("browser settings save endpoint and auto-launch immediately while preservin
 		assert.match(tui.render().join("\n"), /DevTools endpoint\s+http:\/\/localhost:9333/);
 		assert.equal(state.host, "localhost");
 		assert.equal(state.port, 9333);
+		assert.equal(devToolsEndpoint(sessionOwner(ctx)), "http://localhost:9333");
 		assert.equal(state.endpointSource, "user");
 
 		tui.press("tui.select.down");
