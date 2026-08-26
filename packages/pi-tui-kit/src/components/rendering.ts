@@ -415,9 +415,7 @@ export function fitCompactHintSegments(segments: readonly string[], width: numbe
 	let result = "";
 	for (const segment of segments.map(safeMenuText).filter(Boolean)) {
 		const candidate = result ? `${result} • ${segment}` : segment;
-		if (visibleWidth(candidate) > safeWidth) {
-			return result || truncateToWidth(segment, safeWidth, "");
-		}
+		if (visibleWidth(candidate) > safeWidth) continue;
 		result = candidate;
 	}
 	return result;

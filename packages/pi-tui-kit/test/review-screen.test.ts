@@ -70,6 +70,14 @@ const defaultReviewKeybindings: ReviewKeybindings = {
 	},
 };
 
+const longCancelReviewKeybindings: ReviewKeybindings = {
+	...defaultReviewKeybindings,
+	getKeys(binding) {
+		if (binding === "tui.select.cancel") return ["shift+escape", "ctrl+c"];
+		return defaultReviewKeybindings.getKeys(binding);
+	},
+};
+
 test("review preserves whitespace, sanitizes controls, and bounds exact text at every width", () => {
 	const harness = reviewComponentHarness({
 		...reviewScreen,
@@ -168,6 +176,19 @@ test("narrow compact review hints advertise cancellation before confirmation", (
 	);
 	assert.match(plainRender(defaults.component, 12), /esc back/u);
 	assert.doesNotMatch(plainRender(defaults.component, 12), /enter Apply/u);
+});
+
+test("compact review hints skip oversized controls and retain later controls", () => {
+	const harness = reviewComponentHarness(
+		reviewScreen,
+		false,
+		6,
+		undefined,
+		longCancelReviewKeybindings,
+	);
+	const rendered = plainRender(harness.component, 12);
+	assert.match(rendered, /ctrl\+c close/u);
+	assert.doesNotMatch(rendered, /shift\+escap/u);
 });
 
 test("fixed and default review pagination reaches the end after height compaction", () => {
