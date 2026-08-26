@@ -44,7 +44,7 @@ A failed, partial, interrupted, stale, or cancelled child never satisfies mutati
 ## Prompt-cache boundary
 
 Provider-visible subagent tool definitions and prompt metadata remain stable within one configured tool-surface epoch.
-A versioned hidden session-guidance message carries the bounded agent catalog, completion delivery, capacity, cwd policy, and consultation resource policy without placing mutable values in leading tool metadata.
+A versioned hidden session-guidance message carries the bounded agent catalog, completion delivery, capacity, and cwd policy without placing mutable values in leading tool metadata.
 The initial guidance contract is persisted once before the first agent turn when no equivalent retained contract exists.
 A successfully applied live policy change appends a superseding guidance contract without triggering a model turn.
 Compaction restores missing guidance and required-completion fallbacks in deterministic order after leading summaries.
@@ -64,7 +64,7 @@ The inspected supported Pi runtime emits provider `message_update` events before
 An extension `message_end` handler can replace the finalized same-role message but cannot retract previously displayed deltas.
 Steering is queued after the extension `input` event, direct RPC steering bypasses that event, and tool abort signals do not observe every accepted steer.
 Therefore an extension cannot provide a hard pre-display final-answer barrier or a reliably steer-interruptible join across all supported modes.
-`subagent_await` remains the bounded non-polling compatibility join and accurately states that queued steering is blocked until the tool settles.
+`subagent_await` remains the bounded non-polling retained-agent join and accurately states that queued steering is blocked until the tool settles.
 
 A future core implementation would need replay-safe post-enqueue input activity, exact session-owned blocker handles, pre-display buffering or suppression, bounded timeout, and abort, replacement, reload, shutdown, and headless-mode semantics.
 This repository does not modify or publish Pi core packages for this work.

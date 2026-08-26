@@ -1,5 +1,9 @@
 # Pi Subagents v1/v2 Capability Benchmark Protocol
 
+This protocol is retired because its synchronous capability arms and runner were removed.
+
+This file remains historical design evidence only.
+
 ## Purpose
 
 This benchmark compares the stable `pi-subagents` runtime with the experimental `pi-subagents-v2` runtime.
@@ -67,42 +71,11 @@ One repetition per workload is diagnostic and has no useful confidence interval.
 
 Use at least five preregistered repetitions for a directional follow-up and more tasks for a release or default decision.
 
-## Commands
+## Historical status
 
-Preview the complete protocol without making a provider request:
+The active repository no longer contains this protocol's runner, recipe, synchronous capability arms, or historical `pi-subagents-v2` package.
 
-```bash
-just benchmark-subagent-capabilities --model provider/model
-```
-
-Run one quick paired repetition and save redacted bounded evaluation events:
-
-```bash
-just benchmark-subagent-capabilities \
-  --run \
-  --model provider/model \
-  --output /tmp/pi-subagents-v1-v2-quick.json
-```
-
-Run five repetitions only after reviewing the quick result and provider budget:
-
-```bash
-just benchmark-subagent-capabilities \
-  --run \
-  --repetitions 5 \
-  --model provider/model \
-  --output /tmp/pi-subagents-v1-v2-confirmatory.json
-```
-
-The runner copies only supported Pi authentication files into private temporary agent directories.
-
-It retains only bounded RPC responses, lifecycle boundaries, and non-user `message_end` evidence.
-
-It removes streaming deltas, duplicate user prompts, model reasoning blocks, and reasoning signatures before persistence.
-
-It redacts common credential fields, bearer values, API-key patterns, private blocks, and home-directory paths before persistence.
-
-It removes every generated fixture and temporary agent directory after its owning trial or signal cleanup.
+The former commands are intentionally omitted so this archived protocol does not advertise a runnable workflow.
 
 ## Interpretation
 

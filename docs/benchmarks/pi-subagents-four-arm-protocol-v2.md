@@ -1,5 +1,9 @@
 # Pi Subagents Four-Arm Benchmark Protocol v2
 
+This protocol is retired because its required synchronous `pi-subagents` arm and runner were removed.
+
+This file remains historical design evidence only.
+
 ## Purpose
 
 This protocol compares direct parent execution, v1 blocking orchestration, v1 detached orchestration, and v2 bounded jobs under one matched harness.
@@ -76,60 +80,11 @@ One repetition per workload is diagnostic and has no useful confidence interval.
 
 A replacement or default decision requires preregistered repeated trials, uniform total provider usage, broader repository tasks, and paired uncertainty intervals.
 
-## Commands
+## Historical status
 
-The active repository no longer contains the historical `pi-subagents-v2` package.
+The active repository no longer contains this protocol's runner, recipe, synchronous `pi-subagents` arm, or historical `pi-subagents-v2` package.
 
-Check out the historical v2 source separately and pass its entrypoint with `--v2-extension` when reproducing this protocol.
-
-Preview sixteen trials without making a provider request:
-
-```bash
-just benchmark-subagent-capabilities \
-  --job-version v2 \
-  --v2-extension /path/to/pi-subagents-v2/src/index.ts \
-  --model provider/model
-```
-
-Run one diagnostic repetition:
-
-```bash
-just benchmark-subagent-capabilities \
-  --job-version v2 \
-  --v2-extension /path/to/pi-subagents-v2/src/index.ts \
-  --run \
-  --thinking low \
-  --model provider/model \
-  --output /tmp/pi-subagents-four-arm-v2.json
-```
-
-If an external runner deadline stops a compatible partial run, continue only its missing trials:
-
-```bash
-just benchmark-subagent-capabilities \
-  --job-version v2 \
-  --v2-extension /path/to/pi-subagents-v2/src/index.ts \
-  --run \
-  --resume \
-  --thinking low \
-  --model provider/model \
-  --output /tmp/pi-subagents-four-arm-v2.json
-```
-
-Resume rejects a changed protocol version, model, thinking level, repetition count, deadline, readiness deadline, or trial order.
-
-Run five repetitions only after reviewing provider budget and the diagnostic result:
-
-```bash
-just benchmark-subagent-capabilities \
-  --job-version v2 \
-  --v2-extension /path/to/pi-subagents-v2/src/index.ts \
-  --run \
-  --repetitions 5 \
-  --thinking low \
-  --model provider/model \
-  --output /tmp/pi-subagents-four-arm-v2-confirmatory.json
-```
+The former commands are intentionally omitted so this archived protocol does not advertise a runnable workflow.
 
 ## Privacy and cleanup
 

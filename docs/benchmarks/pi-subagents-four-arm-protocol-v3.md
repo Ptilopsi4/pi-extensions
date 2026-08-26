@@ -80,49 +80,11 @@ One repetition per workload is diagnostic and has no useful confidence interval.
 
 A replacement or default decision requires preregistered repeated trials, uniform total provider usage, broader repository tasks, and paired uncertainty intervals.
 
-## Commands
+## Historical status
 
-The runner defaults to the current v3 protocol.
+The active repository no longer contains this protocol's runner, recipe, or required synchronous `pi-subagents` arm.
 
-Preview sixteen trials without making a provider request:
-
-```bash
-just benchmark-subagent-capabilities --model provider/model
-```
-
-Run one diagnostic repetition:
-
-```bash
-just benchmark-subagent-capabilities \
-  --run \
-  --thinking low \
-  --model provider/model \
-  --output /tmp/pi-subagents-four-arm-v3.json
-```
-
-If an external runner deadline stops a compatible partial run, continue only its missing trials:
-
-```bash
-just benchmark-subagent-capabilities \
-  --run \
-  --resume \
-  --thinking low \
-  --model provider/model \
-  --output /tmp/pi-subagents-four-arm-v3.json
-```
-
-Resume rejects a changed protocol version, model, thinking level, repetition count, deadline, readiness deadline, trial order, or selected extension entrypoint identity.
-
-Run five repetitions only after reviewing provider budget and the diagnostic result:
-
-```bash
-just benchmark-subagent-capabilities \
-  --run \
-  --repetitions 5 \
-  --thinking low \
-  --model provider/model \
-  --output /tmp/pi-subagents-four-arm-v3-confirmatory.json
-```
+The former commands are intentionally omitted so this archived protocol does not advertise a runnable workflow.
 
 ## Privacy and cleanup
 

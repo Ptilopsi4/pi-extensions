@@ -223,7 +223,9 @@ The default transport is `subprocess`.
 
 `auto` selects in-process for read-only built-in tools, RPC for write-capable built-in tools, and subprocess for extension or custom tools.
 
-Transport and capacity changes apply after `/reload` or the next Pi session.
+Transport changes require `/reload` or a Pi process restart.
+
+Capacity changes apply on the next Pi session start or after `/reload`.
 
 Completion, cwd policy, agent defaults, and usage recording apply to subsequent work as documented by their settings screens.
 
