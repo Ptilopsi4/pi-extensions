@@ -392,6 +392,44 @@ test("GitHub Copilot named credential selection is deterministic and reaches onl
 	);
 });
 
+test("OpenCode Go usage uses the canonical versioned endpoint", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	const adapter = SUPPORTED_ADAPTERS.find((candidate) => candidate.id === "opencode-go");
+	assert.ok(adapter);
+	const requestedUrls: string[] = [];
+	globalThis.fetch = async (input) => {
+		requestedUrls.push(input.toString());
+		return new Response(
+			JSON.stringify({
+				usage: {
+					rolling: { status: "ok", percent: 1 },
+				},
+			}),
+			{ status: 200 },
+		);
+	};
+
+	const report = await queryProviderUsage(
+		adapter,
+		{
+			headers: { Authorization: "Bearer secret" },
+			fingerprint: "fingerprint",
+			secrets: ["secret"],
+			model: {} as never,
+		},
+		new AbortController().signal,
+		1_000,
+	);
+
+	assert.deepEqual(requestedUrls, ["https://opencode.ai/zen/go/v1/usage"]);
+	assert.equal(report.providerId, "opencode-go");
+	assert.equal(report.buckets[0]?.used, 1);
+	assert.equal(report.buckets[0]?.remaining, 99);
+});
+
 test("provider cancellation preserves AbortError identity", async () => {
 	const abort = Object.assign(new Error("cancelled"), { name: "AbortError" });
 	const adapter = {
