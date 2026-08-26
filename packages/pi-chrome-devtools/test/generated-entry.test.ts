@@ -25,6 +25,20 @@ test("declared generated entry preserves registration and partial lifecycle clea
 		assert.ok(mock.events.has("session_start"));
 		assert.ok(mock.events.has("session_shutdown"));
 		const context = createMockContext({ mode: "tui", cwd: root });
+		const webMcpListTool = mock.tools.find(
+			(tool) => tool.name === "chrome_devtools_webmcp_list_tools",
+		) as { execute: (...args: unknown[]) => Promise<unknown> } | undefined;
+		assert.ok(webMcpListTool);
+		await assert.rejects(
+			webMcpListTool.execute(
+				"generated-webmcp",
+				{},
+				new AbortController().signal,
+				undefined,
+				context.ctx,
+			),
+			/WebMCP is disabled/u,
+		);
 		await emit(mock.events, "session_shutdown", { reason: "quit" }, context.ctx);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

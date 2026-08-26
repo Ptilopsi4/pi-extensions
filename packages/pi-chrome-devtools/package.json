@@ -11,7 +11,8 @@
 		"pi",
 		"chrome",
 		"devtools",
-		"cdp"
+		"cdp",
+		"webmcp"
 	],
 	"files": [
 		"src",

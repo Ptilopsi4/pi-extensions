@@ -57,6 +57,7 @@ export interface ManagedBrowser {
 	exited: boolean;
 	ready: boolean;
 	ownerGeneration: number;
+	sessionOwner?: object;
 	cleanupPromise?: Promise<void>;
 }
 
@@ -97,6 +98,97 @@ export const state: ChromeDevToolsState = {
 	sessionGeneration: 0,
 	sessionController: new AbortController(),
 };
+
+interface WebMcpSessionRuntime {
+	controller: AbortController;
+	enabled: boolean;
+	controllers: Set<AbortController>;
+	generation: number;
+	sessionGeneration: number;
+}
+
+const webMcpRuntimeByOwner = new WeakMap<object, WebMcpSessionRuntime>();
+
+export function setWebMcpSessionOwner(owner: object) {
+	const runtime = webMcpRuntime(owner);
+	runtime.enabled = false;
+	runtime.sessionGeneration += 1;
+}
+
+export function beginWebMcpOperation(owner: object, toolSignal?: AbortSignal) {
+	const runtime = webMcpRuntime(owner);
+	const controller = new AbortController();
+	runtime.controllers.add(controller);
+	const signals = [controller.signal, runtime.controller.signal];
+	if (toolSignal) signals.push(toolSignal);
+	const signal = AbortSignal.any(signals);
+	return {
+		signal,
+		owner,
+		sessionGeneration: runtime.sessionGeneration,
+		webMcpGeneration: runtime.generation,
+		dispose() {
+			runtime.controllers.delete(controller);
+		},
+	};
+}
+
+export function invalidateWebMcpOperations(owner: object, reason: string) {
+	const runtime = webMcpRuntime(owner);
+	runtime.generation += 1;
+	const controllers = [...runtime.controllers];
+	runtime.controllers.clear();
+	const error = new DOMException(reason, "AbortError");
+	runtime.controller.abort(error);
+	runtime.controller = new AbortController();
+	for (const controller of controllers) controller.abort(error);
+}
+
+export function currentWebMcpGeneration(owner: object) {
+	return webMcpRuntime(owner).generation;
+}
+
+export function webMcpSessionSignal(owner: object) {
+	return webMcpRuntime(owner).controller.signal;
+}
+
+export function applyRuntimeWebMcpSetting(enabled: boolean, owner: object) {
+	const runtime = webMcpRuntime(owner);
+	if (runtime.enabled !== enabled) {
+		invalidateWebMcpOperations(owner, `WebMCP ${enabled ? "enabled" : "disabled"}`);
+	}
+	runtime.enabled = enabled;
+}
+
+export function webMcpEnabled(owner: object) {
+	return webMcpRuntime(owner).enabled;
+}
+
+export function webMcpOperationIsCurrent(operation: {
+	owner: object;
+	sessionGeneration: number;
+	webMcpGeneration: number;
+}) {
+	const runtime = webMcpRuntime(operation.owner);
+	return (
+		operation.sessionGeneration === runtime.sessionGeneration &&
+		operation.webMcpGeneration === runtime.generation
+	);
+}
+
+function webMcpRuntime(owner: object) {
+	const existing = webMcpRuntimeByOwner.get(owner);
+	if (existing) return existing;
+	const created: WebMcpSessionRuntime = {
+		controller: new AbortController(),
+		controllers: new Set(),
+		enabled: false,
+		generation: 0,
+		sessionGeneration: 0,
+	};
+	webMcpRuntimeByOwner.set(owner, created);
+	return created;
+}
 
 export function applyRuntimeBrowserSettings(
 	browser: EffectiveBrowserSettings,

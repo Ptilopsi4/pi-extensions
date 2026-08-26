@@ -1,8 +1,19 @@
 import { isAbsolute } from "node:path";
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { defineMenu, runMenu } from "@narumitw/pi-tui-kit";
 import { shutdownManagedBrowser } from "./browser-manager.js";
-import { applyRuntimeBrowserSettings, state } from "./runtime.js";
+import {
+	applyAvailableChromeDevtoolsTools,
+	configuredChromeDevtoolsTools,
+	setChromeDevtoolsSessionOwner,
+} from "./lazy-tools.js";
+import {
+	applyRuntimeBrowserSettings,
+	applyRuntimeWebMcpSetting,
+	invalidateWebMcpOperations,
+	state,
+	webMcpEnabled,
+} from "./runtime.js";
 import {
 	type BrowserSettingsPatch,
 	type BrowserSettingsSource,
@@ -10,6 +21,7 @@ import {
 	parseBrowserEndpoint,
 	type SettingsLoadResult,
 	saveBrowserSettings,
+	saveWebMcpSettings,
 } from "./settings.js";
 import { sanitizeChromeDevtoolsDisplay } from "./tool-selector.js";
 
@@ -18,6 +30,7 @@ type BrowserSettingsAction =
 	| "open-endpoint"
 	| "save-endpoint"
 	| "set-auto-launch"
+	| "set-webmcp"
 	| "open-executable"
 	| "save-executable"
 	| "show-extensions";
@@ -29,9 +42,11 @@ interface BrowserSettingsMenuState {
 type CommandContext = ExtensionCommandContext;
 
 export async function showChromeDevtoolsBrowserSettings(
+	pi: ExtensionAPI,
 	ctx: CommandContext,
 	generation: number,
 ): Promise<{ closeParent: boolean }> {
+	setChromeDevtoolsSessionOwner(pi, ctx.sessionManager);
 	const ownerSignal = state.sessionController.signal;
 	const isCurrent = () => generation === state.sessionGeneration && !ownerSignal.aborted;
 	const projectTrusted = ctx.isProjectTrusted();
@@ -70,6 +85,15 @@ export async function showChromeDevtoolsBrowserSettings(
 								'Absolute executable path; enter "automatic" to restore browser discovery.',
 							currentValue: sanitizeChromeDevtoolsDisplay(browser.executablePath ?? "Automatic"),
 							action: "open-executable",
+						},
+						{
+							id: "webmcp",
+							label: "WebMCP · Experimental",
+							description:
+								"Allow user-confirmed calls to page-provided WebMCP tools in this browser session.",
+							currentValue: current.load.effectiveWebMcpEnabled ? "On" : "Off",
+							values: ["On", "Off"],
+							action: "set-webmcp",
 						},
 						{
 							id: "extensions",
@@ -163,6 +187,26 @@ export async function showChromeDevtoolsBrowserSettings(
 				);
 				return { kind: "stay" };
 			},
+			"set-webmcp": async ({ value, signal }) => {
+				if (value !== "On" && value !== "Off") return { kind: "rejected" };
+				const saved = await saveAndApplyWebMcpSetting(
+					pi,
+					ctx,
+					generation,
+					ownerSignal,
+					signal,
+					projectTrusted,
+					value === "On",
+				);
+				if (!saved) return { kind: "rejected" };
+				ctx.ui.notify(
+					saved.effectiveWebMcpEnabled
+						? "Experimental WebMCP enabled. Every page-provided tool call requires confirmation. Choose gateway availability under Browser tools."
+						: "Experimental WebMCP disabled. Active WebMCP work was aborted and both gateway tools are unavailable.",
+					"warning",
+				);
+				return { kind: "stay" };
+			},
 			"open-executable": () => ({ kind: "to", screen: "executable" }),
 			"save-executable": async ({ value, signal }) => {
 				if (value === undefined) return { kind: "rejected" };
@@ -226,7 +270,8 @@ async function saveAndApplyBrowserPatch(
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
 		await saveBrowserSettings(patch);
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
-		await shutdownManagedBrowser();
+		invalidateWebMcpOperations(ctx.sessionManager, "Chrome DevTools browser configuration changed");
+		await shutdownManagedBrowser(undefined, { owner: ctx.sessionManager });
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
 		const loaded = await loadSettings({ cwd: ctx.cwd, projectTrusted });
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
@@ -239,8 +284,57 @@ async function saveAndApplyBrowserPatch(
 	}
 }
 
+async function saveAndApplyWebMcpSetting(
+	pi: ExtensionAPI,
+	ctx: CommandContext,
+	generation: number,
+	ownerSignal: AbortSignal,
+	actionSignal: AbortSignal,
+	projectTrusted: boolean,
+	enabled: boolean,
+) {
+	const previousEnabled = webMcpEnabled(ctx.sessionManager);
+	const previousTools = configuredChromeDevtoolsTools(pi);
+	try {
+		await ctx.waitForIdle();
+		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
+		applyRuntimeWebMcpSetting(enabled, ctx.sessionManager);
+		applyAvailableChromeDevtoolsTools(pi, previousTools);
+		await saveWebMcpSettings(enabled);
+		if (!isOwnerCurrent(generation, ownerSignal)) return false;
+		const loaded = await loadSettings({ cwd: ctx.cwd, projectTrusted });
+		if (!isOwnerCurrent(generation, ownerSignal)) return false;
+		state.settingsNotice = loaded.notice;
+		return loaded;
+	} catch (error) {
+		if (!isOwnerCurrent(generation, ownerSignal)) return false;
+		let rollbackError: unknown;
+		try {
+			applyRuntimeWebMcpSetting(previousEnabled, ctx.sessionManager);
+			applyAvailableChromeDevtoolsTools(pi, previousTools);
+		} catch (caught) {
+			rollbackError = caught;
+		}
+		if (isCurrent(generation, ownerSignal, actionSignal)) {
+			notifySaveFailure(
+				ctx,
+				rollbackError
+					? new Error(
+							`${formatError(error)}; WebMCP rollback failed: ${formatError(rollbackError)}`,
+						)
+					: error,
+			);
+		}
+		return false;
+	}
+}
+
+function isOwnerCurrent(generation: number, ownerSignal: AbortSignal) {
+	return generation === state.sessionGeneration && !ownerSignal.aborted;
+}
+
 function isCurrent(generation: number, ownerSignal: AbortSignal, actionSignal: AbortSignal) {
-	return generation === state.sessionGeneration && !ownerSignal.aborted && !actionSignal.aborted;
+	return isOwnerCurrent(generation, ownerSignal) && !actionSignal.aborted;
 }
 
 function invalidSettingsScreen(load: SettingsLoadResult) {
