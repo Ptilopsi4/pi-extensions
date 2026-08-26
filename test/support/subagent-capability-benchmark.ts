@@ -463,12 +463,16 @@ export function buildCapabilityPrompt(
 		}
 	} else {
 		const names = capabilityToolNames(arm);
+		const jobOptions =
+			arm === "v3-job"
+				? `Use thinkingLevel ${thinkingLevel}, timeout 120, and tools ${JSON.stringify(capabilityChildTools(task))} for each job.`
+				: `Use ${agent}, thinkingLevel ${thinkingLevel}, and timeoutMs 120000.`;
 		steps.push(
 			`Start exactly ${task.requiredStartCount} background job(s) with ${names.start}.`,
-			`Use ${agent}, thinkingLevel ${thinkingLevel}, and timeoutMs 120000.`,
+			jobOptions,
 			...task.childTasks.map((childTask, index) => `Job ${index + 1} exact task:\n${childTask}`),
 			task.parentWork,
-			`Then call ${names.wait} exactly once for each started job with timeoutMs 120000.`,
+			`Then call ${names.wait} exactly once for each started job with ${arm === "v3-job" ? "timeout 120" : "timeoutMs 120000"}.`,
 			"Do not poll with inspection and do not start replacement jobs.",
 		);
 	}
@@ -574,8 +578,13 @@ function expectedToolCounts(
 
 function capabilityToolNames(arm: CapabilityBenchmarkArm): { start: string; wait: string } {
 	if (arm === "v1-async") return { start: "subagent_spawn", wait: "subagent_await" };
-	if (arm === "v3-job") return { start: "subagent-v3-start", wait: "subagent-v3-wait" };
+	if (arm === "v3-job") return { start: "subagent-spawn", wait: "subagent-wait" };
 	return { start: "subagent-v2-start", wait: "subagent-v2-wait" };
+}
+
+function capabilityChildTools(task: CapabilityTask): string[] {
+	const readOnly = ["read", "grep", "find", "ls"];
+	return task.category === "mutation" ? [...readOnly, "edit", "write", "bash"] : readOnly;
 }
 
 export function scoreCapabilityEvidence(

@@ -9,18 +9,7 @@ import {
 	resolveTimeoutMs,
 	runChild,
 } from "../src/process.js";
-import type { AgentDefinition, ChildRequest } from "../src/types.js";
-
-const agent: AgentDefinition = {
-	name: "reviewer",
-	description: "Review code",
-	source: "built-in",
-	filePath: "built-in:reviewer",
-	systemPrompt: "Review carefully.",
-	tools: ["read", "bash", "write", "grep"],
-	model: "provider/model",
-	thinkingLevel: "low",
-};
+import type { ChildRequest } from "../src/types.js";
 
 let directory: string;
 let previousPackageDirectory: string | undefined;
@@ -36,48 +25,42 @@ afterEach(() => {
 	rmSync(directory, { recursive: true, force: true });
 });
 
-test("buildPiArgs loads only the child bridge and preserves communication tools", () => {
-	const request = childRequest({ mode: "read_only", projectTrusted: false });
-	const args = buildPiArgs(request, "/tmp/prompt.md");
-	assert.deepEqual(args.slice(0, 6), [
+test("buildPiArgs isolates the child and preserves selected communication tools", () => {
+	const args = buildPiArgs(childRequest());
+	assert.deepEqual(args.slice(0, 8), [
 		"--mode",
 		"json",
 		"-p",
 		"--no-session",
 		"--no-extensions",
+		"--no-skills",
+		"--no-prompt-templates",
 		"-e",
 	]);
-	assert.equal(args[6], childCommunicationBridgePath());
+	assert.equal(args[8], childCommunicationBridgePath());
+	assert.equal(args[args.indexOf("--model") + 1], "test-provider/test-model");
+	assert.equal(args[args.indexOf("--thinking") + 1], "medium");
 	assert.ok(args.includes("--no-approve"));
-	assert.ok(args.includes("--no-skills"));
-	assert.ok(args.includes("--no-prompt-templates"));
-	assert.equal(args[args.indexOf("--tools") + 1], "read,grep,subagent-ask,subagent-wait");
-	assert.doesNotMatch(args.join(" "), /\bbash\b|\bwrite\b/);
+	assert.equal(args[args.indexOf("--tools") + 1], "read,grep,find,ls,subagent-ask,subagent-wait");
+	assert.doesNotMatch(args.join(" "), /\bbash\b|\bwrite\b|append-system-prompt/u);
+	assert.equal(args.at(-1), "Task: task");
 
 	const writable = buildPiArgs(
-		childRequest({ mode: "normal", projectTrusted: true }),
-		"/tmp/prompt.md",
+		childRequest({
+			tools: ["read", "bash", "write", "subagent-ask", "subagent-wait"],
+			thinkingLevel: "xhigh",
+			projectTrusted: true,
+		}),
 	);
 	assert.ok(writable.includes("--approve"));
+	assert.equal(writable[writable.indexOf("--thinking") + 1], "xhigh");
 	assert.equal(
 		writable[writable.indexOf("--tools") + 1],
-		"read,bash,write,grep,subagent-ask,subagent-wait",
+		"read,bash,write,subagent-ask,subagent-wait",
 	);
 
-	const noAgentTools = buildPiArgs(
-		childRequest({ agent: { ...agent, tools: [] } }),
-		"/tmp/prompt.md",
-	);
-	assert.equal(noAgentTools[noAgentTools.indexOf("--tools") + 1], "subagent-ask,subagent-wait");
-
-	const defaultWorkerTools = buildPiArgs(
-		childRequest({ agent: { ...agent, tools: undefined } }),
-		"/tmp/prompt.md",
-	);
-	assert.equal(
-		defaultWorkerTools[defaultWorkerTools.indexOf("--tools") + 1],
-		"read,bash,edit,write,subagent-ask,subagent-wait",
-	);
+	const noWorkTools = buildPiArgs(childRequest({ tools: [] }));
+	assert.equal(noWorkTools[noWorkTools.indexOf("--tools") + 1], "subagent-ask,subagent-wait");
 });
 
 test("runChild classifies completed and partial subprocess output", async () => {
@@ -170,11 +153,12 @@ test("runChild enforces an optional execution timeout and caller cancellation", 
 
 function childRequest(overrides: Partial<ChildRequest> = {}): ChildRequest {
 	return {
-		agent,
 		task: "task",
+		tools: ["read", "grep", "find", "ls"],
+		model: "test-provider/test-model",
+		thinkingLevel: "medium",
 		cwd: directory,
 		projectTrusted: false,
-		mode: "normal",
 		communication: {
 			host: "127.0.0.1",
 			port: 31_337,

@@ -12,7 +12,9 @@ That isolation is not a limitation—it is the point.
 
 Fresh does not mean empty.
 
-The subagent still receives Pi's system prompt, its agent definition, applicable project context, its allowed tools, and one explicit task.
+The subagent still receives Pi's standard system prompt, the main agent's effective model, applicable project context, its selected tools, and one explicit task.
+
+The task defines the child's specialization, while the selected tools define its authority.
 
 Give each subagent a self-contained task containing only the context needed to complete that task.
 

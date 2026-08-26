@@ -2,12 +2,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type MessageBroker, sanitizeTerminalText } from "./message-broker.js";
 import { runChild as defaultRunChild } from "./process.js";
 import {
-	type AgentDefinition,
 	type ChildRequest,
 	type ChildResult,
-	type ExecutionMode,
 	type JobSummary,
 	type SubagentJobState,
+	type SubagentThinkingLevel,
 	TERMINAL_JOB_STATES,
 } from "./types.js";
 
@@ -26,7 +25,6 @@ interface InternalJob extends JobSummary {
 	limitations: string[];
 	deliverySent: boolean;
 	generation: number;
-	mode: ExecutionMode;
 }
 
 export interface RuntimeDependencies {
@@ -35,12 +33,13 @@ export interface RuntimeDependencies {
 }
 
 export interface StartJobInput {
-	agent: AgentDefinition;
 	task: string;
+	tools: string[];
+	model: string;
+	thinkingLevel: SubagentThinkingLevel;
 	cwd: string;
 	timeout?: number;
 	projectTrusted: boolean;
-	mode: ExecutionMode;
 }
 
 export class SubagentRuntime {
@@ -71,7 +70,7 @@ export class SubagentRuntime {
 		this.sessionActive = true;
 	}
 
-	start(input: StartJobInput): { jobId: string; agent: string; state: "queued"; timeout?: number } {
+	start(input: StartJobInput): { jobId: string; state: "queued"; timeout?: number } {
 		if (!this.sessionActive) {
 			throw new Error("Subagent runtime is unavailable because the session is not active.");
 		}
@@ -84,8 +83,6 @@ export class SubagentRuntime {
 		const jobId = `job_${this.now().toString(36)}_${(++this.counter).toString(36)}`;
 		const communication = this.broker.issueCredentials({
 			jobId,
-			agent: input.agent.name,
-			mode: input.mode,
 			generation: this.generation,
 		});
 		let resolveTerminal!: () => void;
@@ -95,7 +92,6 @@ export class SubagentRuntime {
 		const controller = new AbortController();
 		const job: InternalJob = {
 			jobId,
-			agent: input.agent.name,
 			state: "queued",
 			createdAt: this.now(),
 			...(input.timeout !== undefined ? { timeout: input.timeout } : {}),
@@ -105,7 +101,6 @@ export class SubagentRuntime {
 			limitations: [],
 			deliverySent: false,
 			generation: this.generation,
-			mode: input.mode,
 		};
 		this.jobs.set(jobId, job);
 		job.task = Promise.resolve().then(async () => {
@@ -115,12 +110,13 @@ export class SubagentRuntime {
 			let child: ChildResult;
 			try {
 				child = await this.runChild({
-					agent: input.agent,
 					task: input.task,
+					tools: [...input.tools],
+					model: input.model,
+					thinkingLevel: input.thinkingLevel,
 					cwd: input.cwd,
 					timeout: input.timeout,
 					projectTrusted: input.projectTrusted,
-					mode: input.mode,
 					communication,
 					signal: controller.signal,
 				});
@@ -137,7 +133,6 @@ export class SubagentRuntime {
 		});
 		return {
 			jobId,
-			agent: job.agent,
 			state: "queued",
 			...(job.timeout !== undefined ? { timeout: job.timeout } : {}),
 		};
@@ -303,7 +298,6 @@ export class SubagentRuntime {
 	private summary(job: InternalJob): JobSummary {
 		return {
 			jobId: job.jobId,
-			agent: job.agent,
 			state: job.state,
 			createdAt: job.createdAt,
 			...(job.startedAt !== undefined ? { startedAt: job.startedAt } : {}),
