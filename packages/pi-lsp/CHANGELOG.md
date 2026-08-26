@@ -1,5 +1,11 @@
 # @narumitw/pi-lsp
 
+## 0.49.6
+
+### Patch Changes
+
+- c23e604: Key published diagnostics by a canonical file path so equivalent URI encodings are matched, and wait for each LSP process to exit before completing shutdown.
+
 ## 0.49.5
 
 ### Patch Changes

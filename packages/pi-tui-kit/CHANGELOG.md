@@ -1,5 +1,11 @@
 # @narumitw/pi-tui-kit
 
+## 0.58.2
+
+### Patch Changes
+
+- 663f72a: Keep framed choices, settings, searchable inputs, and review pagination usable within Pi's available terminal rows.
+
 ## 0.58.1
 
 ### Patch Changes
