@@ -1,5 +1,16 @@
 # @narumitw/pi-chrome-devtools
 
+## 0.53.0
+
+### Minor Changes
+
+- 9f44143: Add opt-in experimental WebMCP discovery and confirmed page-tool invocation through fixed Pi gateway tools.
+
+### Patch Changes
+
+- Updated dependencies [40182e5]
+  - @narumitw/pi-tui-kit@0.59.0
+
 ## 0.52.3
 
 ### Patch Changes
