@@ -42,6 +42,10 @@ The runtime always adds `subagent-ask` and child `subagent-wait` for communicati
 
 The child inherits the main agent's effective provider and model at spawn time.
 
+Spawn rejects model providers registered only by a parent extension and process-local runtime API keys.
+
+Use a child-visible provider with Pi's stored credentials or inherited environment credentials.
+
 Omit `thinkingLevel` to follow the main agent's effective thinking level.
 
 Set `thinkingLevel` explicitly only when the bounded task justifies a different level.

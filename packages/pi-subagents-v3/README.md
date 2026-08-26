@@ -124,6 +124,12 @@ Omitting `thinkingLevel` captures the main agent's effective level when `subagen
 
 The child inherits the main agent's effective provider and model when `subagent-spawn` executes.
 
+Spawn rejects providers registered by a parent extension because children disable unrelated extensions.
+
+Spawn also rejects process-local runtime API keys such as a parent-only `--api-key` value.
+
+Use stored or environment credentials that child processes can read.
+
 The extension does not expose a per-job model override.
 
 ## 🔄 Messaging, lifecycle, and retention
@@ -162,6 +168,10 @@ Selecting `bash`, `powershell`, `edit`, or `write` permits workspace mutation wi
 
 Every child disables session persistence, unrelated extensions, skills, and prompt templates.
 
+Provider selection therefore supports Pi's child-visible built-in and configured providers, not providers registered only by a parent extension.
+
+Credentials must be available independently to the child through Pi's stored credentials or its inherited environment.
+
 The broker accepts only loopback TCP connections with an active per-job token.
 
 A child question is visible model context, but its envelope explicitly identifies it as untrusted subagent content rather than user authorization.
@@ -176,7 +186,9 @@ Parallel writers require disjoint ownership or workspace isolation outside this 
 
 ## 🚧 Limitations
 
-The extension does not load arbitrary extension tools into child processes.
+The extension does not load arbitrary extension tools or parent-registered model providers into child processes.
+
+Process-local runtime API keys are not forwarded to children.
 
 The extension does not provide custom agents, per-job models, custom system prompts, peer-to-peer child messaging, retained conversations, user-directed follow-up work, mailboxes, Agent Teams, chains, fan-in aggregators, panels, workflow DAGs, dynamic scheduling, verification orchestration, nested subagents, or extension-owned semantic memory.
 

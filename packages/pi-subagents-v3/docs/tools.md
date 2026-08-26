@@ -15,6 +15,12 @@ The runtime always adds `subagent-ask` and `subagent-wait` to the selected tools
 
 The child inherits the main agent's effective provider and model at spawn time.
 
+Providers registered by a parent extension throw before the job is queued because children disable unrelated extensions.
+
+A process-local runtime API key, including a parent-only `--api-key` value, also throws before queuing.
+
+Use Pi's stored credentials or environment credentials that the child process can read.
+
 Unavailable or extension-only tool names throw before the job is queued.
 
 Throws without launching a child when the session broker is unavailable.

@@ -232,6 +232,39 @@ test("rejects invalid spawn arguments and nesting before child launch", async ()
 	assert.equal(launches, 0);
 });
 
+test("rejects parent-only model providers and credentials before child launch", async () => {
+	for (const [modelRegistry, expected] of [
+		[
+			{
+				getProviderAuthStatus: () => ({ configured: true, source: "runtime" as const }),
+				getRegisteredProviderIds: () => [],
+			},
+			/process-local runtime API key/i,
+		],
+		[
+			{
+				getProviderAuthStatus: () => ({ configured: true, source: "stored" as const }),
+				getRegisteredProviderIds: () => ["test-provider"],
+			},
+			/children disable parent extensions/i,
+		],
+	] as const) {
+		let launches = 0;
+		const { mock, context } = await setup(
+			{
+				runChild: async () => {
+					launches++;
+					return completed("unexpected");
+				},
+			},
+			{},
+			{ modelRegistry },
+		);
+		await assert.rejects(() => spawnJob(mock, context, "must not launch"), expected);
+		assert.equal(launches, 0);
+	}
+});
+
 test("delivers child questions, interrupts parent waits, and returns plain-text replies", async () => {
 	let request!: ChildRequest;
 	const { mock, context } = await setup({
@@ -432,6 +465,10 @@ async function setup(
 	const mock = createMockPi(mockOptions);
 	const context = createMockContext({
 		model: { provider: "test-provider", id: "test-model" },
+		modelRegistry: {
+			getProviderAuthStatus: () => ({ configured: true, source: "environment" as const }),
+			getRegisteredProviderIds: () => [],
+		},
 		...contextOverrides,
 	});
 	subagentsV3(mock.pi, dependencies);

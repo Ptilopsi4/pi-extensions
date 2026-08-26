@@ -1,5 +1,5 @@
 import { StringEnum } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import {
 	type BrokerQuestion,
@@ -125,7 +125,7 @@ export function registerSubagentTools(
 			assertNotNested();
 			const task = validateTask(params.task, "subagent-spawn");
 			const tools = resolveTools(params.tools);
-			const model = resolveModel(ctx.model);
+			const model = resolveChildModel(ctx);
 			const thinkingLevel = resolveThinkingLevel(
 				params.thinkingLevel ?? ctx.thinkingLevel ?? pi.getThinkingLevel(),
 			);
@@ -278,9 +278,21 @@ function resolveTools(value: unknown): string[] {
 	return tools;
 }
 
-function resolveModel(model: { provider: string; id: string } | undefined): string {
+function resolveChildModel(ctx: ExtensionContext): string {
+	const model = ctx.model;
 	if (!model)
 		throw new Error("Subagent model is unavailable because no main-agent model is selected.");
+	const provider = sanitizeTerminalText(model.provider).slice(0, 128);
+	if (ctx.modelRegistry.getRegisteredProviderIds().includes(model.provider)) {
+		throw new Error(
+			`Subagent model provider ${provider} is unavailable because children disable parent extensions.`,
+		);
+	}
+	if (ctx.modelRegistry.getProviderAuthStatus(model.provider).source === "runtime") {
+		throw new Error(
+			`Subagent model provider ${provider} uses a process-local runtime API key. Configure stored or environment credentials that child processes can read.`,
+		);
+	}
 	return `${model.provider}/${model.id}`;
 }
 
