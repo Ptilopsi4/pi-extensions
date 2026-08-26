@@ -3,7 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "vitest";
-import { buildPiArgs, resolveTimeoutMs, runChild } from "../src/process.js";
+import {
+	buildPiArgs,
+	childCommunicationBridgePath,
+	resolveTimeoutMs,
+	runChild,
+} from "../src/process.js";
 import type { AgentDefinition, ChildRequest } from "../src/types.js";
 
 const agent: AgentDefinition = {
@@ -31,8 +36,8 @@ afterEach(() => {
 	rmSync(directory, { recursive: true, force: true });
 });
 
-test("buildPiArgs removes extension and write surfaces from read-only consultations", () => {
-	const request = childRequest({ readOnly: true, projectTrusted: false });
+test("buildPiArgs loads only the child bridge and preserves communication tools", () => {
+	const request = childRequest({ mode: "read_only", projectTrusted: false });
 	const args = buildPiArgs(request, "/tmp/prompt.md");
 	assert.deepEqual(args.slice(0, 6), [
 		"--mode",
@@ -40,20 +45,39 @@ test("buildPiArgs removes extension and write surfaces from read-only consultati
 		"-p",
 		"--no-session",
 		"--no-extensions",
-		"--model",
+		"-e",
 	]);
+	assert.equal(args[6], childCommunicationBridgePath());
 	assert.ok(args.includes("--no-approve"));
 	assert.ok(args.includes("--no-skills"));
 	assert.ok(args.includes("--no-prompt-templates"));
-	assert.equal(args[args.indexOf("--tools") + 1], "read,grep");
+	assert.equal(args[args.indexOf("--tools") + 1], "read,grep,subagent-ask,subagent-wait");
 	assert.doesNotMatch(args.join(" "), /\bbash\b|\bwrite\b/);
 
 	const writable = buildPiArgs(
-		childRequest({ readOnly: false, projectTrusted: true }),
+		childRequest({ mode: "normal", projectTrusted: true }),
 		"/tmp/prompt.md",
 	);
 	assert.ok(writable.includes("--approve"));
-	assert.equal(writable[writable.indexOf("--tools") + 1], "read,bash,write,grep");
+	assert.equal(
+		writable[writable.indexOf("--tools") + 1],
+		"read,bash,write,grep,subagent-ask,subagent-wait",
+	);
+
+	const noAgentTools = buildPiArgs(
+		childRequest({ agent: { ...agent, tools: [] } }),
+		"/tmp/prompt.md",
+	);
+	assert.equal(noAgentTools[noAgentTools.indexOf("--tools") + 1], "subagent-ask,subagent-wait");
+
+	const defaultWorkerTools = buildPiArgs(
+		childRequest({ agent: { ...agent, tools: undefined } }),
+		"/tmp/prompt.md",
+	);
+	assert.equal(
+		defaultWorkerTools[defaultWorkerTools.indexOf("--tools") + 1],
+		"read,bash,edit,write,subagent-ask,subagent-wait",
+	);
 });
 
 test("runChild classifies completed and partial subprocess output", async () => {
@@ -150,7 +174,12 @@ function childRequest(overrides: Partial<ChildRequest> = {}): ChildRequest {
 		task: "task",
 		cwd: directory,
 		projectTrusted: false,
-		readOnly: false,
+		mode: "normal",
+		communication: {
+			host: "127.0.0.1",
+			port: 31_337,
+			token: "a".repeat(64),
+		},
 		signal: new AbortController().signal,
 		...overrides,
 	};

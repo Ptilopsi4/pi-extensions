@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { test } from "vitest";
+import { BROKER_ENV } from "../src/message-broker.js";
 
 const packageDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -33,14 +36,17 @@ test("bundled skill documents every minimal-runtime operating responsibility", (
 	);
 	for (const evidence of [
 		/prefer direct work/i,
-		/subagent-v3-consult/i,
+		/subagent-consult/i,
 		/self-contained tasks/i,
 		/shortest realistic execution deadline/i,
 		/parallel tool batch/i,
-		/subagent-v3-wait/i,
+		/subagent-wait/i,
 		/wait timeout does not cancel/i,
-		/subagent-v3-inspect/i,
-		/subagent-v3-cancel/i,
+		/subagent-inspect/i,
+		/subagent-cancel/i,
+		/subagent-ask/i,
+		/subagent-reply/i,
+		/not.*user request.*permission/is,
 		/partial.*failed.*timed_out.*cancelled/is,
 		/worker's statements.*claims rather than proof/is,
 		/disjoint.*ownership/is,
@@ -50,7 +56,7 @@ test("bundled skill documents every minimal-runtime operating responsibility", (
 	}
 	for (const nonGoal of [
 		"retained conversations",
-		"follow-up turns",
+		"user-directed follow-up turns",
 		"mailboxes",
 		"chains",
 		"panels",
@@ -58,5 +64,69 @@ test("bundled skill documents every minimal-runtime operating responsibility", (
 		"nested subagents",
 	]) {
 		assert.match(skill, new RegExp(nonGoal, "i"));
+	}
+});
+
+test("Pi's Jiti loader resolves the package entry and child bridge", async () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-v3-loader-"));
+	const agentDir = path.join(root, "agent");
+	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+	try {
+		mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		process.env[BROKER_ENV.host] = "127.0.0.1";
+		process.env[BROKER_ENV.port] = "31337";
+		process.env[BROKER_ENV.token] = "a".repeat(64);
+		const mainLoader = new DefaultResourceLoader({
+			cwd: packageDirectory,
+			agentDir,
+			settingsManager: SettingsManager.inMemory({}),
+			additionalExtensionPaths: [path.join(packageDirectory, "src", "index.ts")],
+		});
+		await mainLoader.reload();
+		const loadedMain = mainLoader.getExtensions();
+		assert.deepEqual(loadedMain.errors, []);
+		assert.equal(loadedMain.extensions.length, 1);
+		const main = loadedMain.extensions[0];
+		assert.ok(main?.handlers.has("session_start"));
+		assert.ok(main?.handlers.has("session_shutdown"));
+		assert.deepEqual(
+			[...(main?.tools.keys() ?? [])],
+			[
+				"subagent-start",
+				"subagent-inspect",
+				"subagent-cancel",
+				"subagent-wait",
+				"subagent-consult",
+				"subagent-reply",
+			],
+		);
+
+		const childLoader = new DefaultResourceLoader({
+			cwd: packageDirectory,
+			agentDir,
+			settingsManager: SettingsManager.inMemory({}),
+			additionalExtensionPaths: [
+				path.join(packageDirectory, "src", "child-communication-bridge.ts"),
+			],
+		});
+		await childLoader.reload();
+		const loadedChild = childLoader.getExtensions();
+		assert.deepEqual(loadedChild.errors, []);
+		assert.equal(loadedChild.extensions.length, 1);
+		assert.deepEqual(
+			[...(loadedChild.extensions[0]?.tools.keys() ?? [])],
+			["subagent-ask", "subagent-wait"],
+		);
+		assert.equal(process.env[BROKER_ENV.host], undefined);
+		assert.equal(process.env[BROKER_ENV.port], undefined);
+		assert.equal(process.env[BROKER_ENV.token], undefined);
+	} finally {
+		delete process.env[BROKER_ENV.host];
+		delete process.env[BROKER_ENV.port];
+		delete process.env[BROKER_ENV.token];
+		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		rmSync(root, { recursive: true, force: true });
 	}
 });
