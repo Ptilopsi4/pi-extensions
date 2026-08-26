@@ -80,12 +80,7 @@ test("enforces four outstanding requests and bounded consumed replay", async () 
 
 test("rejects cross-job request IDs, concurrent waits, and revoked tokens", async () => {
 	const { broker, credentials } = await setup(() => undefined);
-	const secondCredentials = broker.issueCredentials({
-		jobId: "job_2",
-		agent: "explorer",
-		mode: "read_only",
-		generation: 1,
-	});
+	const secondCredentials = broker.issueCredentials({ jobId: "job_2", generation: 1 });
 	const first = createBrokerClient(credentials);
 	const second = createBrokerClient(secondCredentials);
 	const requestId = await first.ask("Private to job one", undefined);
@@ -129,12 +124,7 @@ test("rejects incomplete frames at the request deadline", async () => {
 	});
 	brokers.push(broker);
 	await broker.start();
-	const credentials = broker.issueCredentials({
-		jobId: "job_1",
-		agent: "worker",
-		mode: "normal",
-		generation: 1,
-	});
+	const credentials = broker.issueCredentials({ jobId: "job_1", generation: 1 });
 	assert.match(String((await raw(credentials, "{")).error), /frame timed out/i);
 });
 
@@ -173,12 +163,7 @@ async function setup(onQuestion: (question: BrokerQuestion) => void) {
 	const broker = new MessageBroker({ onQuestion });
 	brokers.push(broker);
 	await broker.start();
-	const credentials = broker.issueCredentials({
-		jobId: "job_1",
-		agent: "worker",
-		mode: "normal",
-		generation: 1,
-	});
+	const credentials = broker.issueCredentials({ jobId: "job_1", generation: 1 });
 	return { broker, credentials };
 }
 

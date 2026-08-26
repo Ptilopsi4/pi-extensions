@@ -17,6 +17,7 @@ test("package declares one source extension and one bundled operating skill", ()
 		files: string[];
 		pi: { extensions: string[]; skills: string[] };
 		piExtension: { lifecycle: string };
+		peerDependencies: Record<string, string>;
 		repository: { directory: string };
 	};
 	assert.equal(manifest.name, "@narumitw/pi-subagents-v3");
@@ -24,6 +25,8 @@ test("package declares one source extension and one bundled operating skill", ()
 	assert.deepEqual(manifest.pi.extensions, ["./src/index.ts"]);
 	assert.deepEqual(manifest.pi.skills, ["./skills"]);
 	assert.equal(manifest.piExtension.lifecycle, "experimental");
+	assert.equal(manifest.peerDependencies["@earendil-works/pi-ai"], "*");
+	assert.equal(manifest.peerDependencies["@earendil-works/pi-coding-agent"], "*");
 	assert.ok(manifest.files.includes("src"));
 	assert.ok(manifest.files.includes("skills"));
 	assert.ok(manifest.files.includes("docs"));
@@ -36,7 +39,11 @@ test("bundled skill documents every minimal-runtime operating responsibility", (
 	);
 	for (const evidence of [
 		/prefer direct work/i,
-		/subagent-consult/i,
+		/subagent-spawn/i,
+		/default of `read`, `grep`, `find`, and `ls`/i,
+		/smallest sufficient tool set/i,
+		/`bash` and `powershell` as unrestricted command execution/i,
+		/omit `thinkingLevel` to follow the main agent/i,
 		/self-contained tasks/i,
 		/shortest realistic execution deadline/i,
 		/parallel tool batch/i,
@@ -48,7 +55,7 @@ test("bundled skill documents every minimal-runtime operating responsibility", (
 		/subagent-reply/i,
 		/not.*user request.*permission/is,
 		/partial.*failed.*timed_out.*cancelled/is,
-		/worker's statements.*claims rather than proof/is,
+		/writer's statements.*claims rather than proof/is,
 		/disjoint.*ownership/is,
 		/workspace isolation/i,
 	]) {
@@ -92,14 +99,7 @@ test("Pi's Jiti loader resolves the package entry and child bridge", async () =>
 		assert.ok(main?.handlers.has("session_shutdown"));
 		assert.deepEqual(
 			[...(main?.tools.keys() ?? [])],
-			[
-				"subagent-start",
-				"subagent-inspect",
-				"subagent-cancel",
-				"subagent-wait",
-				"subagent-consult",
-				"subagent-reply",
-			],
+			["subagent-spawn", "subagent-inspect", "subagent-cancel", "subagent-wait", "subagent-reply"],
 		);
 
 		const childLoader = new DefaultResourceLoader({

@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import net, { type AddressInfo, type Server, type Socket } from "node:net";
-import type { BrokerCredentials, ExecutionMode } from "./types.js";
+import type { BrokerCredentials } from "./types.js";
 
 export const BROKER_HOST = "127.0.0.1" as const;
 export const BROKER_ENV = {
@@ -23,8 +23,6 @@ const MAX_RETAINED_CONSUMED_REQUESTS = 4;
 export interface BrokerQuestion {
 	requestId: string;
 	jobId: string;
-	agent: string;
-	mode: ExecutionMode;
 	message: string;
 }
 
@@ -43,8 +41,6 @@ export interface MessageBrokerOptions {
 
 interface JobRecord {
 	jobId: string;
-	agent: string;
-	mode: ExecutionMode;
 	generation: number;
 	token: string;
 }
@@ -143,12 +139,7 @@ export class MessageBroker {
 		);
 	}
 
-	issueCredentials(input: {
-		jobId: string;
-		agent: string;
-		mode: ExecutionMode;
-		generation: number;
-	}): BrokerCredentials {
+	issueCredentials(input: { jobId: string; generation: number }): BrokerCredentials {
 		this.assertReady();
 		if (this.tokenByJob.has(input.jobId)) {
 			throw new Error(`Subagent messaging credentials already exist for ${input.jobId}.`);
@@ -320,8 +311,6 @@ export class MessageBroker {
 		const question: QuestionRecord = {
 			requestId: `req_${randomUUID()}`,
 			jobId: job.jobId,
-			agent: job.agent,
-			mode: job.mode,
 			message: request.message,
 			createdAt: this.now(),
 		};
@@ -330,8 +319,6 @@ export class MessageBroker {
 			this.options.onQuestion({
 				requestId: question.requestId,
 				jobId: question.jobId,
-				agent: question.agent,
-				mode: question.mode,
 				message: question.message,
 			});
 		} catch (error) {

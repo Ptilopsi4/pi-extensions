@@ -1,3 +1,5 @@
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+
 export const JOB_STATES = [
 	"queued",
 	"running",
@@ -18,25 +20,17 @@ export const TERMINAL_JOB_STATES = new Set<SubagentJobState>([
 	"cancelled",
 ]);
 
-export type AgentSource = "built-in" | "user" | "project";
-export type ExecutionMode = "normal" | "read_only";
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-
-export interface AgentDefinition {
-	name: string;
-	description: string;
-	source: AgentSource;
-	filePath: string;
-	systemPrompt: string;
-	tools?: string[];
-	model?: string;
-	thinkingLevel?: ThinkingLevel;
-}
-
-export interface AgentDiscovery {
-	agents: AgentDefinition[];
-	omitted: number;
-}
+export const DEFAULT_SUBAGENT_TOOLS = ["read", "grep", "find", "ls"] as const;
+export const SUBAGENT_THINKING_LEVELS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+] as const satisfies readonly ModelThinkingLevel[];
+export type SubagentThinkingLevel = (typeof SUBAGENT_THINKING_LEVELS)[number];
 
 export interface ChildResult {
 	state: Extract<SubagentJobState, "completed" | "partial" | "failed" | "timed_out" | "cancelled">;
@@ -53,19 +47,18 @@ export interface BrokerCredentials {
 }
 
 export interface ChildRequest {
-	agent: AgentDefinition;
 	task: string;
+	tools: string[];
+	thinkingLevel: SubagentThinkingLevel;
 	cwd: string;
 	timeout?: number;
 	projectTrusted: boolean;
-	mode: ExecutionMode;
 	communication: BrokerCredentials;
 	signal: AbortSignal;
 }
 
 export interface JobSummary {
 	jobId: string;
-	agent: string;
 	state: SubagentJobState;
 	createdAt: number;
 	startedAt?: number;

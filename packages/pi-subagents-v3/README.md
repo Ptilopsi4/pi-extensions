@@ -8,16 +8,19 @@
 
 Pi Subagents v3 starts bounded background Pi jobs and lets each child ask the main agent necessary questions through an authenticated loopback broker.
 
-A bundled `subagents-v3` skill owns delegation strategy, parallel-work guidance, timeout selection, question handling, result review, and writer safety.
+A bundled `subagents-v3` skill owns delegation strategy, least-privilege tool selection, parallel-work guidance, timeout selection, question handling, result review, and writer safety.
 
 ## ✨ Features
 
-- Starts one isolated Pi child process per normal or read-only background job.
+- Starts one isolated Pi child process per background job.
+- Lets each task define the child's specialization and each tool list define its capabilities.
+- Defaults child work tools to `read`, `grep`, `find`, and `ls`.
+- Defaults child thinking to the main agent's effective thinking level.
 - Gives every child fixed `subagent-ask` and `subagent-wait` communication tools.
 - Lets the main agent answer a pending child question with `subagent-reply`.
 - Interrupts a parent job wait when a question needs a main-agent response without cancelling the job.
 - Publishes one guarded asynchronous completion and releases child resources at terminal state.
-- Exposes bounded agent and job metadata without leaking task text, output, prompts, or broker credentials.
+- Exposes bounded job metadata without leaking task text, output, prompts, selected tools, or broker credentials.
 - Cancels active session-owned work and closes the loopback broker during replacement, reload, or shutdown.
 
 ## 📦 Install
@@ -42,17 +45,17 @@ pi --no-extensions -e ./packages/pi-subagents-v3
 
 The package uses its source entrypoint and does not require a build before local loading.
 
-Pi extensions and writable child agents execute with your user permissions.
+Pi extensions and children with `bash`, `powershell`, `edit`, or `write` execute with your user permissions.
 
-Review source and agent definitions before installing or invoking them.
+Review the source before installing or invoking the extension.
 
 ## 🚀 Quick start
 
 Ask Pi to use the bundled `subagents-v3` skill when deciding whether to delegate.
 
-Start independent work with `subagent-start`, or start enforced read-only work with `subagent-consult`.
+Start one bounded background job with `subagent-spawn`.
 
-Both tools return a `jobId` immediately.
+The tool returns a `jobId` immediately.
 
 Continue useful main-agent work until a completion arrives or the result is required.
 
@@ -60,18 +63,17 @@ If `subagent-wait` reports `reason: "subagent_message"`, answer the visible ques
 
 ## 🛠️ Tools
 
-The main Pi session exposes six fixed tools:
+The main Pi session exposes five fixed tools:
 
 | Tool | Parameters | Purpose |
 | --- | --- | --- |
-| `subagent-start` | `agent`, `task`, optional `timeout` | Start one normal background job and return its `jobId`. |
-| `subagent-inspect` | none | List bounded available-agent and retained-job metadata. |
+| `subagent-spawn` | `task`, optional `tools`, `thinkingLevel`, `timeout` | Start one background job and return its `jobId`. |
+| `subagent-inspect` | none | List bounded retained-job metadata. |
 | `subagent-cancel` | `jobId` | Idempotently cancel one queued or running job. |
 | `subagent-wait` | `jobId`, optional `timeout` | Wait for a job or return early for a pending child question. |
-| `subagent-consult` | `agent`, `task`, optional `timeout` | Start one enforced read-only background job and return its `jobId`. |
 | `subagent-reply` | `requestId`, `message` | Answer one pending child question without replacing an accepted reply. |
 
-Every background child exposes these communication tools in addition to its allowed work tools:
+Every background child exposes these communication tools in addition to its selected work tools:
 
 | Tool | Parameters | Purpose |
 | --- | --- | --- |
@@ -92,42 +94,37 @@ Each job may have up to four unanswered or not-yet-consumed question requests.
 
 The terminal states are `completed`, `partial`, `failed`, `timed_out`, and `cancelled`.
 
-`subagent-inspect` never returns complete task text, child output, prompts, context, credentials, environment variables, questions, replies, or secrets.
+`subagent-inspect` never returns complete task text, child output, prompts, selected tools, context, credentials, environment variables, questions, replies, or secrets.
 
 See [`docs/tools.md`](./docs/tools.md) for the concise schema reference.
 
-## 🤖 Agent definitions
+## ⚙️ Job configuration
 
-The extension includes `explorer` and `worker` agents.
+The task defines the child's role, objective, scope, constraints, and expected result.
 
-It also discovers user definitions from `<getAgentDir()>/agents/*.md` and trusted-project definitions from the nearest `.pi/agents/*.md` directory.
+The optional `tools` list defines what the child can do.
 
-Trusted project definitions override same-name user or built-in definitions, and user definitions override same-name built-ins.
+Omitting `tools` selects `read`, `grep`, `find`, and `ls`.
 
-A minimal definition is:
+Passing an empty list gives the child no work tools.
 
-```markdown
----
-name: reviewer
-description: Review code correctness and risks.
-tools: read, grep, find, ls
-thinkingLevel: low
----
+The runtime always adds `subagent-ask` and child `subagent-wait` and removes duplicate names.
 
-Review the bounded task and cite exact evidence.
-```
+Adding `edit` or `write` lets the child modify files.
 
-Optional `model`, `thinkingLevel`, and `tools` frontmatter customize child execution.
+Adding `bash` or `powershell` grants unrestricted command execution and can also modify the workspace.
 
-Communication tools remain available even when an agent explicitly configures an empty tool list.
+The optional `thinkingLevel` accepts `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`.
 
-Project definitions are ignored until Pi reports the project as trusted.
+Omitting `thinkingLevel` captures the main agent's effective level when `subagent-spawn` executes.
+
+The child uses Pi's normal model resolution because this extension does not expose per-job model selection.
 
 ## 🔄 Messaging, lifecycle, and retention
 
 The session starts one TCP broker on `127.0.0.1` with an operating-system-assigned ephemeral port.
 
-Each job receives one cryptographically random token bound to its job identity, agent, execution mode, and session generation.
+Each job receives one cryptographically random token bound to its job identity and session generation.
 
 The child bridge captures and deletes the broker environment variables before model tool execution.
 
@@ -149,13 +146,15 @@ Session replacement and shutdown cancel active work, suppress stale completion d
 
 ## 🔒 Security and privacy
 
-Normal background jobs use the selected agent's tools and run in the current working directory.
+The selected work tools run in the current working directory.
 
-Writable agents can modify the shared working tree and run commands with the Pi process environment and user permissions.
+The default list is read-only by capability because it contains no shell or file-mutation tool.
 
-A read-only consultation disables unrelated extensions, shell and write tools, prompt templates, skills, and session persistence in its child.
+This default is not a filesystem sandbox because the allowed read tools can inspect files available to the user account.
 
-Read-only tool enforcement is not a filesystem sandbox because the allowed read tools can inspect files available to the user account.
+Selecting `bash`, `powershell`, `edit`, or `write` permits workspace mutation with the Pi process environment and user permissions.
+
+Every child disables session persistence, unrelated extensions, skills, and prompt templates.
 
 The broker accepts only loopback TCP connections with an active per-job token.
 
@@ -165,17 +164,19 @@ A child question cannot grant permission for writes, shell commands, credential 
 
 Terminal controls and bidirectional controls are stripped before untrusted child text is displayed.
 
-Tasks, questions, repository context, and inspected file content may be sent to the selected model provider.
+Tasks, repository context, questions, and inspected file content may be sent to the selected model provider.
 
 Parallel writers require disjoint ownership or workspace isolation outside this extension.
 
 ## 🚧 Limitations
 
-The extension does not provide peer-to-peer child messaging, retained conversations, user-directed follow-up work, mailboxes, Agent Teams, chains, fan-in aggregators, panels, workflow DAGs, dynamic scheduling, verification orchestration, nested subagents, or extension-owned semantic memory.
+The extension does not load arbitrary extension tools into child processes.
+
+The extension does not provide custom agents, per-job models, custom system prompts, peer-to-peer child messaging, retained conversations, user-directed follow-up work, mailboxes, Agent Teams, chains, fan-in aggregators, panels, workflow DAGs, dynamic scheduling, verification orchestration, nested subagents, or extension-owned semantic memory.
 
 Child questions are bounded request-response coordination, not a retained conversational session.
 
-The main agent must verify worker claims against the actual diff and deterministic checks.
+The main agent must verify child claims against the actual diff and deterministic checks.
 
 Questions trigger a main-agent turn, but asynchronous job completions do not wake an otherwise idle model turn automatically.
 
@@ -185,7 +186,7 @@ Jobs, broker requests, and retained results do not survive extension reload, ses
 
 ```text
 packages/pi-subagents-v3/
-├── docs/                        # Concise tools and parameters reference
+├── docs/                        # Concise tools and design references
 ├── src/                         # Extension, broker, child bridge, and subprocess runtime
 ├── skills/subagents-v3/        # Delegation and messaging operating manual
 ├── test/                        # Protocol, lifecycle, process, and policy tests
@@ -195,7 +196,7 @@ packages/pi-subagents-v3/
 
 ## 🔎 Keywords
 
-Pi, subagents, agents, delegation, background jobs, read-only consultation, main-agent messaging, cancellation, bounded execution.
+Pi, subagents, delegation, background jobs, least privilege, main-agent messaging, cancellation, bounded execution.
 
 ## 📄 License
 

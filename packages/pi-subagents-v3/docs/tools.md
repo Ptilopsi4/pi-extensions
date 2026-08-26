@@ -5,11 +5,11 @@
 | Parameter | Type | Required | Constraint / default |
 | --- | --- | --- | --- |
 | `task` | `string` | Yes | Self-contained task, up to 50 KiB of UTF-8 text. |
-| `tools` | `string[]` | No | Child work tools; defaults to `read`, `grep`, `find`, and `ls`. |
+| `tools` | `string[]` | No | Up to 64 child work tool names; defaults to `read`, `grep`, `find`, and `ls`. |
 | `thinkingLevel` | `string` | No | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; defaults to the main agent's effective thinking level. |
 | `timeout` | `number` | No | Seconds; `> 0` through `2,147,483.647`; no default timeout. |
 
-Starts a background job and returns its job ID immediately.
+Starts a task-specialized background job with the selected tool capabilities and returns its job ID immediately.
 
 The runtime always adds `subagent-ask` and `subagent-wait` to the selected tools.
 
