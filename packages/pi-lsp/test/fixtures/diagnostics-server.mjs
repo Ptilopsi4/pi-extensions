@@ -21,10 +21,11 @@ function diagnostic(message, line = 0) {
 }
 
 // Re-encode a file URI the way editors and some servers do, addressing the same
-// file as the URI the client sent. Percent-encoding the first letter of the file
-// name keeps the result different from the input on every platform, so the test
-// cannot pass by comparing a URI to itself. Windows additionally gets the
-// lowercase drive letter and encoded colon that marksman and VS Code send.
+// file as the URI the client sent. Percent-encode the first letter of the file
+// name so the result always differs from the input and the test cannot pass by
+// comparing a URI to itself. Servers are selected by file extension, so an
+// opened name always contains a letter. Windows also gets the lowercase drive
+// letter and encoded colon that marksman and VS Code send.
 function alternateEncoding(uri) {
 	const withEncodedDrive = uri.replace(
 		/^file:\/\/\/([A-Za-z]):\//,
