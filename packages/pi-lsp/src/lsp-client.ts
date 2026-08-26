@@ -1,6 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { commandPathValue, mergeEnvironment, resolveCommandPath } from "./command.js";
 import { directoryUri } from "./files.js";
 import { positionAt } from "./text-edits.js";
@@ -26,9 +27,26 @@ export function resolveSpawnCommand(
 
 // Quiet period (ms) after each publish before treating push diagnostics as settled.
 const PUBLISHED_DIAGNOSTICS_SETTLE_MS = 800;
+const PROCESS_EXIT_GRACE_MS = 500;
+
+// Key diagnostics by a canonical path: a server may answer using a different but
+// equivalent encoding of the URI the client sent. marksman, like VS Code, sends
+// `file:///c%3A/dir/a.md` where pathToFileURL produces `file:///C:/dir/a.md`.
+// normalize() also collapses the doubled separators a URI may carry.
+// Non-file URIs such as untitled: and jdt: keep their original text.
+function documentKey(uri: string) {
+	try {
+		const filePath = path.normalize(fileURLToPath(uri));
+		return process.platform === "win32" ? filePath.toLowerCase() : filePath;
+	} catch {
+		return uri;
+	}
+}
 
 export class LspClient {
 	#child?: ChildProcessWithoutNullStreams;
+	#process?: ChildProcessWithoutNullStreams;
+	#processExit?: Promise<void>;
 	#buffer = Buffer.alloc(0);
 	#nextId = 1;
 	#pending = new Map<
@@ -82,6 +100,16 @@ export class LspClient {
 			stdio: "pipe",
 		});
 		this.#child = child;
+		this.#process = child;
+		this.#processExit = new Promise((resolve) => {
+			const finish = () => {
+				child.off("exit", finish);
+				child.off("close", finish);
+				resolve();
+			};
+			child.once("exit", finish);
+			child.once("close", finish);
+		});
 		child.stdout.on("data", (chunk) => {
 			try {
 				this.#onData(chunk);
@@ -101,6 +129,7 @@ export class LspClient {
 		});
 		child.once("exit", (code, signal) => {
 			if (this.#child === child) this.#child = undefined;
+			if (this.#process === child) this.#process = undefined;
 			const reason = signal ? `signal ${signal}` : `code ${code ?? "unknown"}`;
 			this.#rejectPending(
 				(id) =>
@@ -114,6 +143,7 @@ export class LspClient {
 				const message = `${this.#adapter.name} LSP process failed to start: ${error.message}.${this.#formatStderr()}`;
 				this.#rejectPending(message);
 				if (this.#child === child) this.#child = undefined;
+				if (this.#process === child) this.#process = undefined;
 				reject(new Error(message));
 			});
 		});
@@ -183,7 +213,7 @@ export class LspClient {
 					: undefined,
 			);
 		}
-		const published = this.#publishedDiagnostics.get(uri);
+		const published = this.#publishedDiagnostics.get(documentKey(uri));
 		// Ignore a provisional empty publish, but preserve diagnostics that arrived before the pull.
 		const afterVersion = published?.diagnostics.length
 			? published.version - 1
@@ -234,16 +264,24 @@ export class LspClient {
 	}
 
 	async shutdown() {
-		if (!this.#child) return;
+		const child = this.#process;
+		const processExit = this.#processExit;
+		if (!child || !processExit) return;
 
-		try {
-			await this.request("shutdown", null);
-			this.notify("exit", undefined);
-		} catch {
-			// The process may already be gone; close below still guarantees cleanup.
-		} finally {
-			this.close();
+		if (this.#child === child) {
+			try {
+				await this.request("shutdown", null);
+				this.notify("exit", undefined);
+				if (await settlesWithin(processExit, PROCESS_EXIT_GRACE_MS)) return;
+			} catch {
+				// The process may already be gone; terminate it below if needed.
+			}
 		}
+
+		this.close();
+		if (await settlesWithin(processExit, PROCESS_EXIT_GRACE_MS)) return;
+		child.kill("SIGKILL");
+		await processExit;
 	}
 
 	close() {
@@ -357,13 +395,14 @@ export class LspClient {
 		if (message.method === "textDocument/publishDiagnostics") {
 			const params = message.params as { uri?: string; diagnostics?: LspDiagnostic[] } | undefined;
 			if (params?.uri) {
-				const previousVersion = this.#publishedDiagnostics.get(params.uri)?.version ?? 0;
+				const key = documentKey(params.uri);
+				const previousVersion = this.#publishedDiagnostics.get(key)?.version ?? 0;
 				const publication = {
 					version: previousVersion + 1,
 					diagnostics: params.diagnostics ?? [],
 				};
-				this.#publishedDiagnostics.set(params.uri, publication);
-				const waiters = this.#diagnosticWaiters.get(params.uri);
+				this.#publishedDiagnostics.set(key, publication);
+				const waiters = this.#diagnosticWaiters.get(key);
 				if (waiters) {
 					for (const waiter of [...waiters]) waiter.onPublish(publication);
 				}
@@ -381,6 +420,7 @@ export class LspClient {
 		fallback?: { afterVersion: number; diagnostics: LspDiagnostic[]; waitMs: number },
 	) {
 		// See PUBLISHED_DIAGNOSTICS_SETTLE_MS. Bounded by #timeoutMs.
+		const key = documentKey(uri);
 		return new Promise<LspDiagnostic[]>((resolve, reject) => {
 			let settleTimer: NodeJS.Timeout | undefined;
 			let fallbackTimer: NodeJS.Timeout | undefined;
@@ -392,9 +432,9 @@ export class LspClient {
 				if (settleTimer) clearTimeout(settleTimer);
 				if (fallbackTimer) clearTimeout(fallbackTimer);
 				if (overallTimer) clearTimeout(overallTimer);
-				const set = this.#diagnosticWaiters.get(uri);
+				const set = this.#diagnosticWaiters.get(key);
 				set?.delete(waiter);
-				if (set && set.size === 0) this.#diagnosticWaiters.delete(uri);
+				if (set && set.size === 0) this.#diagnosticWaiters.delete(key);
 			};
 			const settleWith = (diagnostics: LspDiagnostic[]) => {
 				dispose();
@@ -411,20 +451,20 @@ export class LspClient {
 				if (fallbackTimer) clearTimeout(fallbackTimer);
 				if (settleTimer) clearTimeout(settleTimer);
 				settleTimer = setTimeout(
-					() => settleWith(this.#publishedDiagnostics.get(uri)?.diagnostics ?? []),
+					() => settleWith(this.#publishedDiagnostics.get(key)?.diagnostics ?? []),
 					this.#adapter.diagnosticsSettleMs ?? PUBLISHED_DIAGNOSTICS_SETTLE_MS,
 				);
 			};
 
 			const waiter = { onPublish, reject: fail, dispose };
-			const set = this.#diagnosticWaiters.get(uri) ?? new Set<typeof waiter>();
+			const set = this.#diagnosticWaiters.get(key) ?? new Set<typeof waiter>();
 			set.add(waiter);
-			this.#diagnosticWaiters.set(uri, set);
+			this.#diagnosticWaiters.set(key, set);
 
 			if (fallback) {
 				fallbackTimer = setTimeout(
 					() => {
-						const latest = this.#publishedDiagnostics.get(uri);
+						const latest = this.#publishedDiagnostics.get(key);
 						settleWith(
 							latest && latest.version > afterVersion ? latest.diagnostics : fallback.diagnostics,
 						);
@@ -433,7 +473,7 @@ export class LspClient {
 				);
 			}
 			overallTimer = setTimeout(() => {
-				const latest = this.#publishedDiagnostics.get(uri);
+				const latest = this.#publishedDiagnostics.get(key);
 				if (latest && latest.version > afterVersion) {
 					settleWith(latest.diagnostics);
 				} else if (fallback) {
@@ -447,7 +487,7 @@ export class LspClient {
 				}
 			}, this.#timeoutMs);
 
-			const existing = this.#publishedDiagnostics.get(uri);
+			const existing = this.#publishedDiagnostics.get(key);
 			if (existing) onPublish(existing);
 		});
 	}
@@ -501,4 +541,14 @@ export class LspClient {
 
 function formatErrorMessage(error: unknown) {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function settlesWithin(promise: Promise<void>, timeoutMs: number) {
+	return new Promise<boolean>((resolve) => {
+		const timeout = setTimeout(() => resolve(false), timeoutMs);
+		void promise.then(() => {
+			clearTimeout(timeout);
+			resolve(true);
+		});
+	});
 }
