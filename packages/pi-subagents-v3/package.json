@@ -1,7 +1,7 @@
 {
 	"name": "@narumitw/pi-subagents-v3",
 	"version": "0.0.0",
-	"description": "Minimal bounded subagent job primitives for Pi.",
+	"description": "Bounded subagent jobs with asynchronous main-agent messaging for Pi.",
 	"type": "module",
 	"license": "MIT",
 	"private": true,

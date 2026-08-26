@@ -9,6 +9,10 @@ export default function subagentsV3(
 ): void {
 	const tools = registerSubagentTools(pi, dependencies);
 
+	pi.on("session_start", async () => {
+		await tools.startSession();
+	});
+
 	pi.on("session_shutdown", async () => {
 		await tools.shutdown();
 	});

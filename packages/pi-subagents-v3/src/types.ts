@@ -19,6 +19,7 @@ export const TERMINAL_JOB_STATES = new Set<SubagentJobState>([
 ]);
 
 export type AgentSource = "built-in" | "user" | "project";
+export type ExecutionMode = "normal" | "read_only";
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface AgentDefinition {
@@ -45,13 +46,20 @@ export interface ChildResult {
 	truncated: boolean;
 }
 
+export interface BrokerCredentials {
+	host: "127.0.0.1";
+	port: number;
+	token: string;
+}
+
 export interface ChildRequest {
 	agent: AgentDefinition;
 	task: string;
 	cwd: string;
 	timeout?: number;
 	projectTrusted: boolean;
-	readOnly: boolean;
+	mode: ExecutionMode;
+	communication: BrokerCredentials;
 	signal: AbortSignal;
 }
 
