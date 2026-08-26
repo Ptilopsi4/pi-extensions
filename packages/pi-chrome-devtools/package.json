@@ -1,6 +1,6 @@
 {
 	"name": "@narumitw/pi-chrome-devtools",
-	"version": "0.52.3",
+	"version": "0.53.0",
 	"description": "Pi extension that exposes Chrome DevTools Protocol tools.",
 	"type": "module",
 	"license": "MIT",
@@ -47,7 +47,7 @@
 		"typescript": "7.0.2"
 	},
 	"dependencies": {
-		"@narumitw/pi-tui-kit": "^0.58.0"
+		"@narumitw/pi-tui-kit": "^0.59.0"
 	},
 	"repository": {
 		"type": "git",
