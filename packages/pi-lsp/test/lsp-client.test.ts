@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -19,6 +19,43 @@ test("server environment overrides are forwarded to the LSP process", async () =
 	try {
 		await client.start();
 		await client.initialize(root);
+	} finally {
+		await client.shutdown();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("shutdown waits for the LSP process to exit", async () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "pi-lsp-shutdown-"));
+	const marker = path.join(root, "exited.txt");
+	const adapter = fixtureAdapter("delayed-exit", 30);
+	adapter.env = { PI_LSP_TEST_EXIT_MARKER: marker };
+	const client = new LspClient(adapter, adapter.defaultCommand, root, 1_000);
+
+	try {
+		await client.start();
+		await client.initialize(root);
+		await client.shutdown();
+		assert.equal(readFileSync(marker, "utf8"), "exited\n");
+	} finally {
+		await client.shutdown();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("shutdown waits for a process terminated by close", async () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "pi-lsp-close-"));
+	const marker = path.join(root, "exited.txt");
+	const adapter = fixtureAdapter("delayed-sigterm", 30);
+	adapter.env = { PI_LSP_TEST_EXIT_MARKER: marker };
+	const client = new LspClient(adapter, adapter.defaultCommand, root, 1_000);
+
+	try {
+		await client.start();
+		await client.initialize(root);
+		client.close();
+		await client.shutdown();
+		assert.equal(readFileSync(marker, "utf8"), "exited\n");
 	} finally {
 		await client.shutdown();
 		rmSync(root, { recursive: true, force: true });

@@ -27,6 +27,7 @@ export function resolveSpawnCommand(
 
 // Quiet period (ms) after each publish before treating push diagnostics as settled.
 const PUBLISHED_DIAGNOSTICS_SETTLE_MS = 800;
+const PROCESS_EXIT_GRACE_MS = 500;
 
 // Key diagnostics by a canonical path: a server may answer using a different but
 // equivalent encoding of the URI the client sent. marksman, like VS Code, sends
@@ -44,6 +45,8 @@ function documentKey(uri: string) {
 
 export class LspClient {
 	#child?: ChildProcessWithoutNullStreams;
+	#process?: ChildProcessWithoutNullStreams;
+	#processExit?: Promise<void>;
 	#buffer = Buffer.alloc(0);
 	#nextId = 1;
 	#pending = new Map<
@@ -97,6 +100,16 @@ export class LspClient {
 			stdio: "pipe",
 		});
 		this.#child = child;
+		this.#process = child;
+		this.#processExit = new Promise((resolve) => {
+			const finish = () => {
+				child.off("exit", finish);
+				child.off("close", finish);
+				resolve();
+			};
+			child.once("exit", finish);
+			child.once("close", finish);
+		});
 		child.stdout.on("data", (chunk) => {
 			try {
 				this.#onData(chunk);
@@ -116,6 +129,7 @@ export class LspClient {
 		});
 		child.once("exit", (code, signal) => {
 			if (this.#child === child) this.#child = undefined;
+			if (this.#process === child) this.#process = undefined;
 			const reason = signal ? `signal ${signal}` : `code ${code ?? "unknown"}`;
 			this.#rejectPending(
 				(id) =>
@@ -129,6 +143,7 @@ export class LspClient {
 				const message = `${this.#adapter.name} LSP process failed to start: ${error.message}.${this.#formatStderr()}`;
 				this.#rejectPending(message);
 				if (this.#child === child) this.#child = undefined;
+				if (this.#process === child) this.#process = undefined;
 				reject(new Error(message));
 			});
 		});
@@ -249,16 +264,24 @@ export class LspClient {
 	}
 
 	async shutdown() {
-		if (!this.#child) return;
+		const child = this.#process;
+		const processExit = this.#processExit;
+		if (!child || !processExit) return;
 
-		try {
-			await this.request("shutdown", null);
-			this.notify("exit", undefined);
-		} catch {
-			// The process may already be gone; close below still guarantees cleanup.
-		} finally {
-			this.close();
+		if (this.#child === child) {
+			try {
+				await this.request("shutdown", null);
+				this.notify("exit", undefined);
+				if (await settlesWithin(processExit, PROCESS_EXIT_GRACE_MS)) return;
+			} catch {
+				// The process may already be gone; terminate it below if needed.
+			}
 		}
+
+		this.close();
+		if (await settlesWithin(processExit, PROCESS_EXIT_GRACE_MS)) return;
+		child.kill("SIGKILL");
+		await processExit;
 	}
 
 	close() {
@@ -518,4 +541,14 @@ export class LspClient {
 
 function formatErrorMessage(error: unknown) {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function settlesWithin(promise: Promise<void>, timeoutMs: number) {
+	return new Promise<boolean>((resolve) => {
+		const timeout = setTimeout(() => resolve(false), timeoutMs);
+		void promise.then(() => {
+			clearTimeout(timeout);
+			resolve(true);
+		});
+	});
 }

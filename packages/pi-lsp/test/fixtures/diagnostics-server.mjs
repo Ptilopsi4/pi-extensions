@@ -1,7 +1,18 @@
+import { writeFileSync } from "node:fs";
+
 const scenario = process.argv[2];
 const expectedFiles = Number(process.argv[3] ?? "0");
 let buffer = Buffer.alloc(0);
 const openedUris = [];
+
+if (scenario === "delayed-sigterm") process.on("SIGTERM", exitAfterDelay);
+
+function exitAfterDelay() {
+	setTimeout(() => {
+		writeFileSync(process.env.PI_LSP_TEST_EXIT_MARKER, "exited\n");
+		process.exit(0);
+	}, 100);
+}
 
 function send(message) {
 	const body = JSON.stringify(message);
@@ -172,7 +183,10 @@ function handle(message) {
 		return;
 	}
 
-	if (message.method === "exit") process.exit(0);
+	if (message.method === "exit") {
+		if (scenario === "delayed-exit") exitAfterDelay();
+		else process.exit(0);
+	}
 }
 
 process.stdin.on("data", (chunk) => {
