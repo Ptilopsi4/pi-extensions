@@ -1,14 +1,17 @@
 # Pi Subagents v3 tools
 
-## `subagent-start`
+## `subagent-spawn`
 
 | Parameter | Type | Required | Constraint / default |
 | --- | --- | --- | --- |
-| `agent` | `string` | Yes | Configured subagent name. |
 | `task` | `string` | Yes | Self-contained task, up to 50 KiB of UTF-8 text. |
+| `tools` | `string[]` | No | Child work tools; defaults to `read`, `grep`, `find`, and `ls`. |
+| `thinkingLevel` | `string` | No | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; defaults to the main agent's effective thinking level. |
 | `timeout` | `number` | No | Seconds; `> 0` through `2,147,483.647`; no default timeout. |
 
-Starts a normal background job and returns its job ID immediately.
+Starts a background job and returns its job ID immediately.
+
+The runtime always adds `subagent-ask` and `subagent-wait` to the selected tools.
 
 Throws without launching a child when the session broker is unavailable.
 
@@ -20,7 +23,7 @@ No parameters.
 
 | Parameter | Type | Required | Constraint / default |
 | --- | --- | --- | --- |
-| `jobId` | `string` | Yes | Job ID returned by `subagent-start` or `subagent-consult`. |
+| `jobId` | `string` | Yes | Job ID returned by `subagent-spawn`. |
 
 ## `subagent-wait`
 
@@ -43,20 +46,6 @@ Returns `{ jobId, state, timedOut: false, interrupted: true, reason: "subagent_m
 Returns the main agent's response as plain text.
 
 A timeout or caller cancellation throws and stops only that wait, so the child may wait for the same request again.
-
-## `subagent-consult`
-
-| Parameter | Type | Required | Constraint / default |
-| --- | --- | --- | --- |
-| `agent` | `string` | Yes | Configured subagent name. |
-| `task` | `string` | Yes | Self-contained research or review question, up to 50 KiB of UTF-8 text. |
-| `timeout` | `number` | No | Seconds; `> 0` through `2,147,483.647`; no default timeout. |
-
-Starts a read-only background job and returns its job ID immediately.
-
-The job shares the eight-active-job session capacity with normal background jobs.
-
-Throws without launching a child when the session broker is unavailable.
 
 ## `subagent-ask`
 
