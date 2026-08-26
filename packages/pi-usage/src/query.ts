@@ -23,6 +23,7 @@ import type {
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const GITHUB_COPILOT_USAGE_URL = "https://api.github.com/copilot_internal/user";
 const OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key";
+const OPENCODE_GO_USAGE_URL = "https://opencode.ai/zen/go/v1/usage";
 const MAX_SUCCESS_BODY_BYTES = 64 * 1024;
 const MAX_ERROR_BODY_BYTES = 4 * 1024;
 
@@ -86,7 +87,7 @@ export const SUPPORTED_ADAPTERS: readonly UsageProviderAdapter[] = [
 		semantics: { kind: "consumer-subscription", label: "OpenCode Zen plan usage" },
 		async query(auth, signal, timeoutMs) {
 			const payload = await fetchProviderJson(
-				opencodeUsageUrl(auth.model.baseUrl),
+				OPENCODE_GO_USAGE_URL,
 				auth,
 				signal,
 				timeoutMs,
@@ -127,6 +128,7 @@ export async function resolveUsageAuth(
 		hasOfficialOrigin(candidate, adapter.id),
 	);
 	if (!model) return undefined;
+	// SAFETY: Pi exposes the required auth methods at runtime, and checks below narrow them before use.
 	const registry = ctx.modelRegistry as unknown as UsageAuthRegistry;
 	let modelAuth: RequestAuth | undefined;
 	if (ctx.model?.provider === adapter.id && typeof registry.getApiKeyAndHeaders === "function") {
@@ -491,12 +493,6 @@ function headerValue(
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {
 	return Object.keys(headers).some((key) => key.toLowerCase() === name.toLowerCase());
-}
-
-function opencodeUsageUrl(baseUrl: string | undefined): string {
-	const base = baseUrl?.trim().replace(/\/+$/u, "");
-	if (!base) throw new Error("OpenCode Go model base URL is unavailable.");
-	return `${base}/usage`;
 }
 
 function isAbortError(error: unknown): boolean {
