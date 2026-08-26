@@ -3,6 +3,7 @@ import { defineMenu, runMenu } from "@narumitw/pi-tui-kit";
 
 export interface PlanLaunchTool {
 	name: string;
+	label?: string;
 	description: string;
 	searchText: string;
 	disabled: boolean;
@@ -26,6 +27,11 @@ export async function showPlanLaunchMenu(ctx: ExtensionContext, options: PlanLau
 	type Screen = "main" | "tools" | "help";
 	type Action = "start" | "toggle-tool" | "start-with-tools" | "settings";
 	const selectedNames = new Set(options.getSelectedNames());
+	const toolItems = options.tools.map((tool, index) => ({
+		id: `plan-tool:${index}`,
+		tool,
+	}));
+	const toolsByItemId = new Map(toolItems.map(({ id, tool }) => [id, tool]));
 	let draftChanged = false;
 	const menu = defineMenu<undefined, Screen, Action, ExtensionContext>({
 		start: options.initialScreen ?? "main",
@@ -47,13 +53,15 @@ export async function showPlanLaunchMenu(ctx: ExtensionContext, options: PlanLau
 				title: "Choose Plan policy allowlist",
 				lines: [
 					"Policy changes apply only when you start Plan mode; first use may also reveal Plan helpers.",
-					"Only tools already active in Pi can be allowed; non-built-ins run at user risk.",
+					options.toolSummary(selectedNames),
+					"Active tools can be chosen now; retained names resolve before the first request.",
+					"Plan mode never activates tools, and non-built-ins run at user risk.",
 				],
 				enableSearch: true,
 				viewportSize: 10,
-				items: options.tools.map((tool) => ({
-					id: tool.name,
-					label: tool.name,
+				items: toolItems.map(({ id, tool }) => ({
+					id,
+					label: tool.label ?? tool.name,
 					description: tool.description,
 					searchText: tool.searchText,
 					selected: selectedNames.has(tool.name),
@@ -89,7 +97,7 @@ export async function showPlanLaunchMenu(ctx: ExtensionContext, options: PlanLau
 			},
 			"toggle-tool": async ({ itemId, selected, signal }) => {
 				if (signal.aborted || !options.isCurrent()) return { kind: "rejected" };
-				const tool = options.tools.find((candidate) => candidate.name === itemId);
+				const tool = itemId ? toolsByItemId.get(itemId) : undefined;
 				if (!tool || tool.disabled) return { kind: "rejected" };
 				if (selected) selectedNames.add(tool.name);
 				else selectedNames.delete(tool.name);
