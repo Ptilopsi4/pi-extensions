@@ -4,13 +4,17 @@ These principles define the intended direction of Pi Subagents v3 rather than re
 
 ## Context isolation is the purpose
 
-Every subagent starts as a fresh Pi process without inheriting the main agent's conversation history.
+A subagent starts as a fresh Pi process.
 
-A fresh context is not an empty environment: the child still receives Pi's system prompt, its agent definition, applicable project context, its allowed tools, and one explicit task.
+It does not inherit the main agent's conversation history.
+
+That isolation is not a limitation—it is the point.
+
+Fresh does not mean empty.
+
+The subagent still receives Pi's system prompt, its agent definition, applicable project context, its allowed tools, and one explicit task.
 
 Give each subagent a self-contained task containing only the context needed to complete that task.
-
-Context isolation is the primary reason to use a subagent.
 
 If work depends on substantial history from the current conversation, continue in the current thread instead of copying that history into a new subagent.
 
@@ -18,8 +22,8 @@ If work depends on substantial history from the current conversation, continue i
 
 Keep the architecture explicit, bounded, and easy to understand.
 
-Do not introduce complex abstractions or orchestration merely to support more features.
+Feature breadth alone does not justify more machinery.
 
-Prefer a small, maintainable implementation over feature completeness.
+Prefer a small system whose behavior can be understood end to end over a feature-complete system whose behavior is obscured by layers of abstraction and orchestration.
 
-Add a capability only when its value clearly justifies its implementation and ongoing maintenance cost.
+Every capability must earn its place: its value must outweigh both the complexity it introduces and the maintenance burden it leaves behind.
