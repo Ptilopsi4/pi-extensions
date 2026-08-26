@@ -267,7 +267,7 @@ async function saveAndApplyBrowserPatch(
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
 		await saveBrowserSettings(patch);
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
-		invalidateWebMcpOperations("Chrome DevTools browser configuration changed");
+		invalidateWebMcpOperations(ctx.sessionManager, "Chrome DevTools browser configuration changed");
 		await shutdownManagedBrowser();
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
 		const loaded = await loadSettings({ cwd: ctx.cwd, projectTrusted });
@@ -295,30 +295,20 @@ async function saveAndApplyWebMcpSetting(
 	try {
 		await ctx.waitForIdle();
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
+		applyRuntimeWebMcpSetting(enabled, ctx.sessionManager);
+		configureChromeDevtoolsToolExposure(pi, previousTools, ctx.model);
 		await saveWebMcpSettings(enabled);
-		if (!isCurrent(generation, ownerSignal, actionSignal)) {
-			await saveWebMcpSettings(previousEnabled);
-			return false;
-		}
+		if (!isOwnerCurrent(generation, ownerSignal)) return false;
 		const loaded = await loadSettings({ cwd: ctx.cwd, projectTrusted });
-		if (!isCurrent(generation, ownerSignal, actionSignal)) {
-			await saveWebMcpSettings(previousEnabled);
-			return false;
-		}
-		applyRuntimeWebMcpSetting(loaded.effectiveWebMcpEnabled);
-		const selectedTools =
-			loaded.kind === "loaded" && loaded.settings.tools ? loaded.settings.tools : previousTools;
-		configureChromeDevtoolsToolExposure(pi, selectedTools, ctx.model);
+		if (!isOwnerCurrent(generation, ownerSignal)) return false;
 		state.settingsNotice = loaded.notice;
 		return loaded;
 	} catch (error) {
+		if (!isOwnerCurrent(generation, ownerSignal)) return false;
 		let rollbackError: unknown;
 		try {
-			await saveWebMcpSettings(previousEnabled);
-			if (isCurrent(generation, ownerSignal, actionSignal)) {
-				applyRuntimeWebMcpSetting(previousEnabled);
-				configureChromeDevtoolsToolExposure(pi, previousTools, ctx.model);
-			}
+			applyRuntimeWebMcpSetting(previousEnabled, ctx.sessionManager);
+			configureChromeDevtoolsToolExposure(pi, previousTools, ctx.model);
 		} catch (caught) {
 			rollbackError = caught;
 		}
@@ -336,8 +326,12 @@ async function saveAndApplyWebMcpSetting(
 	}
 }
 
+function isOwnerCurrent(generation: number, ownerSignal: AbortSignal) {
+	return generation === state.sessionGeneration && !ownerSignal.aborted;
+}
+
 function isCurrent(generation: number, ownerSignal: AbortSignal, actionSignal: AbortSignal) {
-	return generation === state.sessionGeneration && !ownerSignal.aborted && !actionSignal.aborted;
+	return isOwnerCurrent(generation, ownerSignal) && !actionSignal.aborted;
 }
 
 function invalidSettingsScreen(load: SettingsLoadResult) {

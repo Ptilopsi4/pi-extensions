@@ -722,7 +722,7 @@ test("removing WebMCP gateway availability aborts active page work", async () =>
 		const mock = createMockPi({ activeTools: ["other_tool", ...WEBMCP_TOOLS] });
 		const { ctx } = createMockContext();
 		chromeDevtools(mock.pi);
-		const operation = beginWebMcpOperation();
+		const operation = beginWebMcpOperation(sessionOwner(ctx));
 		await mock.commands.get("chrome-devtools")?.handler("disable", ctx);
 		assert.equal(operation.signal.aborted, true);
 		assert.ok(WEBMCP_TOOLS.every((name) => !mock.rawPi.getActiveTools().includes(name)));
@@ -902,6 +902,10 @@ function normalizedWebMcpDefinitions(tools: readonly Record<string, unknown>[]) 
 		}));
 }
 
+function sessionOwner(ctx: unknown) {
+	return (ctx as { sessionManager: object }).sessionManager;
+}
+
 async function importFreshChromeDevtools() {
 	vi.resetModules();
 	return import("../src/chrome-devtools.js");
@@ -930,8 +934,6 @@ function resetRuntimeStateForTest(runtimeState: typeof state, generation: number
 	runtimeState.sessionGeneration = generation;
 	runtimeState.shuttingDown = false;
 	runtimeState.webMcpEnabled = false;
-	runtimeState.webMcpGeneration += 1;
-	runtimeState.webMcpOperationControllers.clear();
 }
 
 function writeSettings(agentDir: string, fileName: string, tools: string[]) {

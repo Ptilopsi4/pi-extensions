@@ -53,8 +53,6 @@ function resetBrowserRuntimeState() {
 	state.lastLaunchAttempt = undefined;
 	state.settingsNotice = undefined;
 	state.webMcpEnabled = false;
-	state.webMcpGeneration += 1;
-	state.webMcpOperationControllers.clear();
 }
 
 async function withBrowserSettingsMenu(
@@ -96,6 +94,10 @@ async function withBrowserSettingsMenu(
 		}
 		rmSync(directory, { recursive: true, force: true });
 	}
+}
+
+function sessionOwner(ctx: unknown) {
+	return (ctx as { sessionManager: object }).sessionManager;
 }
 
 function readSettings() {
@@ -171,7 +173,7 @@ test("WebMCP settings toggle the experimental gate, tool exposure, and active op
 		assert.ok(WEBMCP_TOOL_NAMES.every((name) => mockPi.rawPi.getActiveTools().includes(name)));
 		assert.match(notifications.at(-1)?.message ?? "", /Experimental WebMCP enabled/i);
 
-		const operation = beginWebMcpOperation();
+		const operation = beginWebMcpOperation(sessionOwner(ctx));
 		tui.press("tui.select.confirm");
 		await tui.waitForPending();
 		await tui.waitForOpen();
@@ -188,6 +190,7 @@ test("WebMCP settings toggle the experimental gate, tool exposure, and active op
 
 test("a failed WebMCP runtime transition restores the file, gate, and displayed value", async () => {
 	await withBrowserSettingsMenu(async ({ ctx, notifications, tui, generation }) => {
+		writeFileSync(settingsFilePath(), '{"webmcp":{"enabled":false}}\n');
 		const mockPi = createMockPi({ activeTools: ["other_tool", ...CHROME_DEVTOOLS_TOOL_NAMES] });
 		initializeAvailableChromeDevtoolsTools(mockPi.pi);
 		const setActiveTools = mockPi.rawPi.setActiveTools.bind(mockPi.rawPi);

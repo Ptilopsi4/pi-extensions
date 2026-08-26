@@ -1,4 +1,4 @@
-import { ensureDevToolsEndpoint, fetchDevToolsJson } from "../browser-manager.js";
+import { fetchDevToolsJson } from "../browser-manager.js";
 import { CdpClient } from "../cdp-client.js";
 import { DEFAULT_TIMEOUT_MS, type DevToolsPage } from "../runtime.js";
 
@@ -42,8 +42,6 @@ const REQUIRED_COMMANDS = ["enable", "disable", "invokeTool", "cancelInvocation"
 const REQUIRED_EVENTS = ["toolsAdded", "toolsRemoved", "toolInvoked", "toolResponded"];
 
 export async function requireWebMcpDomain(signal: AbortSignal) {
-	signal.throwIfAborted();
-	await ensureDevToolsEndpoint(undefined, signal);
 	signal.throwIfAborted();
 	const protocol = await fetchDevToolsJson<ProtocolDescription>("/json/protocol", { signal });
 	signal.throwIfAborted();
@@ -164,6 +162,8 @@ export async function invokeWebMcpTool(
 				{ timeoutMs: DEFAULT_TIMEOUT_MS },
 			);
 		} catch (error) {
+			cancel();
+			await cancellation;
 			if (signal.aborted) throw signal.reason;
 			throw error;
 		}

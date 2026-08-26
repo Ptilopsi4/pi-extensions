@@ -654,8 +654,6 @@ async function withTempAgentDir(run: () => Promise<void>) {
 		state.lastLaunchAttempt = undefined;
 		state.settingsNotice = undefined;
 		state.webMcpEnabled = false;
-		state.webMcpGeneration += 1;
-		state.webMcpOperationControllers.clear();
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 		rmSync(directory, { recursive: true, force: true });

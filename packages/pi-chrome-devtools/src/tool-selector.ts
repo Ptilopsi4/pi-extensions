@@ -118,7 +118,10 @@ async function transactSelectedToolsNow(
 		const previousWebMcpTools = previousAvailableTools.filter(isWebMcpToolName);
 		const selectedWebMcpTools = selectedTools.filter(isWebMcpToolName);
 		if (!arraysEqual(previousWebMcpTools, selectedWebMcpTools)) {
-			invalidateWebMcpOperations("Chrome DevTools WebMCP gateway availability changed");
+			invalidateWebMcpOperations(
+				ctx.sessionManager,
+				"Chrome DevTools WebMCP gateway availability changed",
+			);
 		}
 		applyChromeDevtoolsTools(pi, selectedTools);
 		await persistSettings(selectedTools);

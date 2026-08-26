@@ -51,9 +51,11 @@ export interface CdpConnectOptions extends CdpOperationOptions {
 
 const MAX_BUFFERED_EVENTS_PER_METHOD = 32;
 
-export async function listPages(options: { signal?: AbortSignal; waitMs?: number } = {}) {
+export async function listPages(
+	options: { signal?: AbortSignal; waitMs?: number; webMcpOwner?: object } = {},
+) {
 	const waitMs = options.waitMs ?? DEFAULT_ENDPOINT_WAIT_MS;
-	await ensureDevToolsEndpoint(waitMs, options.signal);
+	await ensureDevToolsEndpoint(waitMs, options.signal, options.webMcpOwner);
 	return withEndpointRetry(
 		async () => {
 			const pages = await fetchDevToolsJson<DevToolsPage[]>("/json/list", {
@@ -66,12 +68,18 @@ export async function listPages(options: { signal?: AbortSignal; waitMs?: number
 	);
 }
 
-export async function getPage(pageId: string, options: { signal?: AbortSignal } = {}) {
+export async function getPage(
+	pageId: string,
+	options: { signal?: AbortSignal; webMcpOwner?: object } = {},
+) {
 	const pages = await listPages(options);
 	return requirePage(pageId, pages);
 }
 
-export async function resolvePage(pageId?: string, options: { signal?: AbortSignal } = {}) {
+export async function resolvePage(
+	pageId?: string,
+	options: { signal?: AbortSignal; webMcpOwner?: object } = {},
+) {
 	const pages = await listPages(options);
 	if (pageId) return requirePage(pageId, pages);
 

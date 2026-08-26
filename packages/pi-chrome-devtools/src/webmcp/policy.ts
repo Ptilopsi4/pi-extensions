@@ -67,6 +67,7 @@ export function normalizeWebMcpTool(
 	const pageId = boundedString(context.pageId, "page ID", 512, { nonEmpty: true });
 	const pageUrl = boundedString(context.pageUrl, "page URL", 8_192);
 	const inputSchema = tool.inputSchema ?? { type: "object", additionalProperties: true };
+	rejectRegexBearingSchema(inputSchema);
 	const canonicalSchema = canonicalJsonObject(inputSchema, {
 		label: "WebMCP input schema",
 		maxBytes: MAX_SCHEMA_BYTES,
@@ -256,6 +257,44 @@ function canonicalAnnotations(value: WebMcpProtocolAnnotation | undefined) {
 			.filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean")
 			.sort(([left], [right]) => left.localeCompare(right)),
 	) as WebMcpProtocolAnnotation;
+}
+
+function rejectRegexBearingSchema(schema: unknown): void {
+	if (!isRecord(schema)) return;
+	if (schema.pattern !== undefined || schema.patternProperties !== undefined) {
+		throw new Error(
+			"WebMCP input schemas with pattern or patternProperties are unsupported because page-controlled regular expressions cannot be evaluated safely.",
+		);
+	}
+	for (const keyword of [
+		"additionalProperties",
+		"contains",
+		"else",
+		"if",
+		"items",
+		"not",
+		"propertyNames",
+		"then",
+		"unevaluatedItems",
+		"unevaluatedProperties",
+	] as const) {
+		rejectRegexBearingSchema(schema[keyword]);
+	}
+	for (const keyword of ["allOf", "anyOf", "oneOf", "prefixItems"] as const) {
+		if (Array.isArray(schema[keyword])) {
+			for (const child of schema[keyword]) rejectRegexBearingSchema(child);
+		}
+	}
+	for (const keyword of [
+		"$defs",
+		"definitions",
+		"dependencies",
+		"dependentSchemas",
+		"properties",
+	] as const) {
+		if (!isRecord(schema[keyword])) continue;
+		for (const child of Object.values(schema[keyword])) rejectRegexBearingSchema(child);
+	}
 }
 
 interface JsonLimits {

@@ -9,7 +9,7 @@ import {
 	setBrowserManagerOperationsForTests,
 	shutdownManagedBrowser,
 } from "../src/browser-manager.js";
-import { state } from "../src/runtime.js";
+import { beginWebMcpOperation, state } from "../src/runtime.js";
 
 class FakeChildProcess extends EventEmitter {
 	exited = false;
@@ -241,6 +241,46 @@ test("an in-flight extension launch owns its explicit port for concurrent caller
 		await launches;
 		assert.equal(portChecks, 1);
 		assert.equal(calls.spawn.length, 1);
+	} finally {
+		releaseReadiness?.();
+		await shutdownManagedBrowser();
+		restore();
+	}
+});
+
+test("caller cancellation leaves the shared managed-browser launch available to other waiters", async () => {
+	resetRuntime({ portConfigured: true });
+	let signalReadinessStarted: (() => void) | undefined;
+	const readinessStarted = new Promise<void>((resolve) => {
+		signalReadinessStarted = resolve;
+	});
+	let releaseReadiness: (() => void) | undefined;
+	const readinessBlocked = new Promise<void>((resolve) => {
+		releaseReadiness = resolve;
+	});
+	const { calls, restore } = successfulOperations({
+		fetch: async () => {
+			signalReadinessStarted?.();
+			await readinessBlocked;
+			return new Response(JSON.stringify({ Browser: "Chrome/149" }), { status: 200 });
+		},
+	});
+	const caller = new AbortController();
+	const owner = {};
+	try {
+		const first = ensureDevToolsEndpoint(undefined, caller.signal);
+		await readinessStarted;
+		const second = ensureDevToolsEndpoint(undefined, undefined, owner);
+		caller.abort(new Error("first caller cancelled"));
+		await assert.rejects(first, /first caller cancelled/u);
+		releaseReadiness?.();
+		await second;
+		assert.equal(calls.spawn.length, 1);
+		assert.equal(state.managedBrowser?.ready, true);
+		const operation = beginWebMcpOperation(owner);
+		await shutdownManagedBrowser();
+		assert.equal(operation.signal.aborted, true);
+		operation.dispose();
 	} finally {
 		releaseReadiness?.();
 		await shutdownManagedBrowser();

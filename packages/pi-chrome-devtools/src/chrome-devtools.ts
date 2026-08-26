@@ -12,6 +12,7 @@ import {
 	applyRuntimeBrowserSettings,
 	applyRuntimeWebMcpSetting,
 	invalidateWebMcpOperations,
+	setWebMcpSessionOwner,
 	state,
 } from "./runtime.js";
 import { loadSettings, waitForSettingsWrites } from "./settings.js";
@@ -81,8 +82,9 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		const generation = ++state.sessionGeneration;
 		initializeAvailableChromeDevtoolsTools(pi);
+		setWebMcpSessionOwner(ctx.sessionManager);
 		replaceSessionController("Chrome DevTools session replaced");
-		invalidateWebMcpOperations("Chrome DevTools session replaced");
+		invalidateWebMcpOperations(ctx.sessionManager, "Chrome DevTools session replaced");
 		state.shuttingDown = false;
 		state.settingsNotice = undefined;
 		ctx.ui.setStatus(STATUS_KEY, undefined);
@@ -94,7 +96,7 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 		const settings = await loadSettings({ cwd: ctx.cwd, projectTrusted });
 		if (generation !== state.sessionGeneration) return;
 		applyRuntimeBrowserSettings(settings.effectiveBrowser, settings.paths, projectTrusted);
-		applyRuntimeWebMcpSetting(settings.effectiveWebMcpEnabled);
+		applyRuntimeWebMcpSetting(settings.effectiveWebMcpEnabled, ctx.sessionManager);
 		state.settingsNotice = settings.notice;
 		for (const warning of settings.warnings) {
 			ctx.ui.notify(sanitizeChromeDevtoolsDisplay(warning), "warning");
@@ -112,8 +114,11 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 		configureChromeDevtoolsToolExposure(pi, availableTools, ctx.model);
 	});
 
-	pi.on("model_select", (event) => {
-		invalidateWebMcpOperations("Chrome DevTools model and tool exposure changed");
+	pi.on("model_select", (event, ctx) => {
+		invalidateWebMcpOperations(
+			ctx.sessionManager,
+			"Chrome DevTools model and tool exposure changed",
+		);
 		if (!supportsNativeDeferredToolLoading(event.model)) {
 			requireEagerChromeDevtoolsToolExposure(pi);
 		}
@@ -122,7 +127,7 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 	pi.on("session_shutdown", async (_event, ctx) => {
 		state.sessionGeneration += 1;
 		replaceSessionController("Chrome DevTools session shut down");
-		invalidateWebMcpOperations("Chrome DevTools session shut down");
+		invalidateWebMcpOperations(ctx.sessionManager, "Chrome DevTools session shut down");
 		ctx.ui.setStatus(STATUS_KEY, undefined);
 		const browserShutdown = shutdownManagedBrowser(undefined, { cancelLaunch: true });
 		await waitForChromeDevtoolsSettings();

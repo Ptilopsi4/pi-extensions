@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test, vi } from "vitest";
 import { createMockContext } from "../../../test/support.js";
 import { setBrowserManagerOperationsForTests } from "../src/browser-manager.js";
-import { applyRuntimeWebMcpSetting, invalidateWebMcpOperations, state } from "../src/runtime.js";
+import { invalidateWebMcpOperations, state } from "../src/runtime.js";
 import { executeWebMcpCallTool, executeWebMcpListTool } from "../src/webmcp/tools.js";
 
 const PAGE_ID = "page-1";
@@ -23,6 +23,8 @@ interface Scenario {
 	protocolAvailable?: boolean;
 	frameUrl?: (socketIndex: number) => string;
 	invocation?: {
+		malformedResponse?: boolean;
+		omitResponse?: boolean;
 		onStarted?: () => void;
 		output?: unknown;
 		status?: "Canceled" | "Completed" | "Error";
@@ -47,11 +49,11 @@ afterEach(() => {
 	restoreBrowserOperations?.();
 	restoreBrowserOperations = undefined;
 	vi.unstubAllGlobals();
+	vi.useRealTimers();
 	state.sessionController.abort();
 	state.sessionController = new AbortController();
 	state.sessionGeneration += 1;
 	state.webMcpEnabled = false;
-	state.webMcpOperationControllers.clear();
 	state.managedBrowser = undefined;
 });
 
@@ -67,8 +69,7 @@ async function withScenario<T>(
 	state.shuttingDown = false;
 	state.sessionController = new AbortController();
 	state.sessionGeneration += 1;
-	state.webMcpGeneration += 1;
-	applyRuntimeWebMcpSetting(true);
+	state.webMcpEnabled = true;
 	const transport = new ScriptedTransport(scenario);
 	vi.stubGlobal("WebSocket", transport.WebSocketConstructor);
 	restoreBrowserOperations = setBrowserManagerOperationsForTests({
@@ -301,6 +302,51 @@ test("forwards Pi cancellation to Chrome and releases the invocation", async () 
 	);
 });
 
+test("cancels a started invocation when the completion event is malformed", async () => {
+	await withScenario(
+		{
+			tools: () => [defaultTool],
+			invocation: { malformedResponse: true },
+		},
+		async (transport) => {
+			const { ctx } = approvingContext();
+			const listed = await executeWebMcpListTool({}, undefined, ctx);
+			const identity = listed.details.identities[0];
+			await assert.rejects(
+				executeWebMcpCallTool({ ...identity, toolName: identity.name, input: {} }, undefined, ctx),
+				/malformed WebMCP\.toolResponded/u,
+			);
+			assert.equal(transport.cancelInvocations, 1);
+			assert.equal(transport.openSocketCount(), 0);
+		},
+	);
+});
+
+test("cancels a started invocation when completion times out", async () => {
+	await withScenario(
+		{
+			tools: () => [defaultTool],
+			invocation: { omitResponse: true },
+		},
+		async (transport) => {
+			const { ctx } = approvingContext();
+			const listed = await executeWebMcpListTool({}, undefined, ctx);
+			const identity = listed.details.identities[0];
+			vi.useFakeTimers();
+			const calling = executeWebMcpCallTool(
+				{ ...identity, toolName: identity.name, input: {} },
+				undefined,
+				ctx,
+			);
+			const rejected = assert.rejects(calling, /Timed out waiting for CDP event/u);
+			await vi.advanceTimersByTimeAsync(10_001);
+			await rejected;
+			assert.equal(transport.cancelInvocations, 1);
+			assert.equal(transport.openSocketCount(), 0);
+		},
+	);
+});
+
 test("surfaces page exceptions safely and truncates completed output", async () => {
 	await withScenario(
 		{
@@ -345,20 +391,25 @@ test("browser replacement aborts an active confirmation and invalidates the iden
 	await withScenario({ tools: () => [defaultTool] }, async () => {
 		const listed = await executeWebMcpListTool({}, undefined, approvingContext().ctx);
 		const identity = listed.details.identities[0];
-		const { ctx } = createMockContext({
+		const mock = createMockContext({
 			mode: "rpc",
 			hasUI: true,
 			confirm: async () => {
-				invalidateWebMcpOperations("browser replaced");
+				invalidateWebMcpOperations(sessionOwner(mock.ctx), "browser replaced");
 				return true;
 			},
 		});
+		const { ctx } = mock;
 		await assert.rejects(
 			executeWebMcpCallTool({ ...identity, toolName: identity.name, input: {} }, undefined, ctx),
 			/browser replaced/u,
 		);
 	});
 });
+
+function sessionOwner(ctx: unknown) {
+	return (ctx as { sessionManager: object }).sessionManager;
+}
 
 function approvingContext() {
 	return createMockContext({ mode: "tui", hasUI: true, confirm: async () => true });
@@ -462,14 +513,16 @@ class ScriptedWebSocket extends EventTarget {
 				this.transport.invocations += 1;
 				const invocationId = `invocation-${this.index}`;
 				const invocation = this.transport.scenario.invocation ?? {};
-				this.event("WebMCP.toolResponded", {
-					invocationId,
-					status: invocation.status ?? "Completed",
-					...(invocation.output === undefined
-						? { output: { ok: true } }
-						: { output: invocation.output }),
-					...(invocation.errorText === undefined ? {} : { errorText: invocation.errorText }),
-				});
+				if (!invocation.omitResponse) {
+					this.event("WebMCP.toolResponded", {
+						invocationId,
+						status: invocation.malformedResponse ? "Malformed" : (invocation.status ?? "Completed"),
+						...(invocation.output === undefined
+							? { output: { ok: true } }
+							: { output: invocation.output }),
+						...(invocation.errorText === undefined ? {} : { errorText: invocation.errorText }),
+					});
+				}
 				this.response(request.id, { invocationId });
 				queueMicrotask(() => invocation.onStarted?.());
 				return;

@@ -75,11 +75,12 @@ function normalizePathForComparison(value: string) {
 export async function ensureDevToolsEndpoint(
 	waitMs = DEFAULT_ENDPOINT_WAIT_MS,
 	callerSignal?: AbortSignal,
+	webMcpOwner?: object,
 ) {
 	callerSignal?.throwIfAborted();
 	if (extensionsConfigured()) {
 		validateExtensionLaunchMode();
-		await ensureManagedBrowserLaunched(waitMs, callerSignal);
+		await ensureManagedBrowserLaunched(waitMs, callerSignal, webMcpOwner);
 		return;
 	}
 	if (canAutoLaunchBrowser()) {
@@ -92,7 +93,7 @@ export async function ensureDevToolsEndpoint(
 			return;
 		} catch (error) {
 			if (shouldAutoLaunchAfterEndpointError(error)) {
-				await ensureManagedBrowserLaunched(waitMs, callerSignal);
+				await ensureManagedBrowserLaunched(waitMs, callerSignal, webMcpOwner);
 				return;
 			}
 			throw error;
@@ -125,13 +126,22 @@ function validateExtensionLaunchMode() {
 	}
 }
 
-async function ensureManagedBrowserLaunched(waitMs: number, callerSignal?: AbortSignal) {
-	if (state.launchPromise) return state.launchPromise;
-	if (state.managedBrowser && !state.managedBrowser.exited && state.managedBrowser.ready) return;
+async function ensureManagedBrowserLaunched(
+	waitMs: number,
+	callerSignal?: AbortSignal,
+	webMcpOwner?: object,
+) {
+	if (state.launchPromise) {
+		await waitForCaller(state.launchPromise, callerSignal);
+		if (webMcpOwner) state.managedBrowser?.webMcpOwners?.add(webMcpOwner);
+		return;
+	}
+	if (state.managedBrowser && !state.managedBrowser.exited && state.managedBrowser.ready) {
+		if (webMcpOwner) state.managedBrowser.webMcpOwners?.add(webMcpOwner);
+		return;
+	}
 	const generation = state.sessionGeneration;
-	const signal = callerSignal
-		? AbortSignal.any([state.sessionController.signal, callerSignal])
-		: state.sessionController.signal;
+	const signal = state.sessionController.signal;
 	throwIfBrowserLaunchCancelled(generation, signal);
 
 	const launchPromise = prepareManagedBrowserLaunch(waitMs, generation, signal);
@@ -139,7 +149,28 @@ async function ensureManagedBrowserLaunched(waitMs: number, callerSignal?: Abort
 		if (state.launchPromise === wrappedPromise) state.launchPromise = undefined;
 	});
 	state.launchPromise = wrappedPromise;
-	return wrappedPromise;
+	await waitForCaller(wrappedPromise, callerSignal);
+	if (webMcpOwner) state.managedBrowser?.webMcpOwners?.add(webMcpOwner);
+}
+
+function waitForCaller<T>(operation: Promise<T>, signal?: AbortSignal) {
+	if (!signal) return operation;
+	signal.throwIfAborted();
+	return new Promise<T>((resolve, reject) => {
+		let settled = false;
+		const onAbort = () => settle(() => reject(signal.reason));
+		const settle = (callback: () => void) => {
+			if (settled) return;
+			settled = true;
+			signal.removeEventListener("abort", onAbort);
+			callback();
+		};
+		signal.addEventListener("abort", onAbort, { once: true });
+		operation.then(
+			(value) => settle(() => resolve(value)),
+			(error) => settle(() => reject(error)),
+		);
+	});
 }
 
 async function prepareManagedBrowserLaunch(
@@ -289,14 +320,17 @@ async function launchBrowserCandidate(
 			exited: false,
 			ready: false,
 			ownerGeneration: generation,
+			webMcpOwners: new Set(),
 		};
 		managedBrowser = launchedBrowser;
-		invalidateWebMcpOperations("Chrome DevTools managed browser replaced");
 		state.managedBrowser = launchedBrowser;
 
 		child.once("exit", () => {
 			if (state.managedBrowser === launchedBrowser) {
-				invalidateWebMcpOperations("Chrome DevTools managed browser exited");
+				invalidateManagedBrowserWebMcpOwners(
+					launchedBrowser,
+					"Chrome DevTools managed browser exited",
+				);
 			}
 			launchedBrowser.exited = true;
 			launchedBrowser.ready = false;
@@ -475,7 +509,7 @@ export async function shutdownManagedBrowser(
 
 async function cleanupManagedBrowser(managedBrowser: ManagedBrowser) {
 	if (state.managedBrowser === managedBrowser) {
-		invalidateWebMcpOperations("Chrome DevTools managed browser closed");
+		invalidateManagedBrowserWebMcpOwners(managedBrowser, "Chrome DevTools managed browser closed");
 		state.managedBrowser = undefined;
 	}
 	if (!managedBrowser.exited) {
@@ -493,6 +527,13 @@ async function cleanupManagedBrowser(managedBrowser: ManagedBrowser) {
 	if (!state.portConfigured && managedBrowser.port === state.port) {
 		state.port = state.configuredPort;
 	}
+}
+
+function invalidateManagedBrowserWebMcpOwners(managedBrowser: ManagedBrowser, reason: string) {
+	for (const owner of managedBrowser.webMcpOwners ?? []) {
+		invalidateWebMcpOperations(owner, reason);
+	}
+	managedBrowser.webMcpOwners?.clear();
 }
 
 function killManagedBrowserProcess(managedBrowser: ManagedBrowser, signal?: NodeJS.Signals) {

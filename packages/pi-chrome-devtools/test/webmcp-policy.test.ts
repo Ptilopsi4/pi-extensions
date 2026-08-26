@@ -56,6 +56,27 @@ test("schema digests are deterministic and bind safety annotations", () => {
 	);
 });
 
+test("rejects page-controlled regex schemas without confusing property names for keywords", () => {
+	assert.throws(
+		() =>
+			descriptor({
+				schema: {
+					type: "object",
+					properties: { value: { type: "string", pattern: "^(a+)+$" } },
+				},
+			}),
+		/page-controlled regular expressions cannot be evaluated safely/u,
+	);
+	assert.doesNotThrow(() =>
+		descriptor({
+			schema: {
+				type: "object",
+				properties: { pattern: { type: "string" } },
+			},
+		}),
+	);
+});
+
 test("identity validation rejects stale session, page, origin, schema, and annotation state", () => {
 	const tool = descriptor({ annotations: { readOnly: true } });
 	assert.equal(requireMatchingWebMcpTool([tool], webMcpIdentity(tool)), tool);

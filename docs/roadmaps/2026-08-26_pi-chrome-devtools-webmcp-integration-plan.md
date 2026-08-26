@@ -212,6 +212,8 @@ Bound model-visible output to Pi's 50 KB or 2,000-line limit.
 
 Reject schemas and outputs that exceed explicit pre-normalization size, depth, or collection-count limits.
 
+Reject page-controlled `pattern` and `patternProperties` schemas instead of evaluating unbounded regular expressions on Pi's main thread.
+
 Canonicalize accepted JSON schemas deterministically before computing their digest.
 
 Treat WebMCP annotations as untrusted descriptive hints and never use them to bypass confirmation.
@@ -232,7 +234,7 @@ Display a stronger warning when attaching to a user-controlled everyday browser 
 
 ## Lifecycle and Concurrency
 
-Use `state.sessionController.signal` together with the Pi tool signal for every browser operation.
+Use a `sessionManager`-keyed WebMCP session signal together with the Pi tool signal for every browser operation so headless sessions cannot cancel each other.
 
 Do not start a WebMCP watcher, timer, socket, or browser during extension factory evaluation.
 
@@ -358,7 +360,7 @@ Extract a reusable CDP library only after a second real consumer needs command/e
 
 The packaged implementation adds fixed `chrome_devtools_webmcp_list_tools` and `chrome_devtools_webmcp_call_tool` definitions, while the event-aware implementation remains behind a first-use dynamic import.
 
-Deterministic package tests cover CDP connection and command failures, malformed messages, response/event ordering, timeouts, cancellation, repeated cleanup, target detachment, discovery, invocation, stale identities, navigation, frame changes, tool removal, exceptions, confirmation, non-interactive rejection, terminal safety, output limits, settings, exposure, reload, replacement, and shutdown.
+Deterministic package tests cover CDP connection and command failures, malformed messages, response/event ordering, invocation timeout cancellation, repeated cleanup, target detachment, discovery, invocation, stale identities, navigation, document and frame changes, tool removal, unsafe regex schemas, exceptions, confirmation, non-interactive rejection, terminal safety, output limits, session-manager isolation, shared-launch cancellation, settings, exposure, reload, replacement, and shutdown.
 
 The generated runtime build validates every emitted relative import and crosses the lazy WebMCP boundary through Pi's Jiti resource loader.
 

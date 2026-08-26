@@ -8,7 +8,12 @@ import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import { setBrowserManagerOperationsForTests } from "../src/browser-manager.js";
 import chromeDevtools from "../src/chrome-devtools.js";
-import { beginWebMcpOperation, state } from "../src/runtime.js";
+import {
+	beginWebMcpOperation,
+	currentWebMcpGeneration,
+	invalidateWebMcpOperations,
+	state,
+} from "../src/runtime.js";
 import { projectSettingsFilePath, saveBrowserSettings, settingsFilePath } from "../src/settings.js";
 import { CHROME_DEVTOOLS_TOOL_NAMES, WEBMCP_TOOL_NAMES } from "../src/tool-names.js";
 
@@ -71,8 +76,6 @@ async function withFixture(
 		state.managedBrowser = undefined;
 		state.launchPromise = undefined;
 		state.webMcpEnabled = false;
-		state.webMcpGeneration += 1;
-		state.webMcpOperationControllers.clear();
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 		for (const name of environmentNames) {
@@ -82,6 +85,10 @@ async function withFixture(
 		}
 		rmSync(root, { recursive: true, force: true });
 	}
+}
+
+function sessionOwner(ctx: unknown) {
+	return (ctx as { sessionManager: object }).sessionManager;
 }
 
 function writeJson(filePath: string, value: unknown) {
@@ -204,20 +211,33 @@ test("session replacement discards the stale continuation and applies only the l
 	});
 });
 
+test("WebMCP operation invalidation is scoped to the owning session manager", () => {
+	const first = sessionOwner(createMockContext().ctx);
+	const second = sessionOwner(createMockContext().ctx);
+	const firstOperation = beginWebMcpOperation(first);
+	const secondOperation = beginWebMcpOperation(second);
+	invalidateWebMcpOperations(first, "first session replaced");
+	assert.equal(firstOperation.signal.aborted, true);
+	assert.equal(secondOperation.signal.aborted, false);
+	firstOperation.dispose();
+	secondOperation.dispose();
+});
+
 test("model replacement invalidates every prior WebMCP identity and active operation", async () => {
 	await withFixture(async () => {
 		const mock = createMockPi();
 		const { ctx } = createMockContext();
 		chromeDevtools(mock.pi);
 		await mock.events.get("session_start")?.[0]?.({}, ctx);
-		const operation = beginWebMcpOperation();
-		const generation = state.webMcpGeneration;
+		const owner = sessionOwner(ctx);
+		const operation = beginWebMcpOperation(owner);
+		const generation = currentWebMcpGeneration(owner);
 		await mock.events.get("model_select")?.[0]?.(
 			{ model: { api: "openai-completions", provider: "other", id: "replacement" } },
 			ctx,
 		);
 		assert.equal(operation.signal.aborted, true);
-		assert.ok(state.webMcpGeneration > generation);
+		assert.ok(currentWebMcpGeneration(owner) > generation);
 		operation.dispose();
 	});
 });
@@ -279,7 +299,7 @@ test("session_shutdown clears status and releases an owned browser once", async 
 		const mock = createMockPi();
 		const { ctx, statuses } = createMockContext();
 		chromeDevtools(mock.pi);
-		const webMcpOperation = beginWebMcpOperation();
+		const webMcpOperation = beginWebMcpOperation(sessionOwner(ctx));
 		try {
 			await Promise.all([
 				mock.events.get("session_shutdown")?.[0]?.({}, ctx),

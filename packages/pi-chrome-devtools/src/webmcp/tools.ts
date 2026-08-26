@@ -1,6 +1,12 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getPage, resolvePage, textResult } from "../cdp-client.js";
-import { beginWebMcpOperation, state, webMcpOperationIsCurrent } from "../runtime.js";
+import {
+	beginWebMcpOperation,
+	currentWebMcpGeneration,
+	state,
+	webMcpOperationIsCurrent,
+	webMcpSessionSignal,
+} from "../runtime.js";
 import { discoverWebMcpTools, invokeDiscoveredWebMcpTool } from "./discovery.js";
 import {
 	boundedWebMcpDiscovery,
@@ -27,16 +33,19 @@ interface CallInput extends Omit<WebMcpToolIdentity, "name"> {
 export async function executeWebMcpListTool(
 	params: ListInput,
 	toolSignal: AbortSignal | undefined,
-	_ctx: ExtensionContext,
+	ctx: ExtensionContext,
 ) {
 	requireWebMcpEnabled();
-	const preflightGeneration = state.webMcpGeneration;
-	const preflightSignal = combinedSignal(toolSignal);
+	const preflightGeneration = currentWebMcpGeneration(ctx.sessionManager);
+	const preflightSignal = combinedSignal(ctx.sessionManager, toolSignal);
 	preflightSignal.throwIfAborted();
-	const page = await resolvePage(params.pageId, { signal: preflightSignal });
+	const page = await resolvePage(params.pageId, {
+		signal: preflightSignal,
+		webMcpOwner: ctx.sessionManager,
+	});
 	preflightSignal.throwIfAborted();
-	requireCurrentPreflight(preflightGeneration);
-	const operation = beginWebMcpOperation(toolSignal);
+	requireCurrentPreflight(ctx.sessionManager, preflightGeneration);
+	const operation = beginWebMcpOperation(ctx.sessionManager, toolSignal);
 	try {
 		const tools = await discoverWebMcpTools(page, operation);
 		assertCurrent(operation);
@@ -71,13 +80,16 @@ export async function executeWebMcpCallTool(
 	}
 	const input = normalizeWebMcpInput(params.input);
 	const expected = expectedIdentity(params);
-	const preflightGeneration = state.webMcpGeneration;
-	const preflightSignal = combinedSignal(toolSignal);
+	const preflightGeneration = currentWebMcpGeneration(ctx.sessionManager);
+	const preflightSignal = combinedSignal(ctx.sessionManager, toolSignal);
 	preflightSignal.throwIfAborted();
-	const page = await getPage(params.pageId, { signal: preflightSignal });
+	const page = await getPage(params.pageId, {
+		signal: preflightSignal,
+		webMcpOwner: ctx.sessionManager,
+	});
 	preflightSignal.throwIfAborted();
-	requireCurrentPreflight(preflightGeneration);
-	const operation = beginWebMcpOperation(toolSignal);
+	requireCurrentPreflight(ctx.sessionManager, preflightGeneration);
+	const operation = beginWebMcpOperation(ctx.sessionManager, toolSignal);
 	try {
 		const discovered = await discoverWebMcpTools(page, operation);
 		const current = requireMatchingWebMcpTool(discovered, expected);
@@ -120,15 +132,14 @@ function requireWebMcpEnabled() {
 	}
 }
 
-function combinedSignal(toolSignal: AbortSignal | undefined) {
-	return toolSignal
-		? AbortSignal.any([toolSignal, state.sessionController.signal])
-		: state.sessionController.signal;
+function combinedSignal(owner: object, toolSignal: AbortSignal | undefined) {
+	const sessionSignal = webMcpSessionSignal(owner);
+	return toolSignal ? AbortSignal.any([toolSignal, sessionSignal]) : sessionSignal;
 }
 
-function requireCurrentPreflight(generation: number) {
+function requireCurrentPreflight(owner: object, generation: number) {
 	requireWebMcpEnabled();
-	if (generation !== state.webMcpGeneration) {
+	if (generation !== currentWebMcpGeneration(owner)) {
 		throw new DOMException(
 			"The WebMCP operation became stale during page resolution.",
 			"AbortError",

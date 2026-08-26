@@ -21,6 +21,7 @@ import {
 } from "./protocol.js";
 
 export interface WebMcpOperationIdentity {
+	owner: object;
 	sessionGeneration: number;
 	signal: AbortSignal;
 	webMcpGeneration: number;
@@ -138,7 +139,10 @@ function normalizeInventory(
 }
 
 async function requireStablePage(page: DevToolsPage, operation: WebMcpOperationIdentity) {
-	const current = await getPage(page.id, { signal: operation.signal });
+	const current = await getPage(page.id, {
+		signal: operation.signal,
+		webMcpOwner: operation.owner,
+	});
 	assertOperationCurrent(operation);
 	if (
 		current.url !== page.url ||

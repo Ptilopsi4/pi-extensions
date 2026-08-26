@@ -160,6 +160,7 @@ Cancellation is forwarded to Chrome through `WebMCP.cancelInvocation` after Chro
 
 Page URLs, origins, names, descriptions, schemas, errors, and outputs are untrusted.
 Displayed text strips terminal controls and bidirectional overrides, accepted JSON has explicit byte, depth, and collection limits, and model-visible output is capped at 50 KB or 2,000 lines.
+Page-controlled `pattern` and `patternProperties` schemas are rejected because they cannot be evaluated safely on Pi's main thread.
 Annotations are descriptive hints only and never authorize a call.
 WebMCP is not backend MCP, generic browser automation, or a way to bypass browser policy.
 
