@@ -98,7 +98,7 @@ const configuration = {
 	controls: {
 		fixture: "fresh generated identical fixture per four-arm instance",
 		parent: "same model, thinking, prompt information, core tools, and disabled resources",
-		child: "same explicit user-agent model, thinking, prompt, and tool allow-list",
+		child: "same inherited parent model, explicit thinking, task information, and tool allow-list",
 		order: "balanced four-arm rotation by task and repetition",
 		evaluator: "fixed text rubric plus independent node:test for mutation",
 		eventRetention: "bounded responses, lifecycle boundaries, and non-user message_end evidence",

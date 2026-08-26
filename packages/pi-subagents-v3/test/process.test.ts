@@ -38,6 +38,7 @@ test("buildPiArgs isolates the child and preserves selected communication tools"
 		"-e",
 	]);
 	assert.equal(args[8], childCommunicationBridgePath());
+	assert.equal(args[args.indexOf("--model") + 1], "test-provider/test-model");
 	assert.equal(args[args.indexOf("--thinking") + 1], "medium");
 	assert.ok(args.includes("--no-approve"));
 	assert.equal(args[args.indexOf("--tools") + 1], "read,grep,find,ls,subagent-ask,subagent-wait");
@@ -154,6 +155,7 @@ function childRequest(overrides: Partial<ChildRequest> = {}): ChildRequest {
 	return {
 		task: "task",
 		tools: ["read", "grep", "find", "ls"],
+		model: "test-provider/test-model",
 		thinkingLevel: "medium",
 		cwd: directory,
 		projectTrusted: false,

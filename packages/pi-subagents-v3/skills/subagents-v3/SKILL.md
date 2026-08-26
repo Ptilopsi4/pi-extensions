@@ -26,6 +26,8 @@ The task defines the child's specialization, objective, constraints, and expecte
 
 The selected tools define what the child can do.
 
+Select only from `read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, and `ls`.
+
 Omit `tools` for the read-only default of `read`, `grep`, `find`, and `ls`.
 
 Pass an explicit empty list when the child needs no work tools.
@@ -37,6 +39,8 @@ Treat `bash` and `powershell` as unrestricted command execution that can also mo
 Treat `edit` and `write` as explicit workspace mutation capabilities.
 
 The runtime always adds `subagent-ask` and child `subagent-wait` for communication.
+
+The child inherits the main agent's effective provider and model at spawn time.
 
 Omit `thinkingLevel` to follow the main agent's effective thinking level.
 

@@ -12,6 +12,7 @@ import {
 import { resolveTimeoutMs } from "./process.js";
 import { type RuntimeDependencies, SubagentRuntime } from "./runtime.js";
 import {
+	CHILD_CORE_TOOL_NAMES,
 	DEFAULT_SUBAGENT_TOOLS,
 	SUBAGENT_THINKING_LEVELS,
 	type SubagentThinkingLevel,
@@ -19,8 +20,8 @@ import {
 
 const MAX_TASK_BYTES = 50 * 1024;
 const MAX_TOOLS = 64;
-const MAX_TOOL_NAME_LENGTH = 128;
 const QUESTION_MESSAGE_TYPE = "pi-subagents-v3-question";
+const CHILD_CORE_TOOL_SET = new Set<string>(CHILD_CORE_TOOL_NAMES);
 const THINKING_LEVEL_SET = new Set<string>(SUBAGENT_THINKING_LEVELS);
 
 const SpawnParameters = Type.Object(
@@ -31,9 +32,8 @@ const SpawnParameters = Type.Object(
 		}),
 		tools: Type.Optional(
 			Type.Array(
-				Type.String({
-					description: "Child work tool name.",
-					maxLength: MAX_TOOL_NAME_LENGTH,
+				StringEnum(CHILD_CORE_TOOL_NAMES, {
+					description: "Available Pi core child work tool name.",
 				}),
 				{
 					description:
@@ -125,6 +125,7 @@ export function registerSubagentTools(
 			assertNotNested();
 			const task = validateTask(params.task, "subagent-spawn");
 			const tools = resolveTools(params.tools);
+			const model = resolveModel(ctx.model);
 			const thinkingLevel = resolveThinkingLevel(
 				params.thinkingLevel ?? ctx.thinkingLevel ?? pi.getThinkingLevel(),
 			);
@@ -133,6 +134,7 @@ export function registerSubagentTools(
 				runtime.start({
 					task,
 					tools,
+					model,
 					thinkingLevel,
 					cwd: ctx.cwd,
 					timeout: params.timeout,
@@ -266,12 +268,20 @@ function resolveTools(value: unknown): string[] {
 	for (const candidate of value) {
 		if (typeof candidate !== "string") throw new Error("Subagent tool names must be strings.");
 		const name = candidate.trim();
-		if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(name)) {
-			throw new Error(`Invalid subagent tool name: ${sanitizeTerminalText(name).slice(0, 128)}.`);
+		if (!CHILD_CORE_TOOL_SET.has(name)) {
+			throw new Error(
+				`Unavailable subagent tool: ${sanitizeTerminalText(name).slice(0, 128) || "(empty)"}. Available: ${CHILD_CORE_TOOL_NAMES.join(", ")}.`,
+			);
 		}
 		if (!tools.includes(name)) tools.push(name);
 	}
 	return tools;
+}
+
+function resolveModel(model: { provider: string; id: string } | undefined): string {
+	if (!model)
+		throw new Error("Subagent model is unavailable because no main-agent model is selected.");
+	return `${model.provider}/${model.id}`;
 }
 
 function resolveThinkingLevel(value: unknown): SubagentThinkingLevel {

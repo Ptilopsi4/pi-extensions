@@ -58,6 +58,10 @@ test("registers five fixed main-agent tools with bounded stable schemas", async 
 	);
 	assert.equal(tools[0]?.parameters.properties?.task?.maxLength, 50 * 1024);
 	assert.equal(tools[0]?.parameters.properties?.tools?.maxItems, 64);
+	assert.deepEqual(
+		(tools[0]?.parameters.properties?.tools as { items?: { enum?: string[] } })?.items?.enum,
+		["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"],
+	);
 	assert.deepEqual(tools[0]?.parameters.properties?.thinkingLevel?.enum, [
 		"off",
 		"minimal",
@@ -130,10 +134,18 @@ test("spawns jobs with default and explicit tools and thinking levels", async ()
 	assert.equal(explicit.details.state, "queued");
 	await Promise.resolve();
 	assert.deepEqual(
-		requests.map(({ tools, thinkingLevel }) => ({ tools, thinkingLevel })),
+		requests.map(({ tools, model, thinkingLevel }) => ({ tools, model, thinkingLevel })),
 		[
-			{ tools: ["read", "grep", "find", "ls"], thinkingLevel: "high" },
-			{ tools: ["read", "edit", "write"], thinkingLevel: "low" },
+			{
+				tools: ["read", "grep", "find", "ls"],
+				model: "test-provider/test-model",
+				thinkingLevel: "high",
+			},
+			{
+				tools: ["read", "edit", "write"],
+				model: "test-provider/test-model",
+				thinkingLevel: "low",
+			},
 		],
 	);
 	for (const request of requests) {
@@ -185,6 +197,8 @@ test("rejects invalid spawn arguments and nesting before child launch", async ()
 		{ task: "bad item", tools: [1] },
 		{ task: "too many", tools: Array.from({ length: 65 }, (_, index) => `tool_${index}`) },
 		{ task: "bad name", tools: ["read,bash"] },
+		{ task: "typo", tools: ["baash"] },
+		{ task: "extension tool", tools: ["subagent-spawn"] },
 		{ task: "bad thinking", thinkingLevel: "turbo" },
 		{ task: "bad timeout", timeout: 0 },
 	]) {
@@ -196,6 +210,18 @@ test("rejects invalid spawn arguments and nesting before child launch", async ()
 		/nested subagents/i,
 	);
 	delete process.env.PI_SUBAGENT_DEPTH;
+	const missingModelContext = createMockContext({ model: undefined });
+	await assert.rejects(
+		() =>
+			spawn.execute(
+				"missing-model",
+				{ task: "missing model" },
+				undefined,
+				undefined,
+				missingModelContext.ctx,
+			),
+		/no main-agent model is selected/i,
+	);
 	const controller = new AbortController();
 	controller.abort();
 	await assert.rejects(
@@ -404,7 +430,10 @@ async function setup(
 	contextOverrides: Record<string, unknown> = {},
 ) {
 	const mock = createMockPi(mockOptions);
-	const context = createMockContext(contextOverrides);
+	const context = createMockContext({
+		model: { provider: "test-provider", id: "test-model" },
+		...contextOverrides,
+	});
 	subagentsV3(mock.pi, dependencies);
 	await emit(mock, "session_start", { reason: "startup" }, context.ctx);
 	activeSessions.push({ mock, context });

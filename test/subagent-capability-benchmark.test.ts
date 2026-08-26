@@ -161,7 +161,11 @@ test("arm prompts require direct, blocking, detached, and bounded-job topologies
 	);
 	assert.match(
 		buildCapabilityPrompt("v3-job", single, "low"),
-		/subagent-v3-start[\s\S]*subagent-v3-wait/,
+		/subagent-spawn[\s\S]*tools \["read","grep","find","ls"\][\s\S]*subagent-wait/,
+	);
+	assert.match(
+		buildCapabilityPrompt("v3-job", CAPABILITY_TASKS[3], "low"),
+		/tools \["read","grep","find","ls","edit","write","bash"\]/,
 	);
 	assert.doesNotMatch(buildCapabilityPrompt("v1-sync", CAPABILITY_TASKS[2], "low"), /consult/iu);
 });
@@ -191,8 +195,8 @@ test("event analysis enforces each arm topology and completion order", () => {
 		[
 			"v3-job",
 			[
-				toolResult("subagent-v3-start"),
-				toolResult("subagent-v3-wait", { state: "completed", timedOut: false }),
+				toolResult("subagent-spawn"),
+				toolResult("subagent-wait", { state: "completed", timedOut: false }),
 				assistant(final),
 			],
 		],
@@ -226,8 +230,8 @@ test("failed topology attempts make v2 and v3 trials noncompliant", () => {
 	const task = CAPABILITY_TASKS[0];
 	const final = completedSingleResearch();
 	for (const version of ["v2", "v3"] as const) {
-		const start = `subagent-${version}-start`;
-		const wait = `subagent-${version}-wait`;
+		const start = version === "v3" ? "subagent-spawn" : "subagent-v2-start";
+		const wait = version === "v3" ? "subagent-wait" : "subagent-v2-wait";
 		const analysis = analyzeCapabilityEvents(`${version}-job`, task, [
 			toolResult(start, {}, true),
 			toolResult(start),
@@ -414,7 +418,7 @@ test("manual runner executes all four RPC arms and cleans temporary directories"
 			'const send=(value)=>process.stdout.write(JSON.stringify(value)+"\\n");',
 			"const lines=readline.createInterface({input:process.stdin});",
 			'const final=(taskId)=>["src/queue.ts RETRY_ATTEMPTS 4","src/delivery.ts COMPLETION_CHANNEL steer","src/shutdown.ts stop-delivery abort-children await-streams","src/protocol.ts PROTOCOL_VERSION job-v3 MAX_FRAME_BYTES 49152","src/retention.ts MAX_TERMINAL_JOBS 32 RETENTION_HOURS 24","src/review.ts startsWith owner path.join traversal slice(0, 8) token","src/math.mjs clamp pass isEven pass","node --test test/math.test.mjs pass","CAPABILITY_BENCHMARK_RESULT: "+JSON.stringify({taskId,complete:true})].join("\\n");',
-			'lines.on("line",(line)=>{const request=JSON.parse(line);if(request.type==="get_state"){send({id:request.id,type:"response",success:true,data:{}});return;}if(request.type==="get_session_stats"){send({id:request.id,type:"response",success:true,data:{cost:0.01}});return;}if(request.type!=="prompt")return;const arm=/Arm: ([a-z0-9-]+)/.exec(request.message)?.[1]||"unknown";if(arm!==runtimeArm){send({id:request.id,type:"response",success:false,error:"wrong runtime arm"});return;}send({id:request.id,type:"response",success:true,data:{}});const taskId=/Task ID: ([a-z-]+)/.exec(request.message)?.[1]||"unknown";const count=taskId==="parallel-research"?2:1;const tool=(name)=>send({type:"message_end",message:{role:"toolResult",toolName:name,isError:false,details:{state:"completed",timedOut:false},content:[]}});if(arm==="v1-sync")tool("subagent");if(arm==="v1-async"){for(let index=0;index<count;index++)tool("subagent_spawn");for(let index=0;index<count;index++)tool("subagent_await");}if(arm==="v3-job"){for(let index=0;index<count;index++)tool("subagent-v3-start");for(let index=0;index<count;index++)tool("subagent-v3-wait");}if(taskId==="worker-fix")fs.writeFileSync("src/math.mjs","export function clamp(value, minimum, maximum) { return Math.min(maximum, Math.max(minimum, value)); }\\nexport function isEven(value) { return value % 2 === 0; }\\n");send({type:"message_end",message:{role:"assistant",content:[{type:"text",text:final(taskId)}]}});});',
+			'lines.on("line",(line)=>{const request=JSON.parse(line);if(request.type==="get_state"){send({id:request.id,type:"response",success:true,data:{}});return;}if(request.type==="get_session_stats"){send({id:request.id,type:"response",success:true,data:{cost:0.01}});return;}if(request.type!=="prompt")return;const arm=/Arm: ([a-z0-9-]+)/.exec(request.message)?.[1]||"unknown";if(arm!==runtimeArm){send({id:request.id,type:"response",success:false,error:"wrong runtime arm"});return;}send({id:request.id,type:"response",success:true,data:{}});const taskId=/Task ID: ([a-z-]+)/.exec(request.message)?.[1]||"unknown";const count=taskId==="parallel-research"?2:1;const tool=(name)=>send({type:"message_end",message:{role:"toolResult",toolName:name,isError:false,details:{state:"completed",timedOut:false},content:[]}});if(arm==="v1-sync")tool("subagent");if(arm==="v1-async"){for(let index=0;index<count;index++)tool("subagent_spawn");for(let index=0;index<count;index++)tool("subagent_await");}if(arm==="v3-job"){for(let index=0;index<count;index++)tool("subagent-spawn");for(let index=0;index<count;index++)tool("subagent-wait");}if(taskId==="worker-fix")fs.writeFileSync("src/math.mjs","export function clamp(value, minimum, maximum) { return Math.min(maximum, Math.max(minimum, value)); }\\nexport function isEven(value) { return value % 2 === 0; }\\n");send({type:"message_end",message:{role:"assistant",content:[{type:"text",text:final(taskId)}]}});});',
 		].join("\n"),
 		{ mode: 0o700 },
 	);

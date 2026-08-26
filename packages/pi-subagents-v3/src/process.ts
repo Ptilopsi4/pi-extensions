@@ -73,6 +73,8 @@ export function buildPiArgs(request: ChildRequest): string[] {
 		"--no-prompt-templates",
 		"-e",
 		childCommunicationBridgePath(),
+		"--model",
+		request.model,
 		"--thinking",
 		request.thinkingLevel,
 		request.projectTrusted ? "--approve" : "--no-approve",

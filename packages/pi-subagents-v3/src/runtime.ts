@@ -35,6 +35,7 @@ export interface RuntimeDependencies {
 export interface StartJobInput {
 	task: string;
 	tools: string[];
+	model: string;
 	thinkingLevel: SubagentThinkingLevel;
 	cwd: string;
 	timeout?: number;
@@ -111,6 +112,7 @@ export class SubagentRuntime {
 				child = await this.runChild({
 					task: input.task,
 					tools: [...input.tools],
+					model: input.model,
 					thinkingLevel: input.thinkingLevel,
 					cwd: input.cwd,
 					timeout: input.timeout,

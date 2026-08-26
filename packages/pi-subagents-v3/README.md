@@ -15,7 +15,7 @@ A bundled `subagents-v3` skill owns delegation strategy, least-privilege tool se
 - Starts one isolated Pi child process per background job.
 - Lets each task define the child's specialization and each tool list define its capabilities.
 - Defaults child work tools to `read`, `grep`, `find`, and `ls`.
-- Defaults child thinking to the main agent's effective thinking level.
+- Inherits the main agent's effective model and defaults to its thinking level.
 - Gives every child fixed `subagent-ask` and `subagent-wait` communication tools.
 - Lets the main agent answer a pending child question with `subagent-reply`.
 - Interrupts a parent job wait when a question needs a main-agent response without cancelling the job.
@@ -104,6 +104,10 @@ The task defines the child's role, objective, scope, constraints, and expected r
 
 The optional `tools` list defines what the child can do.
 
+Accepted names are `read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, and `ls`.
+
+Unavailable or extension-only tool names are rejected before a job is queued.
+
 Omitting `tools` selects `read`, `grep`, `find`, and `ls`.
 
 Passing an empty list gives the child no work tools.
@@ -118,7 +122,9 @@ The optional `thinkingLevel` accepts `off`, `minimal`, `low`, `medium`, `high`, 
 
 Omitting `thinkingLevel` captures the main agent's effective level when `subagent-spawn` executes.
 
-The child uses Pi's normal model resolution because this extension does not expose per-job model selection.
+The child inherits the main agent's effective provider and model when `subagent-spawn` executes.
+
+The extension does not expose a per-job model override.
 
 ## 🔄 Messaging, lifecycle, and retention
 
