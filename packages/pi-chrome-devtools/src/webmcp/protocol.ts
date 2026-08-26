@@ -34,12 +34,18 @@ export interface WebMcpInvocationResponse {
 	status: "Canceled" | "Completed" | "Error";
 }
 
+export interface WebMcpIdentityWatch {
+	dispose(): Promise<void>;
+	signal: AbortSignal;
+}
+
 interface ProtocolDescription {
 	domains?: unknown;
 }
 
 const REQUIRED_COMMANDS = ["enable", "disable", "invokeTool", "cancelInvocation"];
 const REQUIRED_EVENTS = ["toolsAdded", "toolsRemoved", "toolInvoked", "toolResponded"];
+const IDENTITY_WATCH_TIMEOUT_MS = DEFAULT_TIMEOUT_MS * 4;
 
 export async function requireWebMcpDomain(signal: AbortSignal) {
 	signal.throwIfAborted();
@@ -62,6 +68,20 @@ export async function connectWebMcpPage(page: DevToolsPage, signal: AbortSignal)
 	return CdpClient.connect(page.webSocketDebuggerUrl, {
 		signal: withDeadline(signal),
 	});
+}
+
+export async function cancelWebMcpInvocation(page: DevToolsPage, invocationId: string) {
+	const cleanupSignal = AbortSignal.timeout(1_000);
+	const client = await connectWebMcpPage(page, cleanupSignal);
+	try {
+		await client.send("WebMCP.cancelInvocation", { invocationId }, { signal: cleanupSignal });
+	} finally {
+		client.close();
+	}
+}
+
+export async function enableWebMcpIdentityTracking(client: CdpClient, signal: AbortSignal) {
+	await client.send("Page.enable", {}, { signal, timeoutMs: DEFAULT_TIMEOUT_MS });
 }
 
 export async function enableWebMcp(client: CdpClient, signal: AbortSignal) {
@@ -115,22 +135,83 @@ export async function readWebMcpFrames(client: CdpClient, signal: AbortSignal) {
 	return frames;
 }
 
+export function watchWebMcpIdentity(
+	client: CdpClient,
+	expected: { documentId: string; frameId: string; toolName: string },
+	signal: AbortSignal,
+): WebMcpIdentityWatch {
+	const stopController = new AbortController();
+	const staleController = new AbortController();
+	const watchSignal = AbortSignal.any([signal, stopController.signal]);
+	const options = { signal: watchSignal, timeoutMs: IDENTITY_WATCH_TIMEOUT_MS };
+	const watches = [
+		client.waitForEvent(
+			"Page.frameNavigated",
+			(value): value is unknown =>
+				frameNavigationChangesIdentity(value, expected.frameId, expected.documentId),
+			options,
+		),
+		client.waitForEvent(
+			"WebMCP.toolsAdded",
+			(value): value is unknown => toolChangeMatchesIdentity(value, expected),
+			options,
+		),
+		client.waitForEvent(
+			"WebMCP.toolsRemoved",
+			(value): value is unknown => toolChangeMatchesIdentity(value, expected),
+			options,
+		),
+	];
+	const settledWatches = watches.map((watch) =>
+		watch.then(
+			() => {
+				if (staleController.signal.aborted) return;
+				staleController.abort(
+					new DOMException(
+						"The selected WebMCP document or tool changed before Chrome completed the invocation boundary.",
+						"AbortError",
+					),
+				);
+			},
+			(error) => {
+				if (stopController.signal.aborted || signal.aborted || staleController.signal.aborted) {
+					return;
+				}
+				staleController.abort(error);
+			},
+		),
+	);
+	return {
+		signal: AbortSignal.any([signal, staleController.signal]),
+		async dispose() {
+			stopController.abort();
+			await Promise.allSettled(settledWatches);
+		},
+	};
+}
+
 export async function invokeWebMcpTool(
 	client: CdpClient,
 	request: { frameId: string; input: Record<string, unknown>; toolName: string },
 	signal: AbortSignal,
+	fallbackCancel?: (invocationId: string) => Promise<unknown>,
 ): Promise<WebMcpInvocationResponse> {
 	signal.throwIfAborted();
 	let invocationId: string | undefined;
 	let cancellation: Promise<unknown> | undefined;
 	const cancel = () => {
 		if (!invocationId || cancellation) return;
+		const invocationToCancel = invocationId;
+		const recoverCancellation = () =>
+			fallbackCancel
+				? fallbackCancel(invocationToCancel).catch(() => undefined)
+				: Promise.resolve();
 		try {
 			cancellation = client
 				.send("WebMCP.cancelInvocation", { invocationId }, { timeoutMs: 1_000 })
-				.catch(() => undefined);
+				.catch(recoverCancellation);
 		} catch {
-			cancellation = Promise.resolve();
+			cancellation = recoverCancellation();
 		}
 	};
 	const onAbort = () => cancel();
@@ -265,6 +346,31 @@ function parseFrameTree(value: unknown): WebMcpFrame[] | undefined {
 		return Array.isArray(tree.childFrames) && tree.childFrames.every(visit);
 	};
 	return visit(value.frameTree) ? frames : undefined;
+}
+
+function frameNavigationChangesIdentity(value: unknown, frameId: string, documentId: string) {
+	if (!isRecord(value) || !isRecord(value.frame)) {
+		throw new Error("Chrome sent a malformed Page.frameNavigated event");
+	}
+	if (typeof value.frame.id !== "string" || typeof value.frame.loaderId !== "string") {
+		throw new Error("Chrome sent a malformed Page.frameNavigated event");
+	}
+	return value.frame.id === frameId && value.frame.loaderId !== documentId;
+}
+
+function toolChangeMatchesIdentity(
+	value: unknown,
+	expected: { frameId: string; toolName: string },
+) {
+	if (!isRecord(value) || !Array.isArray(value.tools)) {
+		throw new Error("Chrome sent a malformed WebMCP tool-change event");
+	}
+	return value.tools.some((tool) => {
+		if (!isRecord(tool) || typeof tool.frameId !== "string" || typeof tool.name !== "string") {
+			throw new Error("Chrome sent a malformed WebMCP tool-change event");
+		}
+		return tool.frameId === expected.frameId && tool.name === expected.toolName;
+	});
 }
 
 function parseInvocationId(value: unknown) {

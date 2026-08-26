@@ -24,6 +24,7 @@ interface Scenario {
 	protocolAvailable?: boolean;
 	frameUrl?: (socketIndex: number) => string;
 	invocation?: {
+		identityChange?: "navigation" | "tool-added" | "tool-removed";
 		malformedResponse?: boolean;
 		omitResponse?: boolean;
 		oversizedResponse?: boolean;
@@ -172,6 +173,33 @@ test("rejects a same-URL reload during the final page lookup before invocation",
 			assert.equal(transport.invocations, 0);
 		},
 	);
+});
+
+test("cancels invocation-boundary work when the document or selected tool changes", async () => {
+	for (const identityChange of ["navigation", "tool-added", "tool-removed"] as const) {
+		await withScenario(
+			{
+				tools: () => [defaultTool],
+				invocation: { identityChange },
+			},
+			async (transport) => {
+				const { ctx } = approvingContext();
+				const listed = await executeWebMcpListTool({}, undefined, ctx);
+				const identity = listed.details.identities[0];
+				await assert.rejects(
+					executeWebMcpCallTool(
+						{ ...identity, toolName: identity.name, input: {} },
+						undefined,
+						ctx,
+					),
+					/document or tool changed.*invocation boundary/u,
+				);
+				assert.equal(transport.invocations, 1);
+				assert.equal(transport.cancelInvocations, 1);
+				assert.equal(transport.openSocketCount(), 0);
+			},
+		);
+	}
 });
 
 test("reports unsupported browsers and malformed WebMCP protocol events", async () => {
@@ -569,6 +597,9 @@ class ScriptedWebSocket extends EventTarget {
 		};
 		this.sentMethods.push(request.method);
 		switch (request.method) {
+			case "Page.enable":
+				this.response(request.id, {});
+				return;
 			case "WebMCP.enable":
 				this.event("WebMCP.toolsAdded", {
 					tools: this.transport.scenario.tools?.(this.index) ?? [defaultTool],
@@ -594,6 +625,23 @@ class ScriptedWebSocket extends EventTarget {
 				this.transport.invocations += 1;
 				const invocationId = `invocation-${this.index}`;
 				const invocation = this.transport.scenario.invocation ?? {};
+				switch (invocation.identityChange) {
+					case "navigation":
+						this.event("Page.frameNavigated", {
+							frame: { id: FRAME_ID, loaderId: "loader-reloaded", url: PAGE_URL },
+						});
+						break;
+					case "tool-added":
+						this.event("WebMCP.toolsAdded", {
+							tools: [{ ...defaultTool, description: "Replacement implementation" }],
+						});
+						break;
+					case "tool-removed":
+						this.event("WebMCP.toolsRemoved", {
+							tools: [{ frameId: FRAME_ID, name: defaultTool.name }],
+						});
+						break;
+				}
 				if (!invocation.oversizedResponse && !invocation.omitResponse) {
 					this.event("WebMCP.toolResponded", {
 						invocationId,

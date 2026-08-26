@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test, vi } from "vitest";
-import { createCdpBridge, executionExpression } from "./cdp.js";
+import { createCdpBridge, executionExpression } from "../reference/webmcp/cdp.js";
 
 const CONTROLLERS_KEY = Symbol.for("pi.webmcp.abort-controllers");
 

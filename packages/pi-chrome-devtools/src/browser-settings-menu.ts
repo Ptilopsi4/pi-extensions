@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { defineMenu, runMenu } from "@narumitw/pi-tui-kit";
 import { shutdownManagedBrowser } from "./browser-manager.js";
 import {
-	configureChromeDevtoolsToolExposure,
+	applyAvailableChromeDevtoolsTools,
 	configuredChromeDevtoolsTools,
 	setChromeDevtoolsSessionOwner,
 } from "./lazy-tools.js";
@@ -299,7 +299,7 @@ async function saveAndApplyWebMcpSetting(
 		await ctx.waitForIdle();
 		if (!isCurrent(generation, ownerSignal, actionSignal)) return false;
 		applyRuntimeWebMcpSetting(enabled, ctx.sessionManager);
-		configureChromeDevtoolsToolExposure(pi, previousTools, ctx.model);
+		applyAvailableChromeDevtoolsTools(pi, previousTools);
 		await saveWebMcpSettings(enabled);
 		if (!isOwnerCurrent(generation, ownerSignal)) return false;
 		const loaded = await loadSettings({ cwd: ctx.cwd, projectTrusted });
@@ -311,7 +311,7 @@ async function saveAndApplyWebMcpSetting(
 		let rollbackError: unknown;
 		try {
 			applyRuntimeWebMcpSetting(previousEnabled, ctx.sessionManager);
-			configureChromeDevtoolsToolExposure(pi, previousTools, ctx.model);
+			applyAvailableChromeDevtoolsTools(pi, previousTools);
 		} catch (caught) {
 			rollbackError = caught;
 		}

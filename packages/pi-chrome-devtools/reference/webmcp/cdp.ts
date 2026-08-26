@@ -1,7 +1,6 @@
 /**
- * Prototype reference for the packaged WebMCP integration plan.
- * This file is intentionally not an extension entrypoint and must not become the production transport unchanged.
- * See docs/roadmaps/2026-08-26_pi-chrome-devtools-webmcp-integration-plan.md.
+ * Compatibility reference retained beside the packaged WebMCP implementation.
+ * This file is intentionally not an extension entrypoint or the production transport.
  */
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_CDP_MESSAGE_BYTES = 8 * 1024 * 1024;
@@ -308,14 +307,14 @@ class CdpClient {
 	private constructor(private readonly socket: WebSocket) {
 		socket.addEventListener("message", (event) => {
 			if (typeof event.data !== "string") {
-				this.rejectAll(new Error("Chrome DevTools WebSocket sent an unsupported binary message"));
+				this.close(new Error("Chrome DevTools WebSocket sent an unsupported binary message"));
 				return;
 			}
 			if (
 				event.data.length > MAX_CDP_MESSAGE_BYTES ||
 				Buffer.byteLength(event.data, "utf8") > MAX_CDP_MESSAGE_BYTES
 			) {
-				this.rejectAll(new Error("Chrome DevTools WebSocket message exceeds the 8 MB limit"));
+				this.close(new Error("Chrome DevTools WebSocket message exceeds the 8 MB limit"));
 				return;
 			}
 			let response: CdpResponse;

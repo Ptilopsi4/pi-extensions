@@ -341,6 +341,7 @@ The legacy filename is deprecated and will be removed in a future major release.
 ```txt
 packages/pi-chrome-devtools/
 ├── dist/                  # Generated TypeScript runtime loaded by Jiti
+├── reference/webmcp/      # Non-entrypoint compatibility prototype
 ├── scripts/
 │   └── build-runtime.mjs  # Deterministic runtime builder and boundary validator
 ├── src/

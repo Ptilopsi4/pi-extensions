@@ -196,17 +196,22 @@ test("malformed messages and target detachment reject pending work", async () =>
 	await assert.rejects(pendingDetached, /target detached.*target_closed/u);
 });
 
-test("rejects oversized messages before parsing while preserving cleanup commands", async () => {
+test("oversized messages close the socket before parsing and reject pending work", async () => {
 	const { client, socket } = await connectClient();
 	const command = client.send("WebMCP.enable", {}, { timeoutMs: 100 });
 	socket.message("x".repeat(8 * 1024 * 1024 + 1));
 
 	await assert.rejects(command, /message exceeds the 8 MB limit/u);
-	const cleanup = client.send("WebMCP.disable", {}, { timeoutMs: 100 });
-	socket.respond({});
-	await cleanup;
-	client.close();
 	assert.equal(socket.closeCalls, 1);
+	assert.throws(() => client.send("WebMCP.disable"), /WebSocket is closed/u);
+});
+
+test("an oversized unsolicited event closes a waiter-free socket", async () => {
+	const { client, socket } = await connectClient();
+	socket.message("x".repeat(8 * 1024 * 1024 + 1));
+
+	assert.equal(socket.closeCalls, 1);
+	assert.throws(() => client.send("Page.enable"), /WebSocket is closed/u);
 });
 
 test("close is idempotent and rejects every pending command and event", async () => {

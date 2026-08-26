@@ -10,14 +10,17 @@ import {
 	webMcpErrorMessage,
 } from "./policy.js";
 import {
+	cancelWebMcpInvocation,
 	connectWebMcpPage,
 	disableWebMcp,
 	enableWebMcp,
+	enableWebMcpIdentityTracking,
 	invokeWebMcpTool,
 	readWebMcpFrames,
 	requireWebMcpDomain,
 	type WebMcpFrame,
 	type WebMcpProtocolTool,
+	watchWebMcpIdentity,
 } from "./protocol.js";
 
 export interface WebMcpOperationIdentity {
@@ -59,29 +62,42 @@ export async function invokeDiscoveredWebMcpTool(
 	assertOperationCurrent(operation);
 	const client = await connectWebMcpPage(page, operation.signal);
 	try {
+		await enableWebMcpIdentityTracking(client, operation.signal);
+		assertOperationCurrent(operation);
 		const tools = await readInventory(client, page, operation);
 		const tool = requireMatchingWebMcpTool(tools, expected);
-		await requireStablePage(client, page, [tool], operation);
-		assertOperationCurrent(operation);
-		const response = await invokeWebMcpTool(
+		const identityWatch = watchWebMcpIdentity(
 			client,
-			{ frameId: tool.frameId, toolName: tool.name, input },
+			{ documentId: tool.documentId, frameId: tool.frameId, toolName: tool.name },
 			operation.signal,
 		);
-		assertOperationCurrent(operation);
-		if (response.status === "Canceled") {
-			throw new DOMException("Chrome canceled the WebMCP tool invocation.", "AbortError");
-		}
-		if (response.status === "Error") {
-			throw new Error(
-				`WebMCP tool failed: ${webMcpErrorMessage(response.errorText ?? remoteExceptionText(response.exception))}`,
+		const guardedOperation = { ...operation, signal: identityWatch.signal };
+		try {
+			await requireStablePage(client, page, [tool], guardedOperation);
+			assertOperationCurrent(guardedOperation);
+			const response = await invokeWebMcpTool(
+				client,
+				{ frameId: tool.frameId, toolName: tool.name, input },
+				guardedOperation.signal,
+				(invocationId) => cancelWebMcpInvocation(page, invocationId),
 			);
+			assertOperationCurrent(guardedOperation);
+			if (response.status === "Canceled") {
+				throw new DOMException("Chrome canceled the WebMCP tool invocation.", "AbortError");
+			}
+			if (response.status === "Error") {
+				throw new Error(
+					`WebMCP tool failed: ${webMcpErrorMessage(response.errorText ?? remoteExceptionText(response.exception))}`,
+				);
+			}
+			return {
+				invocationId: response.invocationId,
+				output: normalizeWebMcpOutput(response.output ?? null),
+				tool,
+			};
+		} finally {
+			await identityWatch.dispose();
 		}
-		return {
-			invocationId: response.invocationId,
-			output: normalizeWebMcpOutput(response.output ?? null),
-			tool,
-		};
 	} finally {
 		await disableWebMcp(client);
 		client.close();

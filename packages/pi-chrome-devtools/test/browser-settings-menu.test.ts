@@ -4,13 +4,18 @@ import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { createTuiHarness } from "@narumitw/pi-tui-kit/testing";
 import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import { showChromeDevtoolsBrowserSettings } from "../src/browser-settings-menu.js";
 import chromeDevtools from "../src/chrome-devtools.js";
-import { initializeAvailableChromeDevtoolsTools } from "../src/lazy-tools.js";
+import {
+	CHROME_DEVTOOLS_LOAD_TOOL_NAME,
+	configureChromeDevtoolsToolExposure,
+	initializeAvailableChromeDevtoolsTools,
+} from "../src/lazy-tools.js";
 import {
 	beginWebMcpOperation,
 	DEFAULT_HOST,
@@ -30,6 +35,13 @@ class OwnedBrowserChild extends EventEmitter {
 		return true;
 	}
 }
+
+const NATIVE_DEFERRED_MODEL = {
+	api: "openai-responses",
+	provider: "openai",
+	id: "gpt-native-deferred",
+	compat: { supportsAdditionalTools: true },
+} as unknown as ExtensionContext["model"];
 
 const ENVIRONMENT_NAMES = [
 	"PI_CHROME_DEVTOOLS_HOST",
@@ -165,6 +177,12 @@ test("WebMCP settings toggle the experimental gate, tool exposure, and active op
 	await withBrowserSettingsMenu(async ({ ctx, notifications, tui, generation }) => {
 		const mockPi = createMockPi({ activeTools: ["other_tool", ...CHROME_DEVTOOLS_TOOL_NAMES] });
 		initializeAvailableChromeDevtoolsTools(mockPi.pi);
+		configureChromeDevtoolsToolExposure(
+			mockPi.pi,
+			CHROME_DEVTOOLS_TOOL_NAMES,
+			NATIVE_DEFERRED_MODEL,
+		);
+		mockPi.rawPi.setActiveTools([...mockPi.rawPi.getActiveTools(), "chrome_devtools_evaluate"]);
 		const running = showChromeDevtoolsBrowserSettings(mockPi.pi, ctx, generation);
 		await tui.waitForOpen();
 		assert.match(tui.render().join("\n"), /WebMCP · Experimental\s+Off/);
@@ -175,7 +193,12 @@ test("WebMCP settings toggle the experimental gate, tool exposure, and active op
 
 		assert.equal(webMcpEnabled(sessionOwner(ctx)), true);
 		assert.deepEqual((readSettings().webmcp as Record<string, unknown>).enabled, true);
-		assert.ok(WEBMCP_TOOL_NAMES.every((name) => mockPi.rawPi.getActiveTools().includes(name)));
+		assert.deepEqual(mockPi.rawPi.getActiveTools(), [
+			"other_tool",
+			CHROME_DEVTOOLS_LOAD_TOOL_NAME,
+			"chrome_devtools_evaluate",
+		]);
+		assert.ok(WEBMCP_TOOL_NAMES.every((name) => !mockPi.rawPi.getActiveTools().includes(name)));
 		assert.match(notifications.at(-1)?.message ?? "", /Experimental WebMCP enabled/i);
 
 		const operation = beginWebMcpOperation(sessionOwner(ctx));
@@ -184,6 +207,11 @@ test("WebMCP settings toggle the experimental gate, tool exposure, and active op
 		await tui.waitForOpen();
 		assert.equal(webMcpEnabled(sessionOwner(ctx)), false);
 		assert.equal(operation.signal.aborted, true);
+		assert.deepEqual(mockPi.rawPi.getActiveTools(), [
+			"other_tool",
+			CHROME_DEVTOOLS_LOAD_TOOL_NAME,
+			"chrome_devtools_evaluate",
+		]);
 		assert.ok(WEBMCP_TOOL_NAMES.every((name) => !mockPi.rawPi.getActiveTools().includes(name)));
 		assert.match(notifications.at(-1)?.message ?? "", /WebMCP disabled/i);
 		operation.dispose();
