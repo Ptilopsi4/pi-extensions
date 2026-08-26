@@ -32,3 +32,13 @@ No parameters.
 | `agent` | `string` | Yes | Configured subagent name. |
 | `task` | `string` | Yes | Self-contained research or review question, up to 50 KiB of UTF-8 text. |
 | `timeout` | `number` | No | Seconds; `> 0` through `2,147,483.647`; no default timeout. |
+
+## `subagent-v3-ask`
+
+| Parameter | Type | Required | Constraint / default |
+| --- | --- | --- | --- |
+| `agent` | `string` | Yes | Configured subagent name. |
+| `message` | `string` | Yes | Self-contained question, up to 50 KiB of UTF-8 text. |
+| `timeout` | `number` | No | Seconds; `> 0` through `2,147,483.647`; no default timeout. |
+
+Returns the selected subagent's response as plain text.
