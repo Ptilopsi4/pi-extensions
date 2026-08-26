@@ -1,6 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
@@ -16,12 +15,6 @@ const MAX_OUTPUT_BYTES = 32 * 1024;
 const MAX_ERROR_BYTES = 8 * 1024;
 const MAX_EVENT_LINE_BYTES = 256 * 1024;
 const KILL_GRACE_MS = 1_000;
-const CHILD_SYSTEM_PROMPT = [
-	"You are a focused subagent running in an isolated Pi child context.",
-	"Complete only the bounded task and follow its role, scope, constraints, and expected result.",
-	"Use only the executor-provided tools and do not claim actions that those tools cannot perform.",
-	"Keep scope tight and report evidence, completed work, checks, and remaining risks.",
-].join("\n");
 
 interface ProcessSettlement {
 	code: number;
@@ -54,10 +47,8 @@ interface AssistantEvent {
 
 export async function runChild(request: ChildRequest): Promise<ChildResult> {
 	if (request.signal.aborted) return cancelledResult();
-	const temporary = await writePrompt(CHILD_SYSTEM_PROMPT);
 	try {
-		if (request.signal.aborted) return cancelledResult();
-		const invocation = resolvePiInvocation(buildPiArgs(request, temporary.filePath));
+		const invocation = resolvePiInvocation(buildPiArgs(request));
 		return await executeProcess(invocation, request);
 	} catch (error) {
 		if (request.signal.aborted) return cancelledResult();
@@ -68,14 +59,10 @@ export async function runChild(request: ChildRequest): Promise<ChildResult> {
 			limitations: [],
 			truncated: false,
 		};
-	} finally {
-		await fs.promises
-			.rm(temporary.directory, { recursive: true, force: true })
-			.catch(() => undefined);
 	}
 }
 
-export function buildPiArgs(request: ChildRequest, promptPath: string): string[] {
+export function buildPiArgs(request: ChildRequest): string[] {
 	const args = [
 		"--mode",
 		"json",
@@ -92,7 +79,6 @@ export function buildPiArgs(request: ChildRequest, promptPath: string): string[]
 	];
 	const tools = [...new Set([...request.tools, ...CHILD_COMMUNICATION_TOOL_NAMES])];
 	args.push("--tools", tools.join(","));
-	if (promptPath) args.push("--append-system-prompt", promptPath);
 	args.push(`Task: ${request.task}`);
 	return args;
 }
@@ -283,18 +269,6 @@ async function executeProcess(
 		limitations,
 		truncated,
 	};
-}
-
-async function writePrompt(prompt: string): Promise<{ directory: string; filePath: string }> {
-	const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-subagent-v3-"));
-	const filePath = path.join(directory, "agent.md");
-	try {
-		await fs.promises.writeFile(filePath, prompt, { encoding: "utf8", mode: 0o600 });
-		return { directory, filePath };
-	} catch (error) {
-		await fs.promises.rm(directory, { recursive: true, force: true }).catch(() => undefined);
-		throw error;
-	}
 }
 
 function resolvePiInvocation(args: string[]): { command: string; args: string[] } {

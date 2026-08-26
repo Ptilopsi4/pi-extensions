@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 test("buildPiArgs isolates the child and preserves selected communication tools", () => {
-	const args = buildPiArgs(childRequest(), "/tmp/prompt.md");
+	const args = buildPiArgs(childRequest());
 	assert.deepEqual(args.slice(0, 8), [
 		"--mode",
 		"json",
@@ -41,7 +41,8 @@ test("buildPiArgs isolates the child and preserves selected communication tools"
 	assert.equal(args[args.indexOf("--thinking") + 1], "medium");
 	assert.ok(args.includes("--no-approve"));
 	assert.equal(args[args.indexOf("--tools") + 1], "read,grep,find,ls,subagent-ask,subagent-wait");
-	assert.doesNotMatch(args.join(" "), /\bbash\b|\bwrite\b/);
+	assert.doesNotMatch(args.join(" "), /\bbash\b|\bwrite\b|append-system-prompt/u);
+	assert.equal(args.at(-1), "Task: task");
 
 	const writable = buildPiArgs(
 		childRequest({
@@ -49,7 +50,6 @@ test("buildPiArgs isolates the child and preserves selected communication tools"
 			thinkingLevel: "xhigh",
 			projectTrusted: true,
 		}),
-		"/tmp/prompt.md",
 	);
 	assert.ok(writable.includes("--approve"));
 	assert.equal(writable[writable.indexOf("--thinking") + 1], "xhigh");
@@ -58,7 +58,7 @@ test("buildPiArgs isolates the child and preserves selected communication tools"
 		"read,bash,write,subagent-ask,subagent-wait",
 	);
 
-	const noWorkTools = buildPiArgs(childRequest({ tools: [] }), "/tmp/prompt.md");
+	const noWorkTools = buildPiArgs(childRequest({ tools: [] }));
 	assert.equal(noWorkTools[noWorkTools.indexOf("--tools") + 1], "subagent-ask,subagent-wait");
 });
 
