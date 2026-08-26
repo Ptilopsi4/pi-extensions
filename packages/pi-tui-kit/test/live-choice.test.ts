@@ -76,6 +76,25 @@ test("runLiveChoice blocks gated confirmation while preserving preview and short
 	});
 });
 
+test("runLiveChoice preserves supplied controls in height-compacted hints", async () => {
+	const tui = createTuiHarness({ width: 120, rows: 8 });
+	const context = createMockContext({ mode: "tui", hasUI: true, custom: tui.custom });
+	const running = runLiveChoice(context.ctx, {
+		title: "Preset",
+		items: choices,
+		navigationLabel: "inspect",
+		confirmLabel: "apply",
+		shortcuts: [{ id: "customize", keys: ["e"], label: "customize" }],
+	});
+	await tui.waitForOpen();
+	const rendered = stripVTControlCharacters(tui.render().join("\n"));
+	assert.match(rendered, /e customize/u);
+	assert.match(rendered, /enter apply/u);
+	assert.match(rendered, /↑\/↓ inspect/u);
+	tui.press("ctrl+c");
+	assert.deepEqual(await running, { kind: "closed", reason: "close" });
+});
+
 test("runLiveChoice preserves gated Back, Close, owner abort, and disposal", async () => {
 	async function drive(exit: "tui.select.cancel" | "ctrl+c") {
 		const tui = createTuiHarness();

@@ -277,9 +277,11 @@ test("choice and settings screens reserve host rows and keep focused controls vi
 	assert.ok(settingsLines.some((line) => line.startsWith("> ")));
 	assert.match(settingsLines.join("\n"), /→ Setting 11/u);
 	assert.match(settingsLines.join("\n"), /Description for setting 11/u);
-	assert.match(settingsLines.join("\n"), /esc back/u);
+	assert.match(settingsLines.join("\n"), /Esc to go back/u);
+	const compactSettings = plainRender(settings.component, 80).join("\n");
+	assert.match(compactSettings, /Enter\/Space to change/u);
 	const narrowSettings = plainRender(settings.component, 25).join("\n");
-	assert.match(narrowSettings, /esc back/u);
+	assert.match(narrowSettings, /Esc to go back/u);
 	assert.match(narrowSettings, /\(12\/12\)/u);
 	assert.doesNotMatch(narrowSettings, /(^|\n)(?:to )?close($|\n)/u);
 });

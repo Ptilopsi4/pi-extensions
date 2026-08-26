@@ -23,6 +23,53 @@ const reviewScreen: ReviewScreen<ActionId> = {
 	hint: "back",
 };
 
+type ReviewKeybindings = {
+	matches(data: string, binding: string): boolean;
+	getKeys(binding: string): readonly string[];
+};
+
+const reviewTestKeybindings: ReviewKeybindings = {
+	matches(data, binding) {
+		const values: Record<string, string> = {
+			"tui.select.up": "k",
+			"tui.select.down": "j",
+			"tui.select.pageUp": "u",
+			"tui.select.pageDown": "d",
+			"tui.select.confirm": "l",
+			"tui.select.cancel": "q",
+		};
+		return data === values[binding];
+	},
+	getKeys(binding) {
+		const values: Record<string, readonly string[]> = {
+			"tui.select.up": ["k"],
+			"tui.select.down": ["j"],
+			"tui.select.pageUp": ["u"],
+			"tui.select.pageDown": ["d"],
+			"tui.select.confirm": ["l"],
+			"tui.select.cancel": ["q", "ctrl+c"],
+		};
+		return values[binding] ?? [];
+	},
+};
+
+const defaultReviewKeybindings: ReviewKeybindings = {
+	matches() {
+		return false;
+	},
+	getKeys(binding) {
+		const values: Record<string, readonly string[]> = {
+			"tui.select.up": ["up"],
+			"tui.select.down": ["down"],
+			"tui.select.pageUp": ["pageup"],
+			"tui.select.pageDown": ["pagedown"],
+			"tui.select.confirm": ["enter"],
+			"tui.select.cancel": ["escape", "ctrl+c"],
+		};
+		return values[binding] ?? [];
+	},
+};
+
 test("review preserves whitespace, sanitizes controls, and bounds exact text at every width", () => {
 	const harness = reviewComponentHarness({
 		...reviewScreen,
@@ -74,20 +121,38 @@ test("fixed and default review frames use consistent rules and preserve content"
 	]);
 });
 
-test("empty fixed and default reviews preserve controls at minimum heights", () => {
-	for (const viewportSize of [3, undefined]) {
-		for (const terminalRows of [4, 5]) {
-			const harness = reviewComponentHarness(
-				{ ...reviewScreen, content: "", viewportSize },
-				false,
-				terminalRows,
-			);
-			const lines = plainLines(harness.component, 80);
-			assert.ok(lines.length > 0);
-			assert.match(lines.join("\n"), /l Apply|q back|ctrl\+c close/u);
-			assert.ok(lines.every((line) => line.length > 0));
+test("rendered-empty fixed and default reviews preserve controls at minimum heights", () => {
+	for (const content of ["", " ", "\n", " \n\t"]) {
+		for (const viewportSize of [3, undefined]) {
+			for (const terminalRows of [4, 5]) {
+				const harness = reviewComponentHarness(
+					{ ...reviewScreen, content, viewportSize },
+					false,
+					terminalRows,
+				);
+				const lines = plainLines(harness.component, 80);
+				assert.ok(lines.length > 0);
+				assert.match(lines.join("\n"), /l Apply|q back|ctrl\+c close/u);
+				assert.ok(lines.every((line) => line.trim().length > 0));
+			}
 		}
 	}
+});
+
+test("narrow compact review hints advertise cancellation before confirmation", () => {
+	const custom = reviewComponentHarness(reviewScreen, false, 6);
+	assert.match(plainRender(custom.component, 10), /q back/u);
+	assert.doesNotMatch(plainRender(custom.component, 10), /l Apply/u);
+
+	const defaults = reviewComponentHarness(
+		reviewScreen,
+		false,
+		6,
+		undefined,
+		defaultReviewKeybindings,
+	);
+	assert.match(plainRender(defaults.component, 12), /esc back/u);
+	assert.doesNotMatch(plainRender(defaults.component, 12), /enter Apply/u);
 });
 
 test("fixed and default review pagination reaches the end after height compaction", () => {
@@ -124,6 +189,21 @@ test("fixed and default reviews reserve their requested viewport before extra he
 	}
 });
 
+test("fixed and default reviews cap reserved viewport rows at formatted content length", () => {
+	const lines = Array.from({ length: 10 }, (_, index) => `Context ${index + 1}`);
+	for (const viewportSize of [14, undefined]) {
+		const harness = reviewComponentHarness(
+			{ ...reviewScreen, content: "only row", lines, viewportSize },
+			false,
+			24,
+		);
+		const rendered = plainRender(harness.component, 80);
+		assert.match(rendered, /Context 1[\s\S]*Context 10/u);
+		assert.match(rendered, /only row/u);
+		assert.ok(harness.component.render(80).length <= 21);
+	}
+});
+
 test("adaptive review degrades explicitly at constrained terminal heights", () => {
 	const content = Array.from({ length: 10 }, (_, index) => `row ${index + 1}`).join("\n");
 	const harness = reviewComponentHarness(
@@ -140,7 +220,7 @@ test("adaptive review degrades explicitly at constrained terminal heights", () =
 	assert.deepEqual(plainLines(harness.component, 80), [
 		"Review changes",
 		"row 1",
-		"l Apply • q back • ctrl+c close • k/j navigate",
+		"q back • ctrl+c close • l Apply • k/j navigate",
 	]);
 
 	harness.setTerminalRows(7);
@@ -148,7 +228,7 @@ test("adaptive review degrades explicitly at constrained terminal heights", () =
 		"Review changes",
 		"row 1",
 		"1-1/10",
-		"l Apply • q back • ctrl+c close • k/j navigate",
+		"q back • ctrl+c close • l Apply • k/j navigate",
 	]);
 
 	harness.setTerminalRows(8);
@@ -156,7 +236,7 @@ test("adaptive review degrades explicitly at constrained terminal heights", () =
 		"─".repeat(80),
 		"Review changes",
 		"row 1",
-		"l Apply • q back • ctrl+c close • k/j navigate",
+		"q back • ctrl+c close • l Apply • k/j navigate",
 		"─".repeat(80),
 	]);
 });
@@ -698,6 +778,7 @@ function reviewComponentHarness(
 	themed = false,
 	terminalRows = 24,
 	onColor?: (color: string) => void,
+	keybindings = reviewTestKeybindings,
 ) {
 	const events: Array<{ kind: "back" | "close" } | { kind: "activate"; itemId: string }> = [];
 	const terminal = { rows: terminalRows };
@@ -711,30 +792,7 @@ function reviewComponentHarness(
 			},
 			bold: (text: string) => text,
 		},
-		keybindings: {
-			matches(data: string, binding: string) {
-				const values: Record<string, string> = {
-					"tui.select.up": "k",
-					"tui.select.down": "j",
-					"tui.select.pageUp": "u",
-					"tui.select.pageDown": "d",
-					"tui.select.confirm": "l",
-					"tui.select.cancel": "q",
-				};
-				return data === values[binding];
-			},
-			getKeys(binding: string) {
-				const values: Record<string, readonly string[]> = {
-					"tui.select.up": ["k"],
-					"tui.select.down": ["j"],
-					"tui.select.pageUp": ["u"],
-					"tui.select.pageDown": ["d"],
-					"tui.select.confirm": ["l"],
-					"tui.select.cancel": ["q", "ctrl+c"],
-				};
-				return values[binding] ?? [];
-			},
-		},
+		keybindings,
 		onEvent: (event) => events.push(event),
 	});
 	return {

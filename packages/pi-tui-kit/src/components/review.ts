@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { MenuScreen, ReviewScreen } from "../types.js";
 import type {
@@ -46,10 +47,16 @@ export function createReviewComponent<ScreenId extends string, ActionId extends 
 	return {
 		render(width) {
 			const safeWidth = Math.max(1, width);
-			const allLines =
-				options.screen.content.length === 0
-					? []
-					: documentLineCache.lines(options.screen.content, options.screen.format, safeWidth);
+			const formattedLines = documentLineCache.lines(
+				options.screen.content,
+				options.screen.format,
+				safeWidth,
+			);
+			const allLines = formattedLines.some(
+				(line) => stripVTControlCharacters(line).trim().length > 0,
+			)
+				? formattedLines
+				: [];
 			const frame = renderAdaptiveReviewFrame({
 				screen: options.screen,
 				allLines,
@@ -58,7 +65,7 @@ export function createReviewComponent<ScreenId extends string, ActionId extends 
 				maximumViewportSize:
 					options.screen.viewportSize === "adaptive"
 						? undefined
-						: reviewViewportSize(options.screen),
+						: Math.min(reviewViewportSize(options.screen), allLines.length),
 				scrollOffset,
 				theme: options.theme,
 				keybindings: options.keybindings,
@@ -285,9 +292,9 @@ function compactReviewHint(
 	const down = reviewBindingText(keybindings, "tui.select.down");
 	return fitCompactHintSegments(
 		[
-			...(confirm && confirmAction ? [`${confirm} ${confirmAction}`] : []),
 			...(cancel ? [`${cancel} ${destination}`] : []),
 			...(destination === "back" || !cancel ? ["ctrl+c close"] : []),
+			...(confirm && confirmAction ? [`${confirm} ${confirmAction}`] : []),
 			...(up || down ? [`${[up, down].filter(Boolean).join("/")} navigate`] : []),
 		],
 		width,

@@ -83,6 +83,7 @@ export function renderFrame<ScreenId extends string, ActionId extends string>(
 	const compactHintRow = options.theme.fg(
 		"dim",
 		compactMenuHint(
+			hintText,
 			options.keybindings,
 			destination,
 			confirmAction,
@@ -298,6 +299,7 @@ export function menuHint(
 }
 
 function compactMenuHint(
+	hintText: string,
 	keybindings: MenuKeybindings,
 	destination: "back" | "close",
 	confirmAction: string,
@@ -312,30 +314,99 @@ function compactMenuHint(
 			label: destination,
 		},
 	]);
+	const hardCancel =
+		destination === "back" || !cancel
+			? formatInteractionHints(keybindings, [{ keys: ["ctrl+c"], label: "close" }])
+			: "";
+	const confirm = confirmAction
+		? formatInteractionHints(keybindings, [
+				{ bindings: ["tui.select.confirm"], label: confirmAction },
+			])
+		: "";
+	const navigate = navigation
+		? formatInteractionHints(keybindings, [
+				{ bindings: ["tui.select.up", "tui.select.down"], label: "navigate" },
+			])
+		: "";
+	const supplied = hintSegments(hintText);
+	const groups = {
+		cancel: hintSegmentKeys(cancel),
+		confirm: hintSegmentKeys(confirm),
+		hardCancel: hintSegmentKeys(hardCancel),
+		navigate: hintSegmentKeys(navigate),
+	};
+	const classified = supplied.map((segment) => ({ segment, keys: hintSegmentKeys(segment) }));
+	const matching = (keys: ReadonlySet<string>) =>
+		classified
+			.filter((candidate) => intersects(candidate.keys, keys))
+			.map(({ segment }) => segment);
+	const cancelSegments = matching(groups.cancel);
+	const confirmSegments = matching(groups.confirm);
+	const hardCancelSegments = matching(groups.hardCancel);
+	const navigationSegments = matching(groups.navigate);
+	const claimed = new Set([
+		...cancelSegments,
+		...confirmSegments,
+		...hardCancelSegments,
+		...navigationSegments,
+	]);
+	const remaining = classified.filter(({ segment }) => !claimed.has(segment));
+	const keyedCustom = remaining.filter(({ keys }) => keys.size > 0).map(({ segment }) => segment);
+	const reminders = remaining.filter(({ keys }) => keys.size === 0).map(({ segment }) => segment);
 	return fitCompactHintSegments(
 		[
-			cancel,
+			...(cancelSegments.length > 0 ? cancelSegments : [cancel]),
 			...(compactOverflowText ? [safeMenuText(compactOverflowText).trim()] : []),
-			...(destination === "back" || !cancel
-				? [formatInteractionHints(keybindings, [{ keys: ["ctrl+c"], label: "close" }])]
-				: []),
-			...(confirmAction
-				? [
-						formatInteractionHints(keybindings, [
-							{ bindings: ["tui.select.confirm"], label: confirmAction },
-						]),
-					]
-				: []),
-			...(navigation
-				? [
-						formatInteractionHints(keybindings, [
-							{ bindings: ["tui.select.up", "tui.select.down"], label: "navigate" },
-						]),
-					]
-				: []),
+			...keyedCustom,
+			...confirmSegments,
+			...hardCancelSegments,
+			...navigationSegments,
+			...reminders,
 		],
 		width,
 	);
+}
+
+function hintSegments(hintText: string) {
+	return safeMenuText(hintText)
+		.split(/\s+[•·]\s+/u)
+		.map((segment) => segment.trim())
+		.filter(Boolean);
+}
+
+function hintSegmentKeys(segment: string) {
+	const token = safeMenuText(segment).trim().split(/\s+/u, 1)[0]?.toLowerCase() ?? "";
+	const parts = token.split("/");
+	return parts.length > 0 && parts.every(isHintKey) ? new Set(parts) : new Set<string>();
+}
+
+function isHintKey(value: string) {
+	return (
+		value.length === 1 ||
+		value.includes("+") ||
+		[
+			"esc",
+			"escape",
+			"enter",
+			"return",
+			"space",
+			"↑",
+			"↓",
+			"up",
+			"down",
+			"pageup",
+			"pagedown",
+			"home",
+			"end",
+		].includes(value)
+	);
+}
+
+function intersects(left: ReadonlySet<string>, right: ReadonlySet<string>) {
+	for (const value of left) {
+		if (right.has(value)) return true;
+	}
+	return false;
 }
 
 export function fitCompactHintSegments(segments: readonly string[], width: number) {
