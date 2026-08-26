@@ -154,9 +154,10 @@ export function createCdpBridge(options: {
 						client.close(operationSignal.reason);
 					});
 			};
-			operationSignal.addEventListener("abort", abort, { once: true });
 
 			try {
+				operationSignal.throwIfAborted();
+				operationSignal.addEventListener("abort", abort, { once: true });
 				const response = await client.send<CdpEvaluateResponse>("Runtime.evaluate", {
 					awaitPromise: true,
 					expression: executionExpression(token, request),
@@ -205,17 +206,18 @@ export function executionExpression(
 	const context = document.modelContext;
 	if (!context) throw new Error("This page does not expose document.modelContext");
 	const fromOrigins = ${javascriptValue(request.fromOrigins ?? [])};
-	const tools = await context.getTools(fromOrigins.length > 0 ? { fromOrigins } : {});
-	const matches = tools.filter((tool) =>
-		tool.name === ${javascriptValue(request.toolName)} &&
-		(${javascriptValue(request.origin)} === undefined || tool.origin === ${javascriptValue(request.origin)})
-	);
-	if (matches.length === 0) throw new Error("WebMCP tool not found");
-	if (matches.length > 1) throw new Error("WebMCP tool name is ambiguous; provide origin");
 	const controllers = globalThis[Symbol.for("pi.webmcp.abort-controllers")] ??= new Map();
 	const controller = new AbortController();
 	controllers.set(${javascriptValue(token)}, controller);
 	try {
+		const tools = await context.getTools(fromOrigins.length > 0 ? { fromOrigins } : {});
+		controller.signal.throwIfAborted();
+		const matches = tools.filter((tool) =>
+			tool.name === ${javascriptValue(request.toolName)} &&
+			(${javascriptValue(request.origin)} === undefined || tool.origin === ${javascriptValue(request.origin)})
+		);
+		if (matches.length === 0) throw new Error("WebMCP tool not found");
+		if (matches.length > 1) throw new Error("WebMCP tool name is ambiguous; provide origin");
 		const rawInput = ${javascriptValue(request.input)};
 		const input = typeof matches[0].inputSchema === "string" ? JSON.stringify(rawInput) : rawInput;
 		const result = await context.executeTool(
@@ -243,12 +245,12 @@ async function evaluate<T>(
 	webSocketConstructor: WebSocketConstructor,
 	signal?: AbortSignal,
 ): Promise<T> {
-	const operationSignal = deadlineSignal(signal);
 	const client = await CdpClient.connect(
 		page.webSocketDebuggerUrl,
 		webSocketConstructor,
-		operationSignal,
+		deadlineSignal(signal),
 	);
+	const operationSignal = deadlineSignal(signal);
 	try {
 		const response = await client.send<CdpEvaluateResponse>(
 			"Runtime.evaluate",

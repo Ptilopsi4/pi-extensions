@@ -214,17 +214,15 @@ Reject schemas and outputs that exceed explicit pre-normalization size, depth, o
 
 Canonicalize accepted JSON schemas deterministically before computing their digest.
 
-Treat WebMCP annotations as hints and never as authorization.
+Treat WebMCP annotations as untrusted descriptive hints and never use them to bypass confirmation.
 
-Allow a call without additional confirmation only when the current tool descriptor explicitly reports a read-only hint.
-
-Require confirmation for missing, false, unknown, malformed, or changed read-only annotations.
+Require observable confirmation before every page-provided tool call, including tools that report a read-only hint.
 
 Show the target page URL, frame origin, tool name, and a bounded sanitized input summary in the confirmation.
 
 After confirmation, revalidate session generation, page, frame, origin, descriptor digest, browser ownership, and cancellation before invoking the tool.
 
-Reject mutation-capable calls in print and JSON modes because they cannot provide observable confirmation.
+Reject every WebMCP call in print and JSON modes because they cannot provide observable confirmation.
 
 Use standard Pi confirmation behavior in TUI and RPC modes.
 
@@ -277,8 +275,8 @@ Revalidate generation and target state after every `await` that can outlive navi
 - [ ] Extend settings normalization and persistence with user-only `webmcp.enabled`.
 - [ ] Add the experimental setting to the existing settings screen and status/help summaries.
 - [ ] Add both gateways to the availability menu, lazy loader search catalog, and active-tool transitions.
-- [ ] Require and revalidate confirmation for every tool not explicitly marked read-only.
-- [ ] Reject mutation-capable calls safely in non-interactive modes.
+- [ ] Require and revalidate confirmation for every page-provided tool call regardless of annotations.
+- [ ] Reject every WebMCP call safely in non-interactive modes.
 - [ ] Test invalid-file protection, unknown-field preservation, save ordering, rollback, project-scope rejection, reload, replacement, and shutdown.
 
 **Exit criterion:** WebMCP remains absent from the effective capability set by default, explicit user enablement is durable, and disabling it aborts active work without affecting unrelated Chrome tools.
@@ -313,7 +311,7 @@ Revalidate generation and target state after every `await` that can outlive navi
 | Eager exposure | Verify enabled gateways are present before the next request on unsupported providers. |
 | Settings | Test missing, valid, malformed, invalid, unknown-field, atomic-failure, serialized-save, reload, and user-versus-project cases. |
 | Lifecycle | Test cancellation, disposal, navigation, target detach, reload, new session, resume, fork, shutdown, and partial browser startup. |
-| Confirmation | Test read-only bypass, missing/false annotation confirmation, cancellation, RPC behavior, and print/JSON rejection. |
+| Confirmation | Test confirmation for read-only, mutation-capable, missing, false, malformed, and changed annotations, plus cancellation, RPC behavior, and print/JSON rejection. |
 | Terminal safety | Test ANSI, OSC, C0/C1, bidirectional controls, untrusted URLs, tool names, descriptions, errors, and outputs. |
 | Output bounds | Test byte and line truncation before model publication and bounded retained details. |
 | CDP protocol | Test initial inventory, dynamic add/remove, event ordering, invocation completion, error, cancellation, and unsupported domain. |
@@ -330,7 +328,7 @@ Revalidate generation and target state after every `await` that can outlive navi
 - Exactly two fixed WebMCP gateway definitions are provider-visible.
 - Page-provided definitions never become dynamic Pi tools.
 - A call cannot execute against a stale page, frame, origin, schema, annotation, or session generation.
-- Mutation-capable calls require observable confirmation.
+- Every page-provided tool call requires observable confirmation.
 - Pi cancellation reaches Chrome and releases the page invocation.
 - Every operation-owned socket and listener is released on success, error, cancellation, replacement, and shutdown.
 - Untrusted metadata and output are terminal-safe and bounded.
@@ -358,9 +356,11 @@ Extract a reusable CDP library only after a second real consumer needs command/e
 
 ## Plan-PR Scope
 
-This plan PR intentionally includes only this document and `.pi/extensions/webmcp/cdp.ts`.
+This plan PR intentionally includes only this document, `.pi/extensions/webmcp/cdp.ts`, its focused regression test, and the test's local Vitest configuration.
 
 The reference file records the proven prototype transport, cancellation, output parsing, and Chrome argument compatibility work.
+
+The focused regression test covers cancellation during discovery, the connection-readiness race, and independent post-readiness operation deadlines.
 
 The reference file has no committed project-local extension entrypoint in this PR and therefore is not an auto-discovered runnable extension by itself.
 
