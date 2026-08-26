@@ -4,96 +4,76 @@ This note is the entry point for current `@narumitw/pi-subagents` planning.
 
 ## Current product shape
 
-`pi-subagents` is a delegation runtime, not an automatic planner.
+`pi-subagents` is a retained background-agent runtime, not an automatic planner or workflow engine.
 
-The main agent decides whether to delegate and how to split work.
+The main agent decides whether to delegate, starts one agent per independent task, coordinates dependencies, integrates results, runs deterministic checks, and owns the final answer.
 
-The built-in catalog is intentionally small:
+The built-in catalog remains intentionally small:
 
 | Built-in | Purpose | Default tools |
 | --- | --- | --- |
 | `explorer` | Bounded read-only repository exploration with cited paths and evidence. | `read`, `grep`, `find`, `ls` |
-| `worker` | Write-capable parallel implementation, command execution, and fixes. | Pi default tools |
-
-Removed built-ins and tools are not part of the active surface:
-
-- `planner`;
-- `reviewer`;
-- `general`;
-- `general-purpose`; and
-- `subagent_auto`.
+| `worker` | Write-capable implementation, command execution, and fixes with clear ownership. | Pi default tools |
 
 ## Delegation rules
 
-Use no subagent for simple, latency-sensitive, conversational, tightly coupled, or single-lane implementation work that the main agent can do directly.
+Use no subagent for simple, latency-sensitive, conversational, tightly coupled, or immediate critical-path work.
 
-Use `explorer` when a bounded read-only search can save main-context space or run independently.
+Use `explorer` when bounded evidence can run beside useful main-agent work or save parent context.
 
-Keep overall planning, immediate critical-path work, integration, final verification, and the final answer in the main agent.
+Use `worker` only for a disjoint implementation slice with explicit ownership and a supported integration path.
 
-A worker may directly implement a bounded slice with clear ownership when it can run independently beside useful non-overlapping main-agent work.
+Start multiple agents only for independent tasks whose parallel progress justifies coordination.
 
-Use one async `worker` only when the main agent has named that local work to continue immediately and the worker result has a supported delivery and integration path.
+Keep ordinary planning, sequencing, fan-in, review, verification, and final synthesis in the main agent.
 
-If the main agent has no such local work, it should implement directly instead of spawning one worker.
+## Tool surface
 
-Use two or more workers only for disjoint implementation slices whose parallel progress justifies coordination, and keep integration ownership in the main agent.
+Enabled retained delegation exposes exactly:
 
-A single worker without concurrent main-agent work remains an explicit escape hatch for a user-requested specialist model, tool profile, or isolation boundary rather than the ordinary implementation path.
+- `subagent_spawn`;
+- `subagent_send`;
+- `subagent_await`;
+- `subagent_manage`;
+- `subagent_mailbox`; and
+- `subagent_inspect`.
 
-Use custom user or project agents for specialist review, verification, or shell-capable read-mostly work.
+Disabled retained delegation exposes `subagent_inspect` only.
 
-Custom project agents remain subject to existing trust and confirmation behavior.
+`subagent_await` is the supported intentional join after useful overlapping parent work is complete.
 
-Review should usually be handled by the main agent plus review skills and deterministic checks.
+Its wait timeout and caller cancellation never interrupt or close the child.
 
-Use custom verifier agents only when independent child verification is explicitly worth the added cost and coordination.
+The former blocking execution and synchronous consultation routes were removed in a breaking migration.
 
-## Tool-surface direction
+Read-only evidence now uses `explorer`, but its configured read-only tools do not reproduce the removed consultation route's stricter resource-loading contract.
 
-`all` remains the compatibility default, while `async-only` remains an optional smaller tool surface.
+Parallelism uses several independent spawns, and the main agent owns fan-in.
 
-`async-only` exposes `subagent_spawn`, `subagent_send`, `subagent_manage`, `subagent_mailbox`, and `subagent_inspect`.
-`all` additionally exposes supported `subagent_await` and `subagent_consult` plus deprecated blocking `subagent` for compatibility.
+## Retained boundary
 
-`subagent_spawn` is preferred only when detached execution creates real parallelism rather than moving the main agent's only useful task into a child.
+Retained agents keep identity, bounded logical history, follow-up generations, hierarchy, mailbox state, semantic snapshots, completion requirements, and target policy.
 
-After spawning one worker, the main agent should immediately continue the named non-overlapping work instead of only announcing the spawn, waiting, polling, or ending the turn.
+Restored agents remain inert until an explicit follow-up.
 
-Final-answer-dependent detached work needs a supported synthesis path such as opt-in `auto-resume`; default `next-turn` delivery remains appropriate only when the current response does not depend on the result.
+Subprocess, in-process, RPC, and automatic transports remain maintained.
 
-Blocking `subagent` is deprecated for new work but remains available with its existing schema and execution behavior for established callers and explicit requests whose chain, fan-in, panel, or workflow semantics lack a detached replacement.
+`next-turn` remains the default non-waking completion delivery, while `auto-resume` is opt-in.
 
-No removal release or date is set until those compatibility modes have a separately approved replacement or migration.
-
-`subagent_consult` remains a supported synchronous read-only exception.
-
-`subagent_await` remains a supported intentional join after useful overlapping parent work is complete.
-
-The four async lifecycle tools remain split because start, follow-up, lifecycle, and queue operations have distinct contracts.
-`subagent_await` remains separate because waiting blocks the parent, its timeout never interrupts the child, and the async-only workflow must omit it.
-
-Changing the default, removing deprecated `subagent`, or consolidating lifecycle tools needs a separate approved migration decision.
+Shared-workspace writers require disjoint ownership, and disposable worktrees remain available for repository-write isolation.
 
 ## Active follow-ups
 
-None.
+Evaluate retained features individually against demonstrated use before adding new orchestration layers.
 
-New implementation work should respond to demonstrated user needs rather than extending automatic or adaptive routing speculatively.
+Do not reintroduce chains, panels, workflow DAGs, managed verification, or synchronous child execution without a separately approved product decision and evidence that main-agent coordination is insufficient.
+
+A future bounded-job simplification may remove retained conversations, mailboxes, or multiple transports, but this migration does not make that decision.
 
 ## Current reference notes
 
-- Git history for the completed main-agent-led delegation guidance records the accepted delegation rubric and verification evidence.
-- Git history for the completed async-first tool-surface work records the earlier tool-surface decision and implementation evidence.
-- [`pi-subagents-capability-matrix.md`](pi-subagents-capability-matrix.md) records maintained capability, detached lifecycle, transport, trust, and runtime-ownership boundaries.
+- [`pi-subagents-capability-matrix.md`](pi-subagents-capability-matrix.md) records maintained retained capability and ownership boundaries.
 - [`pi-subagents-rpc-v1.md`](pi-subagents-rpc-v1.md) records the persistent RPC transport contract.
+- [`../async-runtime-protocol.md`](../async-runtime-protocol.md) records completion delivery and unavailable hard-barrier guarantees.
 
-## Historical evidence
-
-The consolidated [research synthesis](../../../../docs/research/coding-agent-subagents-research.md) records the architecture conclusions available at the research cutoff.
-
-The companion [evidence catalog](../../../../docs/research/coding-agent-subagents-evidence-catalog.md) preserves paper-level results, caveats, and primary sources.
-
-Superseded automation, proactivity, and old runtime notes were removed to keep the active docs small.
-
-Git history remains the record of earlier research drafts and raw search transcripts.
+Historical benchmark analyses and result files remain evidence for their recorded package surfaces and are not active workflow commands.

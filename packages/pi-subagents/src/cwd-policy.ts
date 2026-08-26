@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getAgentDir, ProjectTrustStore } from "@earendil-works/pi-coding-agent";
-import type { ConsultationCwdPolicy, DelegationCwdPolicy } from "./agents/types.js";
+import type { DelegationCwdPolicy } from "./agents/types.js";
 import { safeTerminalLine } from "./safe-text.js";
 
 export type TargetBoundary = "current-workspace" | "external";
@@ -112,17 +112,6 @@ export function resolveSubagentTarget(
 				),
 			},
 		};
-	}
-}
-
-export function assertConsultationTargetAllowed(
-	target: ResolvedSubagentTarget,
-	policy: ConsultationCwdPolicy,
-): void {
-	if (policy === "current-workspace" && target.boundary !== "current-workspace") {
-		throw new Error(
-			`Read-only consultation target is outside the current workspace: ${safeTerminalLine(target.cwd)}`,
-		);
 	}
 }
 

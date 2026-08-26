@@ -13,7 +13,7 @@ test("subagent tool schemas avoid large nested string repetitions", () => {
 	const mock = createMockPi();
 	subagents(mock.pi);
 
-	for (const toolName of ["subagent", "subagent_spawn"]) {
+	for (const toolName of ["subagent_spawn"]) {
 		const tool = mock.tools.find((candidate) => candidate.name === toolName);
 		assert.ok(tool, `missing ${toolName} tool`);
 		assert.deepEqual(findUnsafeNestedStringBounds(tool.parameters), []);

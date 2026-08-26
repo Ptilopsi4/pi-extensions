@@ -31,7 +31,7 @@ export function registerSubagentInspect(
 		name: "subagent_inspect",
 		label: "Inspect Subagents",
 		description:
-			"Inspect available subagent definitions, models, retained runs, persisted blocking workflows, runtime status, and diagnostics without changing subagent or workspace state. This tool never starts a child, sends or acknowledges messages, interrupts or closes runs, changes settings, or modifies files.",
+			"Inspect available subagent definitions, models, retained runs, runtime status, and diagnostics without changing subagent or workspace state. This tool never starts a child, sends or acknowledges messages, interrupts or closes runs, changes settings, or modifies files.",
 		promptSnippet: "Inspect subagent metadata and runtime state without changing it",
 		parameters: SubagentInspectParams,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {

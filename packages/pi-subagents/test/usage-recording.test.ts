@@ -77,7 +77,7 @@ test("local usage recording enables and shuts down without background waits", as
 	const mock = createMockPi();
 	const recorder = registerUsageRecording(mock.pi, { getAgentDir: () => directory });
 	try {
-		await recorder.startSession({ enabled: false, surfaceArm: "all", reason: "startup" });
+		await recorder.startSession({ enabled: false, surfaceArm: "async-only", reason: "startup" });
 		await assert.rejects(() => lstat(path.join(directory, "pi-subagents-usage")), /ENOENT/);
 		await recorder.setEnabled(true);
 		assert.equal(recorder.getStatus().enabled, true);
@@ -100,7 +100,7 @@ test("usage recording separates replacement sessions and closes each writer", as
 		getAgentDir: () => "/agent",
 		loadStore: async () => ({ UsageEventStore: MemoryUsageStore }),
 	});
-	await recorder.startSession({ enabled: true, surfaceArm: "all", reason: "startup" });
+	await recorder.startSession({ enabled: true, surfaceArm: "async-only", reason: "startup" });
 	await recorder.startSession({ enabled: true, surfaceArm: "async-only", reason: "fork" });
 	await recorder.shutdown("quit");
 
@@ -120,7 +120,7 @@ test("usage recording separates replacement sessions and closes each writer", as
 	assert.deepEqual(
 		exposures.map((event) => [event.branchEpoch, event.surfaceArm]),
 		[
-			[1, "all"],
+			[1, "async-only"],
 			[2, "async-only"],
 		],
 	);
@@ -176,7 +176,7 @@ test("usage recording stays dormant until opt-in and stores only bounded metadat
 
 	await recorder.startSession({
 		enabled: false,
-		surfaceArm: "all",
+		surfaceArm: "async-only",
 		reason: "startup",
 	});
 	await emit(mock, "tool_execution_start", {

@@ -1,4 +1,4 @@
-export function createSpawnPromptGuidelines(blockingEnabled = true): string[] {
+export function createSpawnPromptGuidelines(): string[] {
 	return [
 		"Do not use subagent_spawn for simple or critical-path work that the main agent can perform directly. The main agent retains overall planning, immediate critical-path work, integration, final verification, and the final answer.",
 		"Before one ordinary subagent_spawn, identify concrete useful non-overlapping main-agent work you can start immediately and a supported completion integration path. If none exists, perform the task directly instead of calling subagent_spawn.",
@@ -13,12 +13,7 @@ export function createSpawnPromptGuidelines(blockingEnabled = true): string[] {
 		"Keep ordinary review in the main agent with a review skill and deterministic checks; use subagent_spawn for detached review only when consequential independent verification has concrete parallel value.",
 		"Use a single subagent_spawn for a bounded implementation slice with clear ownership only when it can run beside the identified main-agent work.",
 		"Use a single subagent_spawn without concurrent main-agent work only for an explicit user-requested specialist model, tool profile, or isolation boundary.",
-		...(blockingEnabled
-			? [
-					"The subagent tool is deprecated; do not select it merely because synchronous output is required. Prefer subagent_spawn with supported completion delivery, and use subagent_await only after useful overlapping main-agent work is complete and an intentional join is required.",
-					"Use deprecated subagent instead of subagent_spawn only for an existing caller or an explicit user request whose blocking chain, fan-in, panel, or workflow semantics do not yet have a detached replacement; queued steering cannot be processed until it returns.",
-				]
-			: []),
+		"After subagent_spawn, use subagent_await only when useful overlapping main-agent work is complete and an intentional join is required.",
 		"Add another subagent_spawn only for truly independent work with safe workspace concurrency and disjoint write ownership; shared workspaces permit concurrent writes by default, so use workspaceMode worktree when repository isolation is required. The main agent still owns integration.",
 		"After subagent_spawn returns, immediately continue the identified local task; do not merely announce the spawn, wait, poll, or end the response while useful local work remains.",
 		"When completionRequirement required subagent_spawn work remains active after local work is exhausted, emit at most one brief progress sentence and end the turn; do not repeat waiting updates or use the requested final format, verdict, or conclusion until every required completion is visible or terminal. Current Pi versions do not enforce a hard pre-display barrier.",

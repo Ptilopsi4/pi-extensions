@@ -13,17 +13,15 @@ import type { UsageEventStorePort } from "./usage-recording-store.js";
 const SHUTDOWN_FLUSH_MS = 2_500;
 
 const SUBAGENT_TOOLS = new Set([
-	"subagent",
 	"subagent_spawn",
 	"subagent_send",
 	"subagent_manage",
 	"subagent_mailbox",
 	"subagent_inspect",
-	"subagent_consult",
 	"subagent_await",
 ]);
 
-export type UsageSurfaceArm = "all" | "async-only" | "blocking-only" | "disabled";
+export type UsageSurfaceArm = "async-only" | "disabled";
 
 type UsageEventType =
 	| "study_exposure"

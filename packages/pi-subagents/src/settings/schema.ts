@@ -1,15 +1,11 @@
 import {
-	CONSULT_RESOURCE_POLICIES,
-	CONSULTATION_CWD_POLICIES,
-	type ConsultationCwdPolicy,
-	type ConsultResourcePolicy,
 	DELEGATION_CWD_POLICIES,
 	type DelegationCwdPolicy,
 	isThinkingLevel,
 	type SubagentAgentConfig,
 	type SubagentSettings,
 } from "../agents/types.js";
-import { MAX_CONFIGURABLE_PARALLEL_TASKS, MAX_SUBAGENT_TIMEOUT_MS } from "../limits.js";
+import { MAX_SUBAGENT_TIMEOUT_MS } from "../limits.js";
 import { isValidStatefulLimit, STATEFUL_LIMIT_FIELDS } from "../stateful-limits.js";
 
 export function hasOwn(obj: object, key: PropertyKey): boolean {
@@ -82,24 +78,6 @@ export function normalizeSubagentSettings(value: unknown): SubagentSettings | un
 		}
 		if (Object.keys(agents).length > 0) settings.agents = agents;
 	}
-	if (hasOwn(value, "blocking")) {
-		if (!isPlainObject(value.blocking)) return undefined;
-		const blocking: NonNullable<SubagentSettings["blocking"]> = {};
-		if (hasOwn(value.blocking, "enabled")) {
-			if (typeof value.blocking.enabled !== "boolean") return undefined;
-			blocking.enabled = value.blocking.enabled;
-		}
-		if (hasOwn(value.blocking, "maxParallelTasks")) {
-			if (
-				!isPositiveInteger(value.blocking.maxParallelTasks) ||
-				value.blocking.maxParallelTasks > MAX_CONFIGURABLE_PARALLEL_TASKS
-			) {
-				return undefined;
-			}
-			blocking.maxParallelTasks = value.blocking.maxParallelTasks;
-		}
-		settings.blocking = blocking;
-	}
 	if (hasOwn(value, "stateful")) {
 		if (!isPlainObject(value.stateful)) return undefined;
 		const runtime: NonNullable<SubagentSettings["stateful"]> = {};
@@ -145,32 +123,9 @@ export function normalizeSubagentSettings(value: unknown): SubagentSettings | un
 		}
 		settings.stateful = runtime;
 	}
-	if (hasOwn(value, "consult")) {
-		if (!isPlainObject(value.consult)) return undefined;
-		const consult: NonNullable<SubagentSettings["consult"]> = {};
-		if (hasOwn(value.consult, "resources")) {
-			if (
-				typeof value.consult.resources !== "string" ||
-				!CONSULT_RESOURCE_POLICIES.includes(value.consult.resources as ConsultResourcePolicy)
-			) {
-				return undefined;
-			}
-			consult.resources = value.consult.resources as ConsultResourcePolicy;
-		}
-		settings.consult = consult;
-	}
 	if (hasOwn(value, "cwdPolicy")) {
 		if (!isPlainObject(value.cwdPolicy)) return undefined;
 		const cwdPolicy: NonNullable<SubagentSettings["cwdPolicy"]> = {};
-		if (hasOwn(value.cwdPolicy, "consultation")) {
-			if (
-				typeof value.cwdPolicy.consultation !== "string" ||
-				!CONSULTATION_CWD_POLICIES.includes(value.cwdPolicy.consultation as ConsultationCwdPolicy)
-			) {
-				return undefined;
-			}
-			cwdPolicy.consultation = value.cwdPolicy.consultation as ConsultationCwdPolicy;
-		}
 		if (hasOwn(value.cwdPolicy, "delegation")) {
 			if (
 				typeof value.cwdPolicy.delegation !== "string" ||

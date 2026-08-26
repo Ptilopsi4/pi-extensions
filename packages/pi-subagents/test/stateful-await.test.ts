@@ -138,25 +138,18 @@ test("subagent_await blocks one retained turn without interrupting on timeout or
 	}
 });
 
-test("subagent_await is exposed only when stateful and blocking delegation are both enabled", () => {
-	const all = createMockPi();
-	registerStatefulSubagents(all.pi);
+test("subagent_await is exposed whenever retained agents are enabled", () => {
+	const enabled = createMockPi();
+	registerStatefulSubagents(enabled.pi);
 	assert.equal(
-		all.tools.some((tool) => tool.name === "subagent_await"),
+		enabled.tools.some((tool) => tool.name === "subagent_await"),
 		true,
 	);
 
-	const asyncOnly = createMockPi();
-	registerStatefulSubagents(asyncOnly.pi, { blockingEnabled: false });
+	const disabled = createMockPi();
+	registerStatefulSubagents(disabled.pi, { settings: { enabled: false } });
 	assert.equal(
-		asyncOnly.tools.some((tool) => tool.name === "subagent_await"),
-		false,
-	);
-
-	const blockingOnly = createMockPi();
-	registerStatefulSubagents(blockingOnly.pi, { settings: { enabled: false } });
-	assert.equal(
-		blockingOnly.tools.some((tool) => tool.name === "subagent_await"),
+		disabled.tools.some((tool) => tool.name === "subagent_await"),
 		false,
 	);
 });

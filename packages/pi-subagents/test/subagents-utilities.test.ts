@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { afterAll, test } from "vitest";
-import { hasUsableAggregator } from "../src/params.js";
 import {
 	buildPiArgs,
 	formatTokens,
@@ -100,11 +99,4 @@ test("buildPiArgs passes thinking only when requested", () => {
 		"--no-tools",
 		"Task: no tools",
 	]);
-});
-
-test("aggregator usability requires non-whitespace agent and task values", () => {
-	assert.equal(hasUsableAggregator(undefined), false);
-	assert.equal(hasUsableAggregator({ agent: "", task: "Synthesize" }), false);
-	assert.equal(hasUsableAggregator({ agent: "reviewer", task: " \t" }), false);
-	assert.equal(hasUsableAggregator({ agent: "reviewer", task: "Synthesize" }), true);
 });

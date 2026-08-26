@@ -18,14 +18,12 @@ import { discoverAgents } from "../src/agents.js";
 import { consumeSubagentSettingsNotice } from "../src/settings.js";
 import subagents, {
 	inspectCompletionDeliverySettings,
-	inspectDelegationWorkflowSettings,
+	inspectStatefulEnabledSettings,
 	normalizeSubagentSettings,
 	readSubagentSettings,
 	saveSubagentConfig,
 	updateAgentToolsSetting,
-	updateBlockingMaxParallelTasksSetting,
 	updateCompletionDeliverySetting,
-	updateDelegationWorkflowSetting,
 	updateStatefulLimitSetting,
 } from "../src/subagents.js";
 import { installSubagentsTestEnvironment } from "./subagents-test-helpers.js";
@@ -51,12 +49,11 @@ test("subagent settings normalize known override fields only", () => {
 				explorer: { tools: ["read"], model: null, timeoutMs: 1, thinkingLevel: "medium" },
 				clearThinking: { thinkingLevel: null },
 			},
-			blocking: { enabled: false },
 			stateful: { enabled: true },
 		},
 	);
-	assert.equal(normalizeSubagentSettings({ blocking: { enabled: "no" } }), undefined);
-	assert.equal(normalizeSubagentSettings({ blocking: false }), undefined);
+	assert.deepEqual(normalizeSubagentSettings({ blocking: { enabled: "no" } }), {});
+	assert.deepEqual(normalizeSubagentSettings({ blocking: false }), {});
 	assert.equal(normalizeSubagentSettings({ agents: [] }), undefined);
 });
 
@@ -157,13 +154,12 @@ test("session start re-reads settings before reporting warnings", async () => {
 				guidance = result.message.content ?? "";
 			}
 		}
-		assert.match(guidance, /"consultationCwdPolicy":"current-workspace"/u);
 		assert.match(guidance, /"delegationCwdPolicy":"current-workspace"/u);
-		assert.match(guidance, /"consultResourcePolicy":"none"/u);
+		assert.doesNotMatch(guidance, /consultationCwdPolicy|consultResourcePolicy/u);
 		const command = mock.commands.get("subagents");
 		assert.ok(command);
 		await command.handler("status", context.ctx);
-		assert.match(context.notifications.at(-1)?.message ?? "", /No project resources/);
+		assert.doesNotMatch(context.notifications.at(-1)?.message ?? "", /consultation/i);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -199,15 +195,8 @@ test("subagent status separates runtime cwd policy from manual configured edits"
 		assert.ok(command);
 		await command.handler("status", context.ctx);
 		const message = context.notifications.at(-1)?.message ?? "";
-		assert.match(
-			message,
-			/Current Session[\s\S]*Read-only consultation folders: This workspace only/,
-		);
 		assert.match(message, /Current Session[\s\S]*Subagent folders: This workspace only/);
-		assert.match(
-			message,
-			/User Settings[\s\S]*Configured consultation target: Any folder .* no project resources when untrusted/,
-		);
+		assert.doesNotMatch(message, /consultation/i);
 		assert.match(
 			message,
 			/User Settings[\s\S]*Configured delegation target: This workspace or saved-trusted folders/,
@@ -235,10 +224,10 @@ test("subagent settings read legacy files and save to the canonical package file
 				futureOption: true,
 			}),
 		);
-		assert.deepEqual(inspectDelegationWorkflowSettings(), {
+		assert.deepEqual(inspectStatefulEnabledSettings(), {
 			path: legacyPath,
-			value: "async-only",
-			source: "user settings",
+			value: true,
+			source: "default",
 		});
 		assert.deepEqual(inspectCompletionDeliverySettings(), {
 			path: legacyPath,
@@ -263,9 +252,9 @@ test("subagent settings read legacy files and save to the canonical package file
 		writeFileSync(legacyPath, JSON.stringify({ agents: { explorer: { tools: ["bash"] } } }));
 		writeFileSync(canonicalPath, JSON.stringify({ agents: { explorer: { tools: ["read"] } } }));
 		assert.deepEqual(readSubagentSettings(), { agents: { explorer: { tools: ["read"] } } });
-		assert.deepEqual(inspectDelegationWorkflowSettings(), {
+		assert.deepEqual(inspectStatefulEnabledSettings(), {
 			path: canonicalPath,
-			value: "all",
+			value: true,
 			source: "default",
 		});
 		assert.equal(inspectCompletionDeliverySettings().path, canonicalPath);
@@ -273,8 +262,8 @@ test("subagent settings read legacy files and save to the canonical package file
 
 		writeFileSync(canonicalPath, "invalid");
 		assert.equal(readSubagentSettings(), undefined);
-		assert.equal(inspectDelegationWorkflowSettings().path, canonicalPath);
-		assert.match(inspectDelegationWorkflowSettings().error ?? "", /JSON/i);
+		assert.equal(inspectStatefulEnabledSettings().path, canonicalPath);
+		assert.match(inspectStatefulEnabledSettings().error ?? "", /JSON/i);
 		assert.equal(readFileSync(legacyPath, "utf8").includes("bash"), true);
 		unlinkSync(legacyPath);
 		writeFileSync(canonicalPath, JSON.stringify({ agents: { explorer: { tools: ["read"] } } }));
@@ -314,14 +303,14 @@ test("subagent settings loaders recheck canonical paths after legacy reads", () 
 	const loaders = [
 		{
 			name: "runtime",
-			load: () => readSubagentSettings()?.blocking?.enabled,
+			load: () => readSubagentSettings()?.stateful?.enabled,
 			expected: true,
 			expectNotice: true,
 		},
 		{
 			name: "inspector",
-			load: () => inspectDelegationWorkflowSettings().value,
-			expected: "all",
+			load: () => inspectStatefulEnabledSettings().value,
+			expected: true,
 			expectNotice: false,
 		},
 	] as const;
@@ -333,7 +322,7 @@ test("subagent settings loaders recheck canonical paths after legacy reads", () 
 			try {
 				const legacyPath = path.join(directory, "pi-subagents-config.json");
 				const canonicalPath = path.join(directory, "pi-subagents.json");
-				writeFileSync(legacyPath, JSON.stringify({ blocking: { enabled: false } }));
+				writeFileSync(legacyPath, JSON.stringify({ stateful: { enabled: false } }));
 
 				const originalReadFileSync = fs.readFileSync;
 				let createCanonical = true;
@@ -341,7 +330,7 @@ test("subagent settings loaders recheck canonical paths after legacy reads", () 
 					const result = originalReadFileSync(...args);
 					if (createCanonical && path.resolve(String(args[0])) === legacyPath) {
 						createCanonical = false;
-						writeFileSync(canonicalPath, JSON.stringify({ blocking: { enabled: true } }));
+						writeFileSync(canonicalPath, JSON.stringify({ stateful: { enabled: true } }));
 					}
 					return result;
 				}) as typeof fs.readFileSync;
@@ -426,8 +415,6 @@ test("subagent setting controls seed canonical updates from the active legacy do
 test("legacy-seeded updates preserve canonical settings created before publication", () => {
 	const updates = [
 		["completion delivery", () => updateCompletionDeliverySetting("next-turn")],
-		["delegation workflow", () => updateDelegationWorkflowSetting("async-only")],
-		["blocking parallel limit", () => updateBlockingMaxParallelTasksSetting(4)],
 		["detached limit", () => updateStatefulLimitSetting("maxAgents", 4)],
 		["agent tools", () => updateAgentToolsSetting("explorer", ["read"])],
 	] as const;
@@ -479,53 +466,6 @@ test("legacy-seeded updates preserve canonical settings created before publicati
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-	}
-});
-
-test("delegation workflow inspection and updates preserve unknown settings", () => {
-	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-workflow-settings-"));
-	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = directory;
-	try {
-		assert.deepEqual(inspectDelegationWorkflowSettings(), {
-			path: path.join(directory, "pi-subagents.json"),
-			value: "all",
-			source: "default",
-		});
-		const settingsPath = path.join(directory, "pi-subagents.json");
-		writeFileSync(
-			settingsPath,
-			JSON.stringify({
-				future: true,
-				blocking: { futureBlocking: 1 },
-				stateful: { futureStateful: 2 },
-			}),
-		);
-		updateDelegationWorkflowSetting("async-only");
-		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
-			future: true,
-			blocking: { futureBlocking: 1, enabled: false },
-			stateful: { futureStateful: 2, enabled: true },
-		});
-		assert.deepEqual(inspectDelegationWorkflowSettings(), {
-			path: settingsPath,
-			value: "async-only",
-			source: "user settings",
-		});
-		updateDelegationWorkflowSetting("blocking-only");
-		assert.equal(inspectDelegationWorkflowSettings().value, "blocking-only");
-		updateDelegationWorkflowSetting("all");
-		assert.equal(inspectDelegationWorkflowSettings().value, "all");
-		writeFileSync(settingsPath, "invalid");
-		const malformed = inspectDelegationWorkflowSettings();
-		assert.equal(malformed.value, "all");
-		assert.match(malformed.error ?? "", /Unexpected token|JSON/i);
-		assert.throws(() => updateDelegationWorkflowSetting("async-only"), /Cannot update malformed/);
-		assert.equal(readFileSync(settingsPath, "utf8"), "invalid");
-	} finally {
-		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-		rmSync(directory, { recursive: true, force: true });
 	}
 });
 

@@ -47,17 +47,6 @@ export type SubagentTransportKind = "subprocess" | "in-process" | "rpc" | "auto"
 
 export type CompletionDelivery = "next-turn" | "auto-resume";
 
-export const CONSULT_RESOURCE_POLICIES = ["project-context", "none", "all"] as const;
-
-export type ConsultResourcePolicy = (typeof CONSULT_RESOURCE_POLICIES)[number];
-
-export interface SubagentConsultSettings {
-	resources?: ConsultResourcePolicy;
-}
-
-export const CONSULTATION_CWD_POLICIES = ["anywhere", "current-workspace"] as const;
-export type ConsultationCwdPolicy = (typeof CONSULTATION_CWD_POLICIES)[number];
-
 export const DELEGATION_CWD_POLICIES = [
 	"trusted-targets",
 	"current-workspace",
@@ -66,13 +55,7 @@ export const DELEGATION_CWD_POLICIES = [
 export type DelegationCwdPolicy = (typeof DELEGATION_CWD_POLICIES)[number];
 
 export interface SubagentCwdPolicySettings {
-	consultation?: ConsultationCwdPolicy;
 	delegation?: DelegationCwdPolicy;
-}
-
-export interface SubagentBlockingSettings {
-	enabled?: boolean;
-	maxParallelTasks?: number;
 }
 
 export interface SubagentRuntimeSettings {
@@ -92,9 +75,7 @@ export interface SubagentRuntimeSettings {
 
 export interface SubagentSettings {
 	agents?: Record<string, SubagentAgentConfig>;
-	blocking?: SubagentBlockingSettings;
 	stateful?: SubagentRuntimeSettings;
-	consult?: SubagentConsultSettings;
 	cwdPolicy?: SubagentCwdPolicySettings;
 	usageRecording?: SubagentUsageRecordingSettings;
 }

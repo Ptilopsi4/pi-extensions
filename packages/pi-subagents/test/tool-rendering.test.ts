@@ -104,56 +104,10 @@ const statefulAgent = {
 	currentTask: "Inspect the renderer",
 };
 
-const consultDetails = {
-	agent: "reviewer",
-	agentSource: "built-in",
-	agentScope: "user",
-	cwd: ".",
-	model: "requested-model",
-	thinkingLevel: "high",
-	timeoutMs: 10_000,
-	policy: {
-		requestedTools: null,
-		effectiveTools: ["read", "grep", "find", "ls"],
-		requestedResources: "project-context",
-		effectiveResources: {
-			policy: "project-context",
-			projectResources: true,
-			contextFiles: true,
-			skills: false,
-			promptTemplates: false,
-		},
-		extensions: "disabled",
-		sessionPersistence: "disabled",
-		retainedAgent: false,
-	},
-	progress: {
-		phase: "running",
-		recentActivity: [
-			{ type: "toolCall", name: "read", args: { path: "src/auth.ts" } },
-			{ type: "toolCall", name: "grep", args: { pattern: "token", path: "src" } },
-		],
-		recentActivityTotal: 2,
-		actualProvider: "actual-provider",
-		actualModel: "actual-model",
-		usage: {
-			input: 10,
-			output: 5,
-			cacheRead: 0,
-			cacheWrite: 0,
-			cost: 0.25,
-			contextTokens: 15,
-			turns: 1,
-		},
-	},
-};
-
-test("all eight subagent tools register native call and result renderers", () => {
+test("all six retained subagent tools register native call and result renderers", () => {
 	const tools = registeredTools();
 	assert.deepEqual([...tools.keys()].sort(), [
-		"subagent",
 		"subagent_await",
-		"subagent_consult",
 		"subagent_inspect",
 		"subagent_mailbox",
 		"subagent_manage",
@@ -166,238 +120,6 @@ test("all eight subagent tools register native call and result renderers", () =>
 	}
 });
 
-test("panel renderer is width-safe, sanitized, and preserves objections and dissent", () => {
-	const tool = registeredTools().get("subagent");
-	assert.ok(tool);
-	const args = {
-		panel: {
-			preset: "code-review",
-			task: "Review <private>SECRET</private> unsafe\u001b]8;;link\u0007 change",
-			reviewers: [
-				{ id: "a", agent: "reviewer", focus: "correctness" },
-				{ id: "b", agent: "reviewer", focus: "tests" },
-			],
-			synthesizer: { agent: "reviewer" },
-		},
-	};
-	const callLines = renderCall(tool, args, 32);
-	const call = withoutSgr(callLines.join("\n"));
-	assert.match(call, /panel code-review.*2\s+reviewers/is);
-	assert.doesNotMatch(call, /SECRET/u);
-	assert.equal(call.includes(ESCAPE), false);
-	assert.ok(callLines.every((line) => visibleWidth(line) <= 32));
-
-	const review = {
-		version: "pi-subagents:panel-review:v1",
-		reviewerId: "a",
-		disposition: "fail",
-		blocking: true,
-		findings: [
-			{
-				id: "F1",
-				severity: "high",
-				title: "Unsafe terminal\u001b[31m output",
-				claim: "unsafe",
-				evidence: ["src/a.ts:1"],
-			},
-		],
-		missingChecks: [],
-		limitations: [],
-	};
-	const details = {
-		mode: "panel",
-		agentScope: "user",
-		projectAgentsDir: null,
-		results: [
-			{
-				agent: "reviewer",
-				agentSource: "built-in",
-				task: "Review",
-				exitCode: 0,
-				messages: [],
-				stderr: "",
-				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 },
-				step: 1,
-			},
-		],
-		panel: {
-			id: "panel-1",
-			preset: "code-review",
-			state: "completed",
-			reviewerIds: ["a", "b"],
-			validReviewCount: 2,
-			failedReviewCount: 0,
-			blockingObjectionCount: 1,
-			dissentCount: 1,
-			budgets: {
-				totalMs: 10_000,
-				reviewMs: 6_500,
-				finalizationMs: 1_000,
-				synthesisMs: 2_000,
-				cleanupMs: 500,
-				reviewerTimeoutMs: 6_500,
-			},
-			evidence: [
-				{ panelId: "panel-1", reviewerId: "a", revision: 1, review },
-				{
-					panelId: "panel-1",
-					reviewerId: "b",
-					revision: 1,
-					review: { ...review, reviewerId: "b", blocking: false, findings: [] },
-				},
-			],
-			failures: [],
-			synthesis: {
-				version: "pi-subagents:panel-synthesis:v1",
-				disposition: "fail",
-				summary: "The blocker remains.",
-				validReviewerIds: ["a", "b"],
-				failedReviewerIds: [],
-				agreements: [],
-				disagreements: [{ summary: "Reviewers disagree", reviewerIds: ["a", "b"] }],
-				objections: [{ reviewerId: "a", findingId: "F1", resolution: "unresolved", evidence: [] }],
-				limitations: ["No runtime smoke"],
-			},
-			cleanupComplete: true,
-		},
-	};
-	const expandedLines = renderResult(
-		tool,
-		args,
-		{ content: [{ type: "text", text: "The blocker remains." }], details },
-		{ expanded: true, isPartial: false },
-		32,
-	);
-	const expanded = withoutSgr(expandedLines.join("\n"));
-	assert.match(expanded, /blockers 1.*dissent 1/is);
-	assert.match(expanded, /Reviewers disagree/);
-	assert.match(expanded, /a\/F1: unresolved/);
-	assert.equal(expanded.includes(ESCAPE), false);
-	assert.ok(expandedLines.every((line) => visibleWidth(line) <= 32));
-});
-
-test("consult renderer shows bounded live activity and progressive disclosure", () => {
-	const tool = registeredTools().get("subagent_consult");
-	assert.ok(tool);
-	const args = {
-		agent: "reviewer",
-		task: "Inspect authentication <private>CALL_SECRET</private>\u001b]8;;bad\u0007 changes",
-		agentScope: "user",
-		thinkingLevel: "high",
-	};
-	const call = withoutSgr(renderCall(tool, args).join("\n"));
-	assert.match(call, /subagent_consult.*reviewer.*user.*read-only/is);
-	assert.match(call, /Inspect authentication/);
-	assert.doesNotMatch(call, /CALL_SECRET/u);
-	assert.equal(call.includes(ESCAPE), false);
-
-	const partial = withoutSgr(
-		renderResult(
-			tool,
-			args,
-			{ content: [{ type: "text", text: "(running...)" }], details: consultDetails },
-			{ expanded: false, isPartial: true },
-		).join("\n"),
-	);
-	assert.match(partial, /Running/);
-	assert.match(partial, /actual-provider\/actual-model/);
-	assert.match(partial, /requested-thinking:high/);
-	assert.match(partial, /read src\/auth\.ts/);
-	assert.match(partial, /grep \/token\/ in src/);
-
-	const finalDetails = {
-		...consultDetails,
-		progress: undefined,
-		child: {
-			actualProvider: "actual-provider",
-			actualModel: "actual-model",
-			usage: consultDetails.progress.usage,
-		},
-	};
-	const answer = "line one\nline two\nline three\nline four";
-	const collapsed = withoutSgr(
-		renderResult(tool, args, {
-			content: [{ type: "text", text: answer }],
-			details: finalDetails,
-		}).join("\n"),
-	);
-	assert.match(collapsed, /Completed/);
-	assert.match(collapsed, /line three/);
-	assert.doesNotMatch(collapsed, /line four/);
-	assert.match(collapsed, /expand/);
-	assert.doesNotMatch(collapsed, /\(Ctrl\+O to expand\)/);
-
-	const expanded = withoutSgr(
-		renderResult(
-			tool,
-			args,
-			{ content: [{ type: "text", text: answer }], details: finalDetails },
-			{ expanded: true, isPartial: false },
-		).join("\n"),
-	);
-	assert.match(expanded, /Task/);
-	assert.match(expanded, /Policy/);
-	assert.match(expanded, /line four/);
-});
-
-test("consult renderer distinguishes starting, cancellation, timeout, and abort states", () => {
-	const tool = registeredTools().get("subagent_consult");
-	assert.ok(tool);
-	const args = { agent: "reviewer", task: "Inspect" };
-	const renderState = (details: Record<string, unknown>, isPartial = false, isError = false) =>
-		withoutSgr(
-			renderResult(
-				tool,
-				args,
-				{ content: [{ type: "text", text: "state output" }], details },
-				{ expanded: false, isPartial },
-				80,
-				isError,
-			).join("\n"),
-		);
-
-	assert.match(
-		renderState(
-			{
-				...consultDetails,
-				progress: { ...consultDetails.progress, phase: "starting", recentActivity: [] },
-			},
-			true,
-		),
-		/Starting/,
-	);
-	assert.match(
-		renderState({ ...consultDetails, progress: undefined, cancelled: true }),
-		/Cancelled/,
-	);
-	assert.match(
-		renderState(
-			{
-				...consultDetails,
-				progress: undefined,
-				isError: true,
-				child: { timedOut: true, error: "timed out" },
-			},
-			false,
-			true,
-		),
-		/Failed/,
-	);
-	assert.match(
-		renderState(
-			{
-				...consultDetails,
-				progress: undefined,
-				isError: true,
-				child: { aborted: true, timedOut: false, error: "aborted" },
-			},
-			false,
-			true,
-		),
-		/Cancelled/,
-	);
-});
-
 test("inspect renderer summarizes every action instead of dumping collapsed JSON", () => {
 	const tool = registeredTools().get("subagent_inspect");
 	assert.ok(tool);
@@ -406,7 +128,7 @@ test("inspect renderer summarizes every action instead of dumping collapsed JSON
 			args: { action: "list_agents", agentScope: "user" },
 			details: {
 				action: "list_agents",
-				agents: [{ name: "explorer", source: "built-in", toolCount: 4, consultTools: ["read"] }],
+				agents: [{ name: "explorer", source: "built-in", toolCount: 4 }],
 				returned: 1,
 				omitted: 0,
 			},
@@ -448,9 +170,8 @@ test("inspect renderer summarizes every action instead of dumping collapsed JSON
 			details: {
 				action: "status",
 				status: {
-					workflow: "all",
-					consultResources: "project-context",
 					stateful: {
+						enabled: true,
 						initialized: true,
 						activeAgents: 1,
 						retainedAgents: 2,
@@ -485,7 +206,8 @@ test("inspect renderer summarizes every action instead of dumping collapsed JSON
 					},
 				},
 			},
-			expected: /workflow: all.*1 active.*2 retained.*limits:.*agents:16.*stored:50/is,
+			expected:
+				/retained delegation: initialized.*1 active.*2 retained.*limits:.*agents:16.*stored:50/is,
 		},
 		{
 			args: { action: "diagnose" },
@@ -664,18 +386,6 @@ test("structured tool views remain width-safe when collapsed and expanded", () =
 	const tools = registeredTools();
 	const fixtures = [
 		{
-			name: "subagent_consult",
-			args: { agent: "reviewer", task: "Inspect authentication behavior in the current workspace" },
-			result: {
-				content: [{ type: "text", text: "A long consultation answer that must wrap safely." }],
-				details: {
-					...consultDetails,
-					progress: undefined,
-					child: { usage: consultDetails.progress.usage },
-				},
-			},
-		},
-		{
 			name: "subagent_inspect",
 			args: { action: "list_runs" },
 			result: {
@@ -692,6 +402,14 @@ test("structured tool views remain width-safe when collapsed and expanded", () =
 			name: "subagent_send",
 			args: { agentId: "sa_worker", task: "Continue a long retained task" },
 			result: { content: [{ type: "text", text: "sent" }], details: { agent: statefulAgent } },
+		},
+		{
+			name: "subagent_await",
+			args: { agentId: "sa_worker", timeoutMs: 30_000 },
+			result: {
+				content: [{ type: "text", text: "completed" }],
+				details: { agent: { ...statefulAgent, state: "completed" }, timedOut: false },
+			},
 		},
 		{
 			name: "subagent_manage",
@@ -770,7 +488,6 @@ test("tool renderers tolerate partial args, sanitize fallback text, and respect 
 
 	const unsafe = "visible <private>RESULT_SECRET</private>\u001b]8;;https://bad.invalid\u0007 tail";
 	for (const name of [
-		"subagent_consult",
 		"subagent_inspect",
 		"subagent_spawn",
 		"subagent_send",

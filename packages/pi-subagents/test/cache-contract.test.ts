@@ -155,14 +155,10 @@ function normalizedRequest(
 
 function guidanceSnapshot(): SubagentSessionGuidanceSnapshot {
 	return {
-		blockingEnabled: true,
 		statefulEnabled: true,
 		completionDelivery: "next-turn",
-		blockingMaxParallelTasks: 8,
 		statefulLimits: resolveStatefulLimits(),
-		consultationCwdPolicy: "anywhere",
 		delegationCwdPolicy: "trusted-targets",
-		consultResourcePolicy: "project-context",
 		agentCatalog: "Available agent definitions\n- explorer [source: built-in]",
 	};
 }
@@ -257,7 +253,7 @@ test("session guidance persists once, appends live changes, and rejects stale se
 	const replacement = createMockContext();
 	await emit(mock, "session_start", { reason: "fork" }, replacement.ctx);
 	await emit(mock, "session_shutdown", { reason: "replace" }, firstContext.ctx);
-	snapshot = { ...snapshot, blockingMaxParallelTasks: 3 };
+	snapshot = { ...snapshot, delegationCwdPolicy: "current-workspace" };
 	controller.publish();
 	assert.equal(mock.sentMessages.length, 3, "stale shutdown must not clear the replacement owner");
 	await emit(mock, "session_shutdown", { reason: "quit" }, replacement.ctx);
@@ -374,7 +370,7 @@ test("live policy changes retain compacted guidance at its prior provider bounda
 	assert.deepEqual(second.messages.slice(0, first.messages.length), first.messages);
 	assert.equal(await applyContextHooks(mock, secondMessages, firstContext.ctx), secondMessages);
 
-	snapshot = { ...snapshot, blockingMaxParallelTasks: 7 };
+	snapshot = { ...snapshot, delegationCwdPolicy: "current-workspace" };
 	mock.rawPi.sendMessage = () => {
 		throw new Error("insertion unavailable");
 	};
@@ -385,7 +381,7 @@ test("live policy changes retain compacted guidance at its prior provider bounda
 	)) as { message?: { content?: unknown } } | undefined;
 	assert.match(
 		String(retried?.message?.content),
-		/"blockingMaxParallelTasks":7/u,
+		/"delegationCwdPolicy":"current-workspace"/u,
 		"a failed live append must retry after an established compacted boundary",
 	);
 

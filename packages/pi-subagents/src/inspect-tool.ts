@@ -6,8 +6,6 @@ const INSPECT_ACTIONS = [
 	"get_agent",
 	"list_runs",
 	"get_run",
-	"list_workflows",
-	"get_workflow",
 	"list_models",
 	"preview_context",
 	"status",
@@ -31,7 +29,6 @@ export const SubagentInspectParams = Type.Object(
 		agentId: Type.Optional(
 			Type.String({ minLength: 1, description: "Retained agent ID or canonical task path." }),
 		),
-		workflowId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
 		agentScope: Type.Optional(AgentScopeSchema),
 		limit: Type.Optional(LimitSchema),
 		includeClosed: Type.Optional(Type.Boolean({ default: false })),

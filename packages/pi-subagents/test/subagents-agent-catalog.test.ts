@@ -128,23 +128,32 @@ test("one-shot project confirmation renders project metadata as one safe line", 
 	try {
 		const mock = createMockPi();
 		subagents(mock.pi);
-		const tool = mock.tools[0] as SubagentTool;
-		const result = await tool.execute(
-			"call",
-			{ agent: agentName, task: "task", agentScope: "project" },
-			undefined,
-			undefined,
-			createMockContext({
-				cwd,
-				hasUI: true,
-				isProjectTrusted: () => true,
-				confirm: async (title: string, message: string) => {
-					confirmation = `${title}\n${message}`;
-					return false;
-				},
-			}).ctx,
+		const context = createMockContext({
+			cwd,
+			hasUI: true,
+			isProjectTrusted: () => true,
+			confirm: async (title: string, message: string) => {
+				confirmation = `${title}\n${message}`;
+				return false;
+			},
+		});
+		for (const handler of mock.events.get("session_start") ?? []) {
+			await handler({ reason: "new" }, context.ctx);
+		}
+		const tool = mock.tools.find(
+			(candidate) => candidate.name === "subagent_spawn",
+		) as SubagentTool;
+		await assert.rejects(
+			() =>
+				tool.execute(
+					"call",
+					{ agent: agentName, task: "task", agentScope: "project" },
+					undefined,
+					undefined,
+					context.ctx,
+				),
+			/not approved/i,
 		);
-		assert.match(result.content?.[0]?.text ?? "", /Canceled/);
 		assert.equal(confirmation.includes("\u001b"), false);
 		assert.doesNotMatch(confirmation, /\nspoof\nSource:/);
 	} finally {

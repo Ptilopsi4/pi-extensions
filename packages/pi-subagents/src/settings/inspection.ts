@@ -1,12 +1,9 @@
 import type {
 	CompletionDelivery,
-	ConsultationCwdPolicy,
-	ConsultResourcePolicy,
 	DelegationCwdPolicy,
 	SubagentSettings,
 	SubagentTransportKind,
 } from "../agents/types.js";
-import { DEFAULT_MAX_PARALLEL_TASKS } from "../limits.js";
 import {
 	resolveStatefulLimits,
 	STATEFUL_LIMIT_FIELDS,
@@ -15,11 +12,7 @@ import {
 import { hasOwn, isPlainObject } from "./schema.js";
 
 const DEFAULT_COMPLETION_DELIVERY: CompletionDelivery = "next-turn";
-export const DEFAULT_CONSULT_RESOURCE_POLICY: ConsultResourcePolicy = "project-context";
-export const DEFAULT_CONSULTATION_CWD_POLICY: ConsultationCwdPolicy = "anywhere";
 export const DEFAULT_DELEGATION_CWD_POLICY: DelegationCwdPolicy = "trusted-targets";
-
-export type DelegationWorkflow = "all" | "async-only" | "blocking-only" | "disabled";
 
 type SettingsSource = "default" | "user settings";
 
@@ -30,13 +23,6 @@ export interface InspectedSubagentSettingsDocument {
 	error?: string;
 }
 
-export interface DelegationWorkflowSettingsSnapshot {
-	path: string;
-	value: DelegationWorkflow;
-	source: SettingsSource;
-	error?: string;
-}
-
 export interface CompletionDeliverySettingsSnapshot {
 	path: string;
 	value: CompletionDelivery;
@@ -44,16 +30,16 @@ export interface CompletionDeliverySettingsSnapshot {
 	error?: string;
 }
 
-export interface StatefulTransportSettingsSnapshot {
+export interface StatefulEnabledSettingsSnapshot {
 	path: string;
-	value: SubagentTransportKind;
+	value: boolean;
 	source: SettingsSource;
 	error?: string;
 }
 
-export interface BlockingParallelLimitSettingsSnapshot {
+export interface StatefulTransportSettingsSnapshot {
 	path: string;
-	value: number;
+	value: SubagentTransportKind;
 	source: SettingsSource;
 	error?: string;
 }
@@ -70,13 +56,6 @@ export interface StatefulLimitSettingsSnapshot {
 	error?: string;
 }
 
-export interface ConsultResourceSettingsSnapshot {
-	path: string;
-	value: ConsultResourcePolicy;
-	source: SettingsSource;
-	error?: string;
-}
-
 export interface CwdPolicyFieldSnapshot<T> {
 	value: T;
 	source: SettingsSource;
@@ -84,7 +63,6 @@ export interface CwdPolicyFieldSnapshot<T> {
 
 export interface CwdPolicySettingsSnapshot {
 	path: string;
-	consultation: CwdPolicyFieldSnapshot<ConsultationCwdPolicy>;
 	delegation: CwdPolicyFieldSnapshot<DelegationCwdPolicy>;
 	error?: string;
 }
@@ -101,20 +79,6 @@ export interface UsageRecordingSettingsSnapshot {
 	enabled: boolean;
 	source: SettingsSource;
 	error?: string;
-}
-
-export function resolveDelegationWorkflow(
-	blockingEnabled: boolean,
-	statefulEnabled: boolean,
-): DelegationWorkflow {
-	if (blockingEnabled && statefulEnabled) return "all";
-	if (statefulEnabled) return "async-only";
-	if (blockingEnabled) return "blocking-only";
-	return "disabled";
-}
-
-export function resolveBlockingMaxParallelTasks(settings?: SubagentSettings): number {
-	return settings?.blocking?.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS;
 }
 
 export function buildSubagentSettingsSnapshot(
@@ -148,33 +112,12 @@ export function buildUsageRecordingSettingsSnapshot(
 	};
 }
 
-export function buildConsultResourceSettingsSnapshot(
-	inspected: InspectedSubagentSettingsDocument,
-): ConsultResourceSettingsSnapshot {
-	if (!inspected.raw || !inspected.settings) {
-		return {
-			path: inspected.path,
-			value: DEFAULT_CONSULT_RESOURCE_POLICY,
-			source: "default",
-			...(inspected.error ? { error: inspected.error } : {}),
-		};
-	}
-	const explicit =
-		isPlainObject(inspected.raw.consult) && hasOwn(inspected.raw.consult, "resources");
-	return {
-		path: inspected.path,
-		value: inspected.settings.consult?.resources ?? DEFAULT_CONSULT_RESOURCE_POLICY,
-		source: explicit ? "user settings" : "default",
-	};
-}
-
 export function buildCwdPolicySettingsSnapshot(
 	inspected: InspectedSubagentSettingsDocument,
 ): CwdPolicySettingsSnapshot {
 	if (!inspected.raw || !inspected.settings) {
 		return {
 			path: inspected.path,
-			consultation: { value: DEFAULT_CONSULTATION_CWD_POLICY, source: "default" },
 			delegation: { value: DEFAULT_DELEGATION_CWD_POLICY, source: "default" },
 			...(inspected.error ? { error: inspected.error } : {}),
 		};
@@ -182,10 +125,6 @@ export function buildCwdPolicySettingsSnapshot(
 	const rawPolicy = isPlainObject(inspected.raw.cwdPolicy) ? inspected.raw.cwdPolicy : undefined;
 	return {
 		path: inspected.path,
-		consultation: {
-			value: inspected.settings.cwdPolicy?.consultation ?? DEFAULT_CONSULTATION_CWD_POLICY,
-			source: rawPolicy && hasOwn(rawPolicy, "consultation") ? "user settings" : "default",
-		},
 		delegation: {
 			value: inspected.settings.cwdPolicy?.delegation ?? DEFAULT_DELEGATION_CWD_POLICY,
 			source: rawPolicy && hasOwn(rawPolicy, "delegation") ? "user settings" : "default",
@@ -193,26 +132,22 @@ export function buildCwdPolicySettingsSnapshot(
 	};
 }
 
-export function buildDelegationWorkflowSettingsSnapshot(
+export function buildStatefulEnabledSettingsSnapshot(
 	inspected: InspectedSubagentSettingsDocument,
-): DelegationWorkflowSettingsSnapshot {
+): StatefulEnabledSettingsSnapshot {
 	if (!inspected.raw || !inspected.settings) {
 		return {
 			path: inspected.path,
-			value: "all",
+			value: true,
 			source: "default",
 			...(inspected.error ? { error: inspected.error } : {}),
 		};
 	}
 	const explicit =
-		(isPlainObject(inspected.raw.blocking) && hasOwn(inspected.raw.blocking, "enabled")) ||
-		(isPlainObject(inspected.raw.stateful) && hasOwn(inspected.raw.stateful, "enabled"));
+		isPlainObject(inspected.raw.stateful) && hasOwn(inspected.raw.stateful, "enabled");
 	return {
 		path: inspected.path,
-		value: resolveDelegationWorkflow(
-			inspected.settings.blocking?.enabled !== false,
-			inspected.settings.stateful?.enabled !== false,
-		),
+		value: inspected.settings.stateful?.enabled !== false,
 		source: explicit ? "user settings" : "default",
 	};
 }
@@ -253,26 +188,6 @@ export function buildStatefulTransportSettingsSnapshot(
 	return {
 		path: inspected.path,
 		value: inspected.settings.stateful?.transport ?? "subprocess",
-		source: explicit ? "user settings" : "default",
-	};
-}
-
-export function buildBlockingParallelLimitSettingsSnapshot(
-	inspected: InspectedSubagentSettingsDocument,
-): BlockingParallelLimitSettingsSnapshot {
-	if (!inspected.raw || !inspected.settings) {
-		return {
-			path: inspected.path,
-			value: DEFAULT_MAX_PARALLEL_TASKS,
-			source: "default",
-			...(inspected.error ? { error: inspected.error } : {}),
-		};
-	}
-	const explicit =
-		isPlainObject(inspected.raw.blocking) && hasOwn(inspected.raw.blocking, "maxParallelTasks");
-	return {
-		path: inspected.path,
-		value: resolveBlockingMaxParallelTasks(inspected.settings),
 		source: explicit ? "user settings" : "default",
 	};
 }

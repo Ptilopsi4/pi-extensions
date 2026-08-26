@@ -7,22 +7,11 @@ import { createMockContext, createMockPi } from "../../../test/support.js";
 import { registerSubagentInspect } from "../src/inspect.js";
 import type { AgentRunInspectionDetail, AgentRunInspectionSummary } from "../src/registry.js";
 import { resolveStatefulLimits } from "../src/stateful-limits.js";
-import { WorkItemLedger } from "../src/work-item-ledger.js";
-import { createSessionWorkItemPersistence } from "../src/work-item-persistence.js";
 
 function runtime(
-	options: {
-		runs?: AgentRunInspectionSummary[];
-		detail?: AgentRunInspectionDetail;
-		blocking?: boolean;
-		maxParallelTasks?: number;
-	} = {},
+	options: { runs?: AgentRunInspectionSummary[]; detail?: AgentRunInspectionDetail } = {},
 ) {
 	return {
-		getBlockingEnabled: () => options.blocking ?? true,
-		getMaxParallelTasks: () => options.maxParallelTasks ?? 8,
-		getConsultResourcePolicy: () => "project-context" as const,
-		getConsultationCwdPolicy: () => "anywhere" as const,
 		getDelegationCwdPolicy: () => "trusted-targets" as const,
 		getRuntimeStatus: () => ({
 			enabled: true,
@@ -75,8 +64,6 @@ test("subagent_inspect registers one strict Google-compatible action schema", as
 		"get_agent",
 		"list_runs",
 		"get_run",
-		"list_workflows",
-		"get_workflow",
 		"list_models",
 		"preview_context",
 		"status",
@@ -108,117 +95,6 @@ test("subagent_inspect registers one strict Google-compatible action schema", as
 	);
 });
 
-test("subagent_inspect reads persisted workflow evidence without exposing private text", async () => {
-	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-inspect-workflow-"));
-	const previous = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = directory;
-	try {
-		const ledger = WorkItemLedger.create({
-			workflowId: "wf-inspect",
-			items: [
-				{
-					id: "task",
-					objective: "visible <private>secret</private>",
-					dependencies: [],
-				},
-			],
-		});
-		ledger.start("task", "agent-task");
-		await createSessionWorkItemPersistence("test-session", "wf-inspect").save(ledger.snapshot());
-		const mock = createMockPi();
-		registerSubagentInspect(mock.pi, runtime());
-		const tool = registeredTool(mock);
-		const listed = await execute(tool, { action: "list_workflows" });
-		assert.equal(
-			(listed.details.workflows as Array<{ workflowId: string }>)[0]?.workflowId,
-			"wf-inspect",
-		);
-		const detail = await execute(tool, { action: "get_workflow", workflowId: "wf-inspect" });
-		assert.equal(
-			(detail.details.workflow as { items: Array<{ state: string }> }).items[0]?.state,
-			"interrupted",
-		);
-		assert.doesNotMatch(JSON.stringify(detail), /secret/);
-
-		const verified = WorkItemLedger.create({
-			workflowId: "wf-verified",
-			items: [
-				{ id: "implementation", objective: "implement", dependencies: [] },
-				{
-					id: "verification",
-					objective: "verify",
-					dependencies: ["implementation"],
-					verifierFor: "implementation",
-				},
-			],
-		});
-		const implementation = verified.start("implementation", "agent-worker");
-		const tree = {
-			version: "pi-subagents:workflow-tree:v1" as const,
-			kind: "git-dirty" as const,
-			digest: "c".repeat(64),
-		};
-		verified.stageForVerification("implementation", {
-			taskGeneration: implementation.taskGeneration,
-			executionPlanId: "a".repeat(64),
-			treeIdentity: tree,
-		});
-		const verification = verified.start("verification", "agent-reviewer");
-		verified.completeVerification("verification", {
-			taskGeneration: verification.taskGeneration,
-			executionPlanId: "b".repeat(64),
-			receipt: {
-				version: "pi-subagents:workflow-verification:v1",
-				decision: "accept",
-				targetTaskId: "implementation",
-				targetTaskGeneration: implementation.taskGeneration,
-				targetExecutionPlanId: "a".repeat(64),
-				verifierTaskId: "verification",
-				verifierTaskGeneration: verification.taskGeneration,
-				verifierExecutionPlanId: "b".repeat(64),
-				treeIdentity: tree,
-				summary: "accepted receipt",
-				evidence: ["bounded evidence"],
-				limitations: [],
-				createdAt: 123,
-				truncated: false,
-			},
-		});
-		await createSessionWorkItemPersistence("test-session", "wf-verified").save(verified.snapshot());
-		const receiptDetail = await execute(tool, {
-			action: "get_workflow",
-			workflowId: "wf-verified",
-		});
-		const receiptItem = (
-			receiptDetail.details.workflow as {
-				items: Array<{
-					verificationReceipt?: { decision: string; evidenceCount: number; summary: string };
-				}>;
-			}
-		).items[0];
-		assert.deepEqual(receiptItem?.verificationReceipt, {
-			version: "pi-subagents:workflow-verification:v1",
-			decision: "accept",
-			targetTaskId: "implementation",
-			targetTaskGeneration: 1,
-			targetExecutionPlanId: "a".repeat(64),
-			verifierTaskId: "verification",
-			verifierTaskGeneration: 1,
-			verifierExecutionPlanId: "b".repeat(64),
-			treeIdentity: tree,
-			summary: "accepted receipt",
-			evidenceCount: 1,
-			limitationCount: 0,
-			createdAt: 123,
-			truncated: false,
-		});
-	} finally {
-		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = previous;
-		rmSync(directory, { recursive: true, force: true });
-	}
-});
-
 test("subagent_inspect projects safe agent metadata and gates project discovery before reads", async () => {
 	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-inspect-"));
 	const agentDir = path.join(directory, "agent-home");
@@ -246,7 +122,6 @@ test("subagent_inspect projects safe agent metadata and gates project discovery 
 
 		const agent = await execute(tool, { action: "get_agent", agent: "safe" }, ctx);
 		assert.deepEqual((agent.details.agent as { tools: string[] }).tools, ["read", "bash"]);
-		assert.deepEqual((agent.details.agent as { consultTools: string[] }).consultTools, ["read"]);
 		assert.match(String((agent.details.agent as { path: string }).path), /^~\//);
 		assert.doesNotMatch(JSON.stringify(agent), /SECRET_SYSTEM_PROMPT/);
 
@@ -405,7 +280,7 @@ test("subagent_inspect uses scoped model snapshots and structured diagnostics wi
 		modelRegistry,
 	}).ctx;
 	const mock = createMockPi();
-	registerSubagentInspect(mock.pi, runtime({ blocking: false }));
+	registerSubagentInspect(mock.pi, runtime());
 	const tool = registeredTool(mock);
 	const result = await execute(tool, { action: "list_models" }, ctx);
 	assert.match(result.content[0].text, /model-one/);
@@ -417,19 +292,13 @@ test("subagent_inspect uses scoped model snapshots and structured diagnostics wi
 
 	const status = await execute(tool, { action: "status" }, ctx);
 	const statusDetails = status.details.status as Record<string, unknown>;
-	assert.equal(statusDetails.consultationCwdPolicy, "anywhere");
 	assert.equal(statusDetails.delegationCwdPolicy, "trusted-targets");
-	assert.equal(statusDetails.consultationCwdPolicySource, "default");
 	assert.equal(statusDetails.delegationCwdPolicySource, "default");
-	assert.equal(statusDetails.configuredWorkflowSource, "default");
 	assert.equal(statusDetails.configuredCompletionDelivery, "next-turn");
 	assert.equal(statusDetails.configuredCompletionDeliverySource, "default");
 	assert.deepEqual(statusDetails.usageRecording, { enabled: false });
 	assert.equal(statusDetails.configuredUsageRecording, false);
 	assert.equal(statusDetails.configuredUsageRecordingSource, "default");
-	assert.equal(statusDetails.maxParallelTasks, 8);
-	assert.equal(statusDetails.configuredMaxParallelTasks, 8);
-	assert.equal(statusDetails.configuredMaxParallelTasksSource, "default");
 	assert.deepEqual(statusDetails.statefulLimits, resolveStatefulLimits());
 	assert.deepEqual(statusDetails.configuredStatefulLimits, resolveStatefulLimits());
 	assert.deepEqual(statusDetails.configuredStatefulLimitSources, {
@@ -445,5 +314,5 @@ test("subagent_inspect uses scoped model snapshots and structured diagnostics wi
 	const checks = diagnosed.details.checks as Array<{ status: string }>;
 	assert.ok(checks.length >= 5);
 	assert.ok(checks.every((check) => ["pass", "warning", "fail"].includes(check.status)));
-	assert.equal((diagnosed.details as { ok?: boolean }).ok, false);
+	assert.equal((diagnosed.details as { ok?: boolean }).ok, true);
 });

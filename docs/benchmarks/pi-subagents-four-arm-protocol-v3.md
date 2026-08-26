@@ -1,5 +1,9 @@
 # Pi Subagents Four-Arm Benchmark Protocol v3
 
+This protocol is retired because its required synchronous `pi-subagents` arm was removed.
+
+The former runner and `just` recipe no longer exist, and this file remains historical design evidence only.
+
 ## Purpose
 
 This protocol compares direct parent execution, v1 blocking orchestration, v1 detached orchestration, and v3 bounded jobs under one matched harness.

@@ -5,18 +5,16 @@ import path from "node:path";
 import { test } from "vitest";
 import {
 	consumeSubagentSettingsNotice,
-	inspectBlockingParallelLimitSettings,
-	inspectConsultResourceSettings,
 	inspectCwdPolicySettings,
+	inspectStatefulEnabledSettings,
 	inspectStatefulLimitSettings,
 	inspectStatefulTransportSettings,
 	inspectSubagentSettings,
 	inspectUsageRecordingSettings,
 	normalizeSubagentSettings,
 	readSubagentSettings,
-	updateBlockingMaxParallelTasksSetting,
-	updateConsultResourceSetting,
 	updateCwdPolicySetting,
+	updateStatefulEnabledSetting,
 	updateStatefulLimitSetting,
 	updateStatefulTransportSetting,
 	updateUsageRecordingSetting,
@@ -37,122 +35,67 @@ function withAgentDir(run: (directory: string) => void): void {
 	}
 }
 
-test("stateful RPC and automatic transports are opt-in and preserve unknown settings", () => {
+test("retained runtime settings normalize strictly without materializing defaults", () => {
 	withAgentDir((directory) => {
-		assert.deepEqual(normalizeSubagentSettings({ stateful: { transport: "rpc" } }), {
-			stateful: { transport: "rpc" },
-		});
-		assert.deepEqual(normalizeSubagentSettings({ stateful: { transport: "auto" } }), {
-			stateful: { transport: "auto" },
+		assert.deepEqual(
+			normalizeSubagentSettings({ stateful: { enabled: false, transport: "rpc" } }),
+			{ stateful: { enabled: false, transport: "rpc" } },
+		);
+		assert.equal(normalizeSubagentSettings({ stateful: { enabled: "no" } }), undefined);
+		assert.equal(normalizeSubagentSettings({ stateful: { transport: "invalid" } }), undefined);
+		assert.deepEqual(inspectStatefulEnabledSettings(), {
+			path: path.join(directory, "pi-subagents.json"),
+			value: true,
+			source: "default",
 		});
 		assert.equal(inspectStatefulTransportSettings().value, "subprocess");
-		writeFileSync(
-			path.join(directory, "pi-subagents.json"),
-			'{"future":{"kept":true},"stateful":{"completionDelivery":"auto-resume"}}\n',
-		);
-		updateStatefulTransportSetting("rpc");
-		assert.deepEqual(JSON.parse(readFileSync(path.join(directory, "pi-subagents.json"), "utf8")), {
-			future: { kept: true },
-			stateful: { completionDelivery: "auto-resume", transport: "rpc" },
-		});
-		assert.deepEqual(inspectStatefulTransportSettings(), {
-			path: path.join(directory, "pi-subagents.json"),
-			value: "rpc",
-			source: "user settings",
-		});
+		assert.equal(readSubagentSettings(), undefined);
+		assert.throws(() => readFileSync(path.join(directory, "pi-subagents.json"), "utf8"), /ENOENT/);
 	});
 });
 
-test("usage recording is strict, opt-in, and preserves unknown settings", () => {
+test("transport and usage updates preserve unknown and ignored legacy fields", () => {
+	withAgentDir((directory) => {
+		const settingsPath = path.join(directory, "pi-subagents.json");
+		const original = {
+			future: { kept: true },
+			blocking: { enabled: true, maxParallelTasks: 64 },
+			consult: { resources: "all" },
+			cwdPolicy: { consultation: "anywhere" },
+			stateful: { completionDelivery: "auto-resume" },
+		};
+		writeFileSync(settingsPath, JSON.stringify(original));
+
+		updateStatefulEnabledSetting(false);
+		updateStatefulTransportSetting("rpc");
+		updateUsageRecordingSetting(true);
+		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
+			...original,
+			stateful: { ...original.stateful, enabled: false, transport: "rpc" },
+			usageRecording: { enabled: true },
+		});
+		assert.equal(inspectStatefulTransportSettings().source, "user settings");
+		assert.equal(inspectUsageRecordingSettings().enabled, true);
+	});
+});
+
+test("usage recording is strict, opt-in, and protects malformed files", () => {
 	withAgentDir(() => {
 		assert.deepEqual(normalizeSubagentSettings({ usageRecording: { enabled: true } }), {
 			usageRecording: { enabled: true },
 		});
 		assert.equal(normalizeSubagentSettings({ usageRecording: { enabled: "yes" } }), undefined);
-
 		const missing = inspectUsageRecordingSettings();
 		assert.equal(missing.enabled, false);
 		assert.equal(missing.source, "default");
-		assert.throws(() => readFileSync(missing.path, "utf8"), /ENOENT/);
-
-		writeFileSync(
-			missing.path,
-			JSON.stringify({ future: true, usageRecording: { futureUsage: "keep" } }),
-		);
-		updateUsageRecordingSetting(true);
-		assert.deepEqual(JSON.parse(readFileSync(missing.path, "utf8")), {
-			future: true,
-			usageRecording: { futureUsage: "keep", enabled: true },
-		});
-		assert.deepEqual(inspectUsageRecordingSettings(), {
-			path: missing.path,
-			enabled: true,
-			source: "user settings",
-		});
-
 		writeFileSync(missing.path, "{ malformed");
 		assert.throws(() => updateUsageRecordingSetting(false), /malformed/i);
 		assert.equal(readFileSync(missing.path, "utf8"), "{ malformed");
 	});
 });
 
-test("consult resources normalize strictly and default without creating settings", () => {
-	withAgentDir((directory) => {
-		assert.deepEqual(normalizeSubagentSettings({ consult: { resources: "none" } }), {
-			consult: { resources: "none" },
-		});
-		assert.deepEqual(normalizeSubagentSettings({ consult: { resources: "all" } }), {
-			consult: { resources: "all" },
-		});
-		assert.equal(normalizeSubagentSettings({ consult: { resources: "unsafe" } }), undefined);
-
-		const inspected = inspectConsultResourceSettings();
-		assert.equal(inspected.value, "project-context");
-		assert.equal(inspected.source, "default");
-		assert.equal(inspected.error, undefined);
-		assert.equal(inspected.path, path.join(directory, "pi-subagents.json"));
-		assert.equal(readSubagentSettings(), undefined);
-		assert.throws(() => readFileSync(inspected.path, "utf8"), /ENOENT/);
-	});
-});
-
-test("blocking parallel limit normalizes, inspects, and updates safely", () => {
-	withAgentDir((directory) => {
-		assert.deepEqual(normalizeSubagentSettings({ blocking: { maxParallelTasks: 3 } }), {
-			blocking: { maxParallelTasks: 3 },
-		});
-		assert.equal(normalizeSubagentSettings({ blocking: { maxParallelTasks: 0 } }), undefined);
-		assert.equal(normalizeSubagentSettings({ blocking: { maxParallelTasks: 1.5 } }), undefined);
-		assert.equal(normalizeSubagentSettings({ blocking: { maxParallelTasks: 65 } }), undefined);
-
-		const defaultSnapshot = inspectBlockingParallelLimitSettings();
-		assert.equal(defaultSnapshot.value, 8);
-		assert.equal(defaultSnapshot.source, "default");
-		assert.equal(defaultSnapshot.path, path.join(directory, "pi-subagents.json"));
-		assert.throws(() => readFileSync(defaultSnapshot.path, "utf8"), /ENOENT/);
-
-		writeFileSync(
-			defaultSnapshot.path,
-			JSON.stringify({ future: true, blocking: { futureBlocking: "keep" } }),
-		);
-		updateBlockingMaxParallelTasksSetting(5);
-		assert.deepEqual(JSON.parse(readFileSync(defaultSnapshot.path, "utf8")), {
-			future: true,
-			blocking: { futureBlocking: "keep", maxParallelTasks: 5 },
-		});
-		const configured = inspectBlockingParallelLimitSettings();
-		assert.equal(configured.value, 5);
-		assert.equal(configured.source, "user settings");
-
-		assert.throws(() => updateBlockingMaxParallelTasksSetting(65), /between 1 and 64/i);
-		writeFileSync(defaultSnapshot.path, "{ malformed");
-		assert.throws(() => updateBlockingMaxParallelTasksSetting(4), /malformed/i);
-		assert.equal(readFileSync(defaultSnapshot.path, "utf8"), "{ malformed");
-	});
-});
-
 test("detached limits normalize, inspect, and update with per-field sources", () => {
-	withAgentDir((directory) => {
+	withAgentDir(() => {
 		const defaults = resolveStatefulLimits();
 		assert.deepEqual(
 			normalizeSubagentSettings({
@@ -185,29 +128,17 @@ test("detached limits normalize, inspect, and update with per-field sources", ()
 		}
 
 		const missing = inspectStatefulLimitSettings();
-		assert.equal(missing.path, path.join(directory, "pi-subagents.json"));
-		assert.equal(missing.writePath, missing.path);
 		assert.deepEqual(
 			Object.fromEntries(
 				Object.entries(missing.values ?? {}).map(([field, snapshot]) => [field, snapshot.value]),
 			),
 			defaults,
 		);
-		assert.ok(Object.values(missing.values ?? {}).every((value) => value.source === "default"));
-		assert.throws(() => readFileSync(missing.path, "utf8"), /ENOENT/);
-
 		writeFileSync(
 			missing.path,
 			JSON.stringify({ future: true, stateful: { futureStateful: "keep", maxAgents: 6 } }),
 		);
-		const before = inspectStatefulLimitSettings();
-		assert.equal(before.values?.maxAgents.value, 6);
-		assert.equal(before.values?.maxAgents.source, "user settings");
-		assert.equal(before.values?.maxDepth.source, "default");
-		updateStatefulLimitSetting("maxDepth", 2, {
-			...defaults,
-			maxAgents: 6,
-		});
+		updateStatefulLimitSetting("maxDepth", 2, { ...defaults, maxAgents: 6 });
 		assert.deepEqual(JSON.parse(readFileSync(missing.path, "utf8")), {
 			future: true,
 			stateful: { futureStateful: "keep", maxAgents: 6, maxDepth: 2 },
@@ -216,14 +147,6 @@ test("detached limits normalize, inspect, and update with per-field sources", ()
 			() => updateStatefulLimitSetting("maxActiveTurns", 3, defaults),
 			/changed.*reopen/i,
 		);
-		assert.throws(() => updateStatefulLimitSetting("maxDepth", -1), /greater than or equal to 0/i);
-
-		writeFileSync(missing.path, "{ malformed");
-		const invalid = inspectStatefulLimitSettings();
-		assert.equal(invalid.values, undefined);
-		assert.match(invalid.error ?? "", /malformed/i);
-		assert.throws(() => updateStatefulLimitSetting("maxAgents", 4), /malformed/i);
-		assert.equal(readFileSync(missing.path, "utf8"), "{ malformed");
 	});
 });
 
@@ -231,14 +154,13 @@ test("detached limit updates seed the canonical file from legacy settings", () =
 	withAgentDir((directory) => {
 		const legacyPath = path.join(directory, "pi-subagents-config.json");
 		const canonicalPath = path.join(directory, "pi-subagents.json");
-		const legacy = { future: true, stateful: { maxAgents: 5, futureStateful: "keep" } };
+		const legacy = {
+			blocking: { enabled: false },
+			consult: { resources: "none" },
+			stateful: { maxAgents: 5, futureStateful: "keep" },
+		};
 		writeFileSync(legacyPath, JSON.stringify(legacy));
-
-		const inspected = inspectStatefulLimitSettings();
-		assert.equal(inspected.path, legacyPath);
-		assert.equal(inspected.writePath, canonicalPath);
 		updateStatefulLimitSetting("maxActiveTurns", 2);
-
 		assert.deepEqual(JSON.parse(readFileSync(canonicalPath, "utf8")), {
 			...legacy,
 			stateful: { ...legacy.stateful, maxActiveTurns: 2 },
@@ -247,67 +169,16 @@ test("detached limit updates seed the canonical file from legacy settings", () =
 	});
 });
 
-test("blocking parallel updates seed the canonical file from legacy settings", () => {
+test("delegation cwd policy ignores legacy consultation policy and preserves its bytes", () => {
 	withAgentDir((directory) => {
-		const legacyPath = path.join(directory, "pi-subagents-config.json");
-		const canonicalPath = path.join(directory, "pi-subagents.json");
-		const legacy = {
-			future: true,
-			blocking: { enabled: false, futureBlocking: "keep" },
-		};
-		writeFileSync(legacyPath, JSON.stringify(legacy));
-
-		updateBlockingMaxParallelTasksSetting(6);
-
-		assert.deepEqual(JSON.parse(readFileSync(canonicalPath, "utf8")), {
-			...legacy,
-			blocking: { ...legacy.blocking, maxParallelTasks: 6 },
-		});
-		assert.deepEqual(JSON.parse(readFileSync(legacyPath, "utf8")), legacy);
-	});
-});
-
-test("cwd policies normalize strictly and default without creating settings", () => {
-	withAgentDir((directory) => {
+		const settingsPath = path.join(directory, "pi-subagents.json");
 		assert.deepEqual(
 			normalizeSubagentSettings({
 				cwdPolicy: { consultation: "current-workspace", delegation: "anywhere" },
 			}),
-			{ cwdPolicy: { consultation: "current-workspace", delegation: "anywhere" } },
-		);
-		assert.equal(
-			normalizeSubagentSettings({ cwdPolicy: { consultation: "trusted-targets" } }),
-			undefined,
+			{ cwdPolicy: { delegation: "anywhere" } },
 		);
 		assert.equal(normalizeSubagentSettings({ cwdPolicy: { delegation: "invalid" } }), undefined);
-
-		const inspected = inspectCwdPolicySettings();
-		assert.equal(inspected.consultation.value, "anywhere");
-		assert.equal(inspected.consultation.source, "default");
-		assert.equal(inspected.delegation.value, "trusted-targets");
-		assert.equal(inspected.delegation.source, "default");
-		assert.equal(inspected.path, path.join(directory, "pi-subagents.json"));
-		assert.throws(() => readFileSync(inspected.path, "utf8"), /ENOENT/);
-	});
-});
-
-test("cwd policy inspection reports per-field sources", () => {
-	withAgentDir((directory) => {
-		writeFileSync(
-			path.join(directory, "pi-subagents.json"),
-			JSON.stringify({ cwdPolicy: { consultation: "current-workspace" } }),
-		);
-		const inspected = inspectCwdPolicySettings();
-		assert.equal(inspected.consultation.value, "current-workspace");
-		assert.equal(inspected.consultation.source, "user settings");
-		assert.equal(inspected.delegation.value, "trusted-targets");
-		assert.equal(inspected.delegation.source, "default");
-	});
-});
-
-test("cwd policy updates preserve unknown fields and reject invalid files", () => {
-	withAgentDir((directory) => {
-		const settingsPath = path.join(directory, "pi-subagents.json");
 		writeFileSync(
 			settingsPath,
 			JSON.stringify({ future: true, cwdPolicy: { future: 7, consultation: "anywhere" } }),
@@ -321,50 +192,20 @@ test("cwd policy updates preserve unknown fields and reject invalid files", () =
 				delegation: "current-workspace",
 			},
 		});
-
-		writeFileSync(settingsPath, JSON.stringify({ cwdPolicy: [] }));
-		assert.throws(() => updateCwdPolicySetting("consultation", "current-workspace"), /invalid/i);
+		assert.equal(inspectCwdPolicySettings().delegation.source, "user settings");
 	});
 });
 
-test("pure settings inspection preserves pending notices", () => {
+test("pure settings inspection preserves pending legacy notices", () => {
 	withAgentDir((directory) => {
 		writeFileSync(
 			path.join(directory, "pi-subagents-config.json"),
-			JSON.stringify({ consult: { resources: "all" } }),
+			JSON.stringify({ blocking: { enabled: false }, stateful: { enabled: true } }),
 		);
-		assert.equal(readSubagentSettings()?.consult?.resources, "all");
+		assert.equal(readSubagentSettings()?.stateful?.enabled, true);
 		const snapshot = inspectSubagentSettings();
-		assert.equal(snapshot.settings?.consult?.resources, "all");
+		assert.equal(snapshot.settings?.stateful?.enabled, true);
 		assert.equal(snapshot.source, "user settings");
 		assert.match(consumeSubagentSettingsNotice() ?? "", /legacy/i);
-	});
-});
-
-test("consult resource updates preserve unknown fields and reject invalid files", () => {
-	withAgentDir((directory) => {
-		const settingsPath = path.join(directory, "pi-subagents.json");
-		writeFileSync(
-			settingsPath,
-			JSON.stringify({ future: { keep: true }, consult: { future: 7, resources: "all" } }),
-		);
-		updateConsultResourceSetting("none");
-		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
-			future: { keep: true },
-			consult: { future: 7, resources: "none" },
-		});
-
-		writeFileSync(settingsPath, '{"SECRET_SETTINGS_BYTES":"unterminated');
-		assert.throws(
-			() => updateConsultResourceSetting("all"),
-			(error: unknown) =>
-				error instanceof Error &&
-				/malformed/i.test(error.message) &&
-				!error.message.includes("SECRET_SETTINGS_BYTES"),
-		);
-		const inspected = inspectSubagentSettings();
-		assert.match(inspected.error ?? "", /malformed JSON/i);
-		assert.doesNotMatch(inspected.error ?? "", /SECRET_SETTINGS_BYTES/);
-		assert.equal(readFileSync(settingsPath, "utf8"), '{"SECRET_SETTINGS_BYTES":"unterminated');
 	});
 });

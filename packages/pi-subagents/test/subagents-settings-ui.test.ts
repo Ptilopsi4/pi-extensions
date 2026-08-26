@@ -23,101 +23,10 @@ import type { ManagedAgent } from "../src/registry.js";
 import { applyStatefulLimitSetting } from "../src/stateful-limit-ui.js";
 import { resolveStatefulLimits } from "../src/stateful-limits.js";
 import subagents, { updateAgentToolsSetting } from "../src/subagents.js";
-import { installSubagentsTestEnvironment, type SubagentTool } from "./subagents-test-helpers.js";
+import { installSubagentsTestEnvironment } from "./subagents-test-helpers.js";
 
 const restoreTestEnvironment = installSubagentsTestEnvironment();
 afterAll(restoreTestEnvironment);
-
-test("delegation workflow settings control the registered tool surface", () => {
-	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-workflows-"));
-	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = directory;
-	try {
-		const settingsPath = path.join(directory, "pi-subagents.json");
-		const cases = [
-			{
-				name: "all delegation methods",
-				settings: {},
-				tools: [
-					"subagent",
-					"subagent_spawn",
-					"subagent_send",
-					"subagent_await",
-					"subagent_manage",
-					"subagent_mailbox",
-					"subagent_inspect",
-					"subagent_consult",
-				],
-				forbiddenPromptText: undefined,
-			},
-			{
-				name: "async only",
-				settings: { blocking: { enabled: false }, stateful: { enabled: true } },
-				tools: [
-					"subagent_spawn",
-					"subagent_send",
-					"subagent_manage",
-					"subagent_mailbox",
-					"subagent_inspect",
-				],
-				forbiddenPromptText: /blocking subagent|subagent_consult/i,
-			},
-			{
-				name: "blocking only",
-				settings: { blocking: { enabled: true }, stateful: { enabled: false } },
-				tools: ["subagent", "subagent_inspect", "subagent_consult"],
-				forbiddenPromptText: /subagent_(?:spawn|send|await|manage|mailbox)/i,
-			},
-			{
-				name: "disabled",
-				settings: { blocking: { enabled: false }, stateful: { enabled: false } },
-				tools: ["subagent_inspect"],
-				forbiddenPromptText:
-					/blocking subagent|subagent_(?:spawn|send|await|manage|mailbox|consult)/i,
-			},
-		] as const;
-		for (const scenario of cases) {
-			writeFileSync(settingsPath, JSON.stringify(scenario.settings));
-			const mock = createMockPi();
-			subagents(mock.pi);
-			assert.deepEqual(
-				mock.tools.map((tool) => tool.name),
-				scenario.tools,
-				scenario.name,
-			);
-			assert.ok(mock.commands.has("subagents"), `${scenario.name} keeps recovery commands`);
-			const promptMetadata = mock.tools
-				.flatMap((tool) => [
-					tool.promptSnippet,
-					...(Array.isArray(tool.promptGuidelines) ? tool.promptGuidelines : []),
-				])
-				.filter((value): value is string => typeof value === "string")
-				.join("\n");
-			if (scenario.forbiddenPromptText) {
-				assert.doesNotMatch(promptMetadata, scenario.forbiddenPromptText, scenario.name);
-			}
-			if (scenario.name === "async only") {
-				const spawnGuidance = mock.tools.find(
-					(tool) => tool.name === "subagent_spawn",
-				)?.promptGuidelines;
-				assert.ok(Array.isArray(spawnGuidance));
-				const guidance = spawnGuidance.join("\n");
-				assert.doesNotMatch(guidance, /blocking subagent/i);
-				assert.match(guidance, /identify.*non-overlapping.*main-agent work/i);
-				assert.match(guidance, /immediately continue.*identified.*local task/i);
-				assert.match(guidance, /supported.*integration path/i);
-				assert.match(
-					guidance,
-					/without concurrent main-agent work.*specialist model.*tool profile.*isolation/i,
-				);
-			}
-		}
-	} finally {
-		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-		rmSync(directory, { recursive: true, force: true });
-	}
-});
 
 test("disabled stateful settings do not advertise unavailable lifecycle tools", async () => {
 	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-disabled-guidance-"));
@@ -132,13 +41,7 @@ test("disabled stateful settings do not advertise unavailable lifecycle tools", 
 		subagents(mock.pi);
 		assert.deepEqual(
 			mock.tools.map((tool) => tool.name),
-			["subagent", "subagent_inspect", "subagent_consult"],
-		);
-		const blockingTool = mock.tools[0];
-		assert.doesNotMatch(String(blockingTool?.description), /subagent_spawn/i);
-		assert.doesNotMatch(
-			Array.isArray(blockingTool?.promptGuidelines) ? blockingTool.promptGuidelines.join("\n") : "",
-			/subagent_spawn/i,
+			["subagent_inspect"],
 		);
 		assert.equal(mock.commands.has("subagents:agents"), false);
 		const command = mock.commands.get("subagents");
@@ -154,13 +57,10 @@ test("disabled stateful settings do not advertise unavailable lifecycle tools", 
 			},
 		});
 		await command.handler("", context.ctx);
-		assert.match(
-			renders.flat().join("\n"),
-			/How subagents run: Compatibility blocking methods \(sync\)/,
-		);
+		assert.match(renders.flat().join("\n"), /Retained delegation: disabled/);
 		await command.handler("help", context.ctx);
 		assert.match(context.notifications.at(-1)?.message ?? "", /Start here/);
-		assert.match(context.notifications.at(-1)?.message ?? "", /workflow.*tools.*blocking/i);
+		assert.match(context.notifications.at(-1)?.message ?? "", /subagent_spawn.*subagent_await/is);
 		assert.doesNotMatch(context.notifications.at(-1)?.message ?? "", /Recommended/i);
 		assert.doesNotMatch(context.notifications.at(-1)?.message ?? "", /Usage path:/);
 	} finally {
@@ -170,153 +70,51 @@ test("disabled stateful settings do not advertise unavailable lifecycle tools", 
 	}
 });
 
-test("runtime settings validate, save, and immediately apply the blocking worker limit", async () => {
-	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-parallel-limit-ui-"));
+test("retained delegation setting saves and reloads without changing the old tool surface", async () => {
+	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-enabled-ui-"));
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = directory;
 	try {
-		const settingsPath = path.join(directory, "pi-subagents.json");
-		writeFileSync(
-			settingsPath,
-			JSON.stringify({ future: true, blocking: { futureBlocking: "keep" } }),
-		);
 		const mock = createMockPi();
 		subagents(mock.pi);
 		const command = mock.commands.get("subagents");
 		assert.ok(command);
-
-		let applyCall = 0;
-		const applyFrames: string[] = [];
+		let call = 0;
+		let reloads = 0;
 		const context = createMockContext({
 			mode: "tui",
 			hasUI: true,
+			confirm: async () => true,
+			reload: async () => {
+				reloads++;
+			},
 			custom: async (factory: unknown) => {
-				const harness = createCustomSelectorHarness(factory, 60);
-				const frame = stripVTControlCharacters(harness.render().join("\n"));
-				applyFrames.push(frame);
-				if (applyCall === 0) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (applyCall === 1) {
+				const harness = createCustomSelectorHarness(factory, 80);
+				if (call === 0) {
 					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
-				} else if (applyCall === 2) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (applyCall === 3) {
-					assert.match(frame, /Blocking Worker Limit/);
-					assert.match(frame, /Current: 8/);
-					harness.setFocused(true);
-					harness.handleInput("3");
-					harness.handleInput("tui.input.submit");
-					await harness.waitForPending();
 				} else {
-					assert.match(frame, /Blocking worker limit/);
-					harness.handleInput("\u0003");
+					assert.match(
+						stripVTControlCharacters(harness.render().join("\n")),
+						/Retained delegation/,
+					);
+					harness.handleInput("tui.select.confirm");
+					await harness.waitForPending();
 				}
-				applyCall++;
+				call++;
 				return harness.result;
 			},
 		});
-		await command.handler("", context.ctx);
-		assert.equal(applyCall, 5, applyFrames.join("\n---\n"));
-		assert.ok(
-			applyFrames.flatMap((frame) => frame.split("\n")).every((line) => visibleWidth(line) <= 60),
-		);
-		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
-			future: true,
-			blocking: { futureBlocking: "keep", maxParallelTasks: 3 },
+		await command.handler("settings", context.ctx);
+		assert.equal(call, 2);
+		assert.equal(reloads, 1);
+		assert.deepEqual(JSON.parse(readFileSync(path.join(directory, "pi-subagents.json"), "utf8")), {
+			stateful: { enabled: false },
 		});
-		assert.match(context.notifications.at(-1)?.message ?? "", /saved and applied.*3/i);
-		const refreshedBlocking = mock.tools.filter((tool) => tool.name === "subagent");
-		assert.equal(refreshedBlocking.length, 1);
-		assert.match(String(refreshedBlocking[0]?.description), /session-guidance message/i);
-		assert.doesNotMatch(
-			`${String(refreshedBlocking[0]?.description)}\n${String(refreshedBlocking[0]?.promptGuidelines)}`,
-			/configured max 3/i,
+		assert.equal(
+			mock.tools.some((tool) => tool.name === "subagent_spawn"),
+			true,
 		);
-		await command.handler("status", context.ctx);
-		assert.match(context.notifications.at(-1)?.message ?? "", /blocking worker limit: 3/i);
-
-		writeFileSync(
-			settingsPath,
-			JSON.stringify({ future: true, blocking: { futureBlocking: "keep", maxParallelTasks: 2 } }),
-		);
-		let staleCall = 0;
-		const staleContext = createMockContext({
-			mode: "tui",
-			hasUI: true,
-			custom: async (factory: unknown) => {
-				const harness = createCustomSelectorHarness(factory, 60);
-				if (staleCall === 0) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (staleCall === 1) {
-					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (staleCall === 2) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (staleCall === 3) {
-					harness.setFocused(true);
-					harness.handleInput("3");
-					harness.handleInput("tui.input.submit");
-					await harness.waitForPending();
-				} else {
-					harness.handleInput("\u0003");
-				}
-				staleCall++;
-				return harness.result;
-			},
-		});
-		await command.handler("", staleContext.ctx);
-		assert.equal(staleCall, 5);
-		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
-			future: true,
-			blocking: { futureBlocking: "keep", maxParallelTasks: 3 },
-		});
-
-		const savedDocument = readFileSync(settingsPath, "utf8");
-		let invalidCall = 0;
-		const invalidContext = createMockContext({
-			mode: "tui",
-			hasUI: true,
-			custom: async (factory: unknown) => {
-				const harness = createCustomSelectorHarness(factory, 60);
-				if (invalidCall === 0) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (invalidCall === 1) {
-					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (invalidCall === 2) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (invalidCall === 3) {
-					harness.setFocused(true);
-					harness.handleInput("0");
-					harness.handleInput("tui.input.submit");
-					await harness.waitForPending();
-					assert.match(stripVTControlCharacters(harness.render().join("\n")), /0/);
-					harness.handleInput("tui.select.cancel");
-					await harness.resultPromise;
-				} else {
-					harness.handleInput("\u0003");
-				}
-				invalidCall++;
-				return harness.result;
-			},
-		});
-		await command.handler("", invalidContext.ctx);
-		assert.equal(invalidCall, 5);
-		assert.match(
-			invalidContext.notifications.at(-1)?.message ?? "",
-			/blocking worker limit.*whole number from 1 to 64/i,
-		);
-		assert.equal(readFileSync(settingsPath, "utf8"), savedDocument);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -349,13 +147,13 @@ test("detached-limit UI saves several startup limits without mutating the curren
 				frames.push(frame);
 				if (call === 0) {
 					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (call === 1) {
 					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (call === 2) {
-					for (let index = 0; index < 2; index++) harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
+					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (call === 3) {
 					assert.match(frame, /Background Agent Limits/);
@@ -669,139 +467,6 @@ test("detached-limit save failure preserves the previous configured value", asyn
 	}
 });
 
-test("parallel-limit UI keeps the runtime unchanged after a settings save failure", async () => {
-	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-parallel-limit-failure-"));
-	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-	const originalRenameSync = fs.renameSync;
-	process.env.PI_CODING_AGENT_DIR = directory;
-	try {
-		const settingsPath = path.join(directory, "pi-subagents.json");
-		writeFileSync(settingsPath, "{}\n");
-		const mock = createMockPi();
-		subagents(mock.pi);
-		fs.renameSync = (() => {
-			throw new Error("rename unavailable");
-		}) as typeof fs.renameSync;
-		syncBuiltinESMExports();
-		const command = mock.commands.get("subagents");
-		assert.ok(command);
-		let call = 0;
-		const context = createMockContext({
-			mode: "tui",
-			hasUI: true,
-			custom: async (factory: unknown) => {
-				const harness = createCustomSelectorHarness(factory, 60);
-				if (call === 0) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (call === 1) {
-					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (call === 2) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (call === 3) {
-					harness.setFocused(true);
-					harness.handleInput("4");
-					harness.handleInput("tui.input.submit");
-					await harness.waitForPending();
-					assert.match(stripVTControlCharacters(harness.render().join("\n")), /4/);
-					harness.handleInput("\u0003");
-					await harness.resultPromise;
-				} else {
-					harness.handleInput("\u0003");
-				}
-				call++;
-				return harness.result;
-			},
-		});
-		await command.handler("", context.ctx);
-		assert.equal(call, 4);
-		assert.match(context.notifications.at(-1)?.message ?? "", /were not saved/i);
-		const blocking = mock.tools.filter((tool) => tool.name === "subagent");
-		assert.equal(blocking.length, 1);
-		assert.match(String(blocking[0]?.description), /session-guidance message/i);
-	} finally {
-		fs.renameSync = originalRenameSync;
-		syncBuiltinESMExports();
-		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-		rmSync(directory, { recursive: true, force: true });
-	}
-});
-
-test("parallel-limit UI applies runtime changes without re-registering tools", async () => {
-	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-parallel-limit-runtime-"));
-	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = directory;
-	try {
-		const settingsPath = path.join(directory, "pi-subagents.json");
-		writeFileSync(settingsPath, "{}\n");
-		const mock = createMockPi();
-		subagents(mock.pi);
-		const blocking = mock.tools.find((tool) => tool.name === "subagent") as SubagentTool;
-		assert.ok(blocking);
-		const command = mock.commands.get("subagents");
-		assert.ok(command);
-		let call = 0;
-		const context = createMockContext({
-			mode: "tui",
-			hasUI: true,
-			custom: async (factory: unknown) => {
-				const harness = createCustomSelectorHarness(factory, 60);
-				if (call === 0) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (call === 1) {
-					for (let index = 0; index < 3; index++) harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (call === 2) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.confirm");
-				} else if (call === 3) {
-					harness.setFocused(true);
-					harness.handleInput("4");
-					harness.handleInput("tui.input.submit");
-					await harness.waitForPending();
-				} else {
-					harness.handleInput("\u0003");
-				}
-				call++;
-				return harness.result;
-			},
-		});
-		await command.handler("", context.ctx);
-		assert.equal(call, 5);
-		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
-			blocking: { maxParallelTasks: 4 },
-		});
-		assert.match(context.notifications.at(-1)?.message ?? "", /saved and applied.*4/i);
-		assert.equal(mock.tools.filter((tool) => tool.name === "subagent").length, 1);
-		await assert.rejects(
-			() =>
-				blocking.execute(
-					"runtime-limit",
-					{
-						tasks: Array.from({ length: 5 }, (_, index) => ({
-							agent: "missing",
-							task: `task ${index + 1}`,
-						})),
-					},
-					undefined,
-					undefined,
-					createMockContext().ctx,
-				),
-			/configured max is 4/i,
-		);
-	} finally {
-		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-		rmSync(directory, { recursive: true, force: true });
-	}
-});
-
 test("subagent settings UI preserves unknown JSON and applies completion delivery immediately", async () => {
 	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-settings-ui-"));
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -832,14 +497,6 @@ test("subagent settings UI preserves unknown JSON and applies completion deliver
 					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 				} else if (customCalls === 1) {
-					harness.handleInput("tui.select.confirm");
-					await harness.waitForPending();
-					harness.handleInput("tui.select.cancel");
-				} else if (customCalls === 3) {
-					harness.handleInput("tui.select.confirm");
-				} else if (customCalls === 4) {
-					harness.handleInput("tui.select.down");
-					harness.handleInput("tui.select.down");
 					harness.handleInput("tui.select.confirm");
 					await harness.waitForPending();
 					harness.handleInput("tui.select.cancel");
@@ -889,28 +546,6 @@ test("subagent settings UI preserves unknown JSON and applies completion deliver
 			/When work finishes: Continue automatically when work finishes/,
 		);
 		assert.match(context.notifications.at(-1)?.message ?? "", /User Settings/);
-
-		await command.handler("settings", context.ctx);
-		assert.equal(customCalls, 6);
-		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
-			futureOption: true,
-			stateful: {
-				futureStatefulOption: "keep",
-				completionDelivery: "auto-resume",
-			},
-			agents: { explorer: { tools: ["read"] } },
-			consult: { resources: "none" },
-		});
-		await command.handler("status", context.ctx);
-		assert.match(context.notifications.at(-1)?.message ?? "", /No project resources/);
-		const consultRegistrations = mock.tools.filter((tool) => tool.name === "subagent_consult");
-		assert.equal(consultRegistrations.length, 1);
-		assert.match(String(consultRegistrations[0]?.description), /session-guidance message/i);
-		assert.doesNotMatch(String(consultRegistrations[0]?.description), /resources: none/i);
-		assert.match(
-			String((mock.sentMessages.at(-1)?.message as { content?: unknown } | undefined)?.content),
-			/"consultResourcePolicy":"none"/u,
-		);
 
 		const nonTui = createMockContext({
 			mode: "json",
@@ -984,7 +619,7 @@ test("subagent settings UI explicitly enables local-only usage recording", async
 	}
 });
 
-test("subagent settings UI exposes and immediately applies both cwd policies", async () => {
+test("subagent settings UI exposes and immediately applies delegation cwd policy", async () => {
 	const directory = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-cwd-settings-ui-"));
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = directory;
@@ -1001,10 +636,9 @@ test("subagent settings UI exposes and immediately applies both cwd policies", a
 			custom: async (factory: unknown) => {
 				const harness = createCustomSelectorHarness(factory, 90);
 				rendered += stripVTControlCharacters(harness.render().join("\n"));
-				if (call === 0 || call === 3) {
+				if (call === 0) {
 					harness.handleInput("tui.select.confirm");
-				} else if (call === 1 || call === 4) {
-					if (call === 4) harness.handleInput("tui.select.down");
+				} else if (call === 1) {
 					harness.handleInput("tui.select.confirm");
 					await harness.waitForPending();
 					harness.handleInput("tui.select.cancel");
@@ -1016,32 +650,19 @@ test("subagent settings UI exposes and immediately applies both cwd policies", a
 			},
 		});
 		await command.handler("settings", context.ctx);
-		await command.handler("settings", context.ctx);
-		assert.match(rendered, /Where read-only consultations can start/);
 		assert.match(rendered, /Where subagents can start/);
-		assert.match(rendered, /Resources for trusted read-only consultations/);
+		assert.doesNotMatch(rendered, /consultation/i);
 		assert.doesNotMatch(rendered, /When background work finishes/);
-		assert.match(rendered, /do not restrict files.*shell commands.*network access/i);
+		assert.match(rendered, /does not restrict files.*shell commands.*network access/i);
 		assert.match(rendered, /Pi \/trust/);
 		assert.deepEqual(JSON.parse(readFileSync(path.join(directory, "pi-subagents.json"), "utf8")), {
-			cwdPolicy: {
-				consultation: "current-workspace",
-				delegation: "current-workspace",
-			},
+			cwdPolicy: { delegation: "current-workspace" },
 		});
-		const blockingDescription = mock.tools
-			.filter((tool) => tool.name === "subagent")
-			.at(-1)?.description;
 		const spawnDescription = mock.tools
 			.filter((tool) => tool.name === "subagent_spawn")
 			.at(-1)?.description;
-		const consultDescription = mock.tools
-			.filter((tool) => tool.name === "subagent_consult")
-			.at(-1)?.description;
-		for (const description of [blockingDescription, spawnDescription, consultDescription]) {
-			assert.match(String(description), /session-guidance message/i);
-			assert.doesNotMatch(String(description), /target policy: current-workspace/i);
-		}
+		assert.match(String(spawnDescription), /session-guidance message/i);
+		assert.doesNotMatch(String(spawnDescription), /target policy: current-workspace/i);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

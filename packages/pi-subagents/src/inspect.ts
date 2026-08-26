@@ -1,27 +1,18 @@
 import * as path from "node:path";
 import { CONFIG_DIR_NAME, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { discoverAgents } from "./agents/discovery.js";
-import type {
-	AgentConfig,
-	AgentScope,
-	ConsultationCwdPolicy,
-	DelegationCwdPolicy,
-} from "./agents/types.js";
+import type { AgentConfig, AgentScope, DelegationCwdPolicy } from "./agents/types.js";
 import { projectCapabilityManifest } from "./capabilities.js";
-import { resolveConsultTools } from "./consult-policy.js";
 import { buildContextSnapshot, type ContextMode } from "./context.js";
 import { INSPECT_ACTIONS } from "./inspect-tool.js";
 import { DEFAULT_MAX_CONTEXT_BYTES } from "./limits.js";
 import { resolvePiInvocation } from "./pi-invocation.js";
 import type { AgentRunInspectionDetail, AgentRunInspectionSummary } from "./registry.js";
 import { boundedPrivateText, boundText, safeDisplayPath, safeTerminalLine } from "./safe-text.js";
-import { resolveDelegationWorkflow } from "./settings/inspection.js";
 import {
-	inspectBlockingParallelLimitSettings,
 	inspectCompletionDeliverySettings,
-	inspectConsultResourceSettings,
 	inspectCwdPolicySettings,
-	inspectDelegationWorkflowSettings,
+	inspectStatefulEnabledSettings,
 	inspectStatefulLimitSettings,
 	inspectStatefulTransportSettings,
 	inspectSubagentSettings,
@@ -29,8 +20,6 @@ import {
 } from "./settings.js";
 import type { StatefulSubagentRuntimeStatus } from "./stateful.js";
 import type { UsageRecordingStatus } from "./usage-recording.js";
-import type { WorkItemLedgerSnapshot } from "./work-item-ledger.js";
-import { inspectSessionWorkflows } from "./work-item-persistence.js";
 
 const MAX_DETAILS_LIST_BYTES = 40 * 1024;
 
@@ -38,10 +27,6 @@ export { registerSubagentInspect } from "./inspect-registration.js";
 export { SubagentInspectParams } from "./inspect-tool.js";
 
 export interface SubagentInspectRuntime {
-	getBlockingEnabled(): boolean;
-	getMaxParallelTasks(): number;
-	getConsultResourcePolicy(): "project-context" | "none" | "all";
-	getConsultationCwdPolicy(): ConsultationCwdPolicy;
 	getDelegationCwdPolicy(): DelegationCwdPolicy;
 	getUsageRecordingStatus?(): UsageRecordingStatus;
 	getRuntimeStatus(): StatefulSubagentRuntimeStatus;
@@ -59,8 +44,6 @@ type ValidatedInspectOperation =
 	| { action: "get_agent"; agent: string; agentScope: AgentScope }
 	| { action: "list_runs"; includeClosed: boolean; limit: number }
 	| { action: "get_run"; agentId: string }
-	| { action: "list_workflows"; limit: number }
-	| { action: "get_workflow"; workflowId: string }
 	| { action: "list_models"; limit: number }
 	| { action: "preview_context"; context: ContextMode; contextEntryIds?: string[] }
 	| { action: "status" }
@@ -81,8 +64,6 @@ export function validateInspectParams(params: unknown): ValidatedInspectOperatio
 		get_agent: ["action", "agent", "agentScope"],
 		list_runs: ["action", "includeClosed", "limit"],
 		get_run: ["action", "agentId"],
-		list_workflows: ["action", "limit"],
-		get_workflow: ["action", "workflowId"],
 		list_models: ["action", "limit"],
 		preview_context: ["action", "context", "contextEntryIds"],
 		status: ["action"],
@@ -113,12 +94,6 @@ export function validateInspectParams(params: unknown): ValidatedInspectOperatio
 	}
 	if (action === "get_run") {
 		return { action, agentId: requiredString(values.agentId, action, "agentId") };
-	}
-	if (action === "list_workflows") {
-		return { action, limit: optionalLimit(values.limit, 50) };
-	}
-	if (action === "get_workflow") {
-		return { action, workflowId: requiredString(values.workflowId, action, "workflowId") };
 	}
 	if (action === "list_models") {
 		return { action, limit: optionalLimit(values.limit, 50) };
@@ -185,38 +160,6 @@ export async function executeSubagentInspect(
 			throw new Error(`Unknown retained run: ${boundedPrivateText(operation.agentId, 256)}`);
 		}
 		return inspectResult({ action: operation.action, run: projectRun(run, ctx) });
-	}
-	if (operation.action === "list_workflows" || operation.action === "get_workflow") {
-		const owner =
-			ctx.sessionManager.getSessionId?.() ??
-			ctx.sessionManager.getSessionFile?.() ??
-			`ephemeral:${ctx.cwd}`;
-		const inspected = inspectSessionWorkflows(owner, {
-			maxStoredWorkflows: operation.action === "list_workflows" ? operation.limit : 64,
-		});
-		if (operation.action === "list_workflows") {
-			const selected = boundedProjection(
-				inspected.workflows,
-				operation.limit,
-				projectWorkflowSummary,
-			);
-			return inspectResult({
-				action: operation.action,
-				workflows: selected.items,
-				returned: selected.items.length,
-				omitted: inspected.omitted + selected.omitted,
-				invalid: inspected.invalid,
-			});
-		}
-		const workflow = inspected.workflows.find(
-			(candidate) => candidate.workflowId === operation.workflowId,
-		);
-		if (!workflow) {
-			throw new Error(
-				`Unknown persisted workflow: ${boundedPrivateText(operation.workflowId, 256)}`,
-			);
-		}
-		return inspectResult({ action: operation.action, workflow: projectWorkflow(workflow) });
 	}
 	if (operation.action === "list_models") {
 		return inspectResult({ action: operation.action, ...projectModels(ctx, operation.limit) });
@@ -292,15 +235,6 @@ export async function executeSubagentInspect(
 				? boundedPrivateText(rpcCapability.error, 2 * 1024)
 				: "The exact loaded Pi CLI is available for persistent RPC transport.",
 		},
-		{
-			name: "consultation",
-			status: runtime.getBlockingEnabled() && modelCount > 0 ? "pass" : "fail",
-			message: runtime.getBlockingEnabled()
-				? modelCount > 0
-					? "Read-only consultation is supported."
-					: "Consultation has no available model."
-				: "Blocking delegation is disabled, so consultation is not registered.",
-		},
 	] as const;
 	return inspectResult({
 		action: operation.action,
@@ -332,7 +266,6 @@ function projectAgent(
 		...(includeTools
 			? { tools, toolCount: agent.tools?.length }
 			: { toolCount: agent.tools?.length }),
-		consultTools: resolveConsultTools(agent.tools),
 	};
 }
 
@@ -453,104 +386,6 @@ function projectRun(run: AgentRunInspectionDetail, ctx: ExtensionContext): Recor
 	};
 }
 
-function projectWorkflowSummary(workflow: WorkItemLedgerSnapshot): Record<string, unknown> {
-	return {
-		workflowId: boundedPrivateText(workflow.workflowId, 256),
-		generation: workflow.generation,
-		itemCount: workflow.items.length,
-		states: Object.fromEntries(
-			[...new Set(workflow.items.map((item) => item.state))]
-				.sort()
-				.map((state) => [state, workflow.items.filter((item) => item.state === state).length]),
-		),
-	};
-}
-
-function projectWorkflow(workflow: WorkItemLedgerSnapshot): Record<string, unknown> {
-	const projected = boundedProjection(workflow.items, 64, (item) => ({
-		id: boundedPrivateText(item.id, 256),
-		state: item.state,
-		generation: item.generation,
-		taskGeneration: item.taskGeneration,
-		dependencies: item.dependencies.map((value) => boundedPrivateText(value, 256)),
-		assignedAgentId: item.assignedAgentId
-			? boundedPrivateText(item.assignedAgentId, 256)
-			: undefined,
-		acceptedExecutionPlanId: item.acceptedExecutionPlanId,
-		artifacts: item.artifacts.map((artifact) => ({
-			id: boundedPrivateText(artifact.id, 256),
-			kind: boundedPrivateText(artifact.kind, 256),
-			version: boundedPrivateText(artifact.version, 256),
-			producerTaskId: artifact.producerTaskId
-				? boundedPrivateText(artifact.producerTaskId, 256)
-				: undefined,
-			generation: artifact.generation,
-			verified: artifact.verified,
-		})),
-		verificationAccepted: item.verificationAccepted,
-		acceptanceStateVersion: item.acceptanceStateVersion,
-		acceptanceRequired: item.acceptanceRequired,
-		acceptanceState: item.acceptanceState,
-		reworkCount: item.reworkCount,
-		maxReworkCycles: item.maxReworkCycles,
-		acceptanceReceipt: item.acceptanceReceipt
-			? {
-					version: item.acceptanceReceipt.version,
-					decision: item.acceptanceReceipt.decision,
-					targetTaskId: boundedPrivateText(item.acceptanceReceipt.targetTaskId, 256),
-					targetTaskGeneration: item.acceptanceReceipt.targetTaskGeneration,
-					targetExecutionPlanId: item.acceptanceReceipt.targetExecutionPlanId,
-					verifierTaskId: boundedPrivateText(item.acceptanceReceipt.verifierTaskId, 256),
-					verifierTaskGeneration: item.acceptanceReceipt.verifierTaskGeneration,
-					verifierExecutionPlanId: item.acceptanceReceipt.verifierExecutionPlanId,
-					verifierAgent: boundedPrivateText(item.acceptanceReceipt.verifierAgent, 256),
-					beforeTreeIdentity: item.acceptanceReceipt.beforeTreeIdentity,
-					afterTreeIdentity: item.acceptanceReceipt.afterTreeIdentity,
-					patchDigest: item.acceptanceReceipt.patchDigest,
-					changedPathCount: item.acceptanceReceipt.changedPaths.length,
-					checkCount: item.acceptanceReceipt.checks.length,
-					requiredEvidenceCount: item.acceptanceReceipt.requiredEvidenceIds.length,
-					createdAt: item.acceptanceReceipt.createdAt,
-					sourceTruncated: item.acceptanceReceipt.sourceTruncated,
-				}
-			: undefined,
-		acceptanceReceiptHistoryCount: item.acceptanceReceiptHistory.length,
-		stagedTreeIdentity: item.stagedTreeIdentity
-			? {
-					version: item.stagedTreeIdentity.version,
-					kind: item.stagedTreeIdentity.kind,
-					digest: item.stagedTreeIdentity.digest,
-				}
-			: undefined,
-		verificationReceipt: item.verificationReceipt
-			? {
-					version: item.verificationReceipt.version,
-					decision: item.verificationReceipt.decision,
-					targetTaskId: boundedPrivateText(item.verificationReceipt.targetTaskId, 256),
-					targetTaskGeneration: item.verificationReceipt.targetTaskGeneration,
-					targetExecutionPlanId: item.verificationReceipt.targetExecutionPlanId,
-					verifierTaskId: boundedPrivateText(item.verificationReceipt.verifierTaskId, 256),
-					verifierTaskGeneration: item.verificationReceipt.verifierTaskGeneration,
-					verifierExecutionPlanId: item.verificationReceipt.verifierExecutionPlanId,
-					treeIdentity: item.verificationReceipt.treeIdentity,
-					summary: boundedPrivateText(item.verificationReceipt.summary, 8 * 1024),
-					evidenceCount: item.verificationReceipt.evidence.length,
-					limitationCount: item.verificationReceipt.limitations.length,
-					createdAt: item.verificationReceipt.createdAt,
-					truncated: item.verificationReceipt.truncated,
-				}
-			: undefined,
-		outcomeReason: item.outcomeReason
-			? boundedPrivateText(item.outcomeReason, 2 * 1024)
-			: undefined,
-	}));
-	return {
-		...projectWorkflowSummary(workflow),
-		items: projected.items,
-		omittedItems: projected.omitted,
-	};
-}
-
 function projectModels(ctx: ExtensionContext, limit: number): Record<string, unknown> {
 	const scoped = ctx.scopedModels ?? [];
 	const candidates =
@@ -578,12 +413,9 @@ function projectModels(ctx: ExtensionContext, limit: number): Record<string, unk
 
 function projectStatus(runtime: SubagentInspectRuntime): Record<string, unknown> {
 	const stateful = runtime.getRuntimeStatus();
-	const workflow = resolveDelegationWorkflow(runtime.getBlockingEnabled(), stateful.enabled);
-	const configured = inspectDelegationWorkflowSettings();
-	const resources = inspectConsultResourceSettings();
 	const cwdPolicy = inspectCwdPolicySettings();
+	const enabled = inspectStatefulEnabledSettings();
 	const completion = inspectCompletionDeliverySettings();
-	const parallelLimit = inspectBlockingParallelLimitSettings();
 	const detachedLimits = inspectStatefulLimitSettings();
 	const transport = inspectStatefulTransportSettings();
 	const usageRecording = inspectUsageRecordingSettings();
@@ -598,10 +430,17 @@ function projectStatus(runtime: SubagentInspectRuntime): Record<string, unknown>
 				Object.entries(detachedLimits.values).map(([field, snapshot]) => [field, snapshot.source]),
 			)
 		: undefined;
+	const settingsError =
+		cwdPolicy.error ??
+		completion.error ??
+		detachedLimits.error ??
+		transport.error ??
+		usageRecording.error ??
+		enabled.error;
 	return {
-		workflow,
-		configuredWorkflow: configured.value,
-		configuredWorkflowSource: configured.source,
+		enabled: stateful.enabled,
+		configuredEnabled: enabled.value,
+		configuredEnabledSource: enabled.source,
 		stateful,
 		statefulLimits: stateful.limits,
 		configuredTransport: transport.value,
@@ -620,41 +459,11 @@ function projectStatus(runtime: SubagentInspectRuntime): Record<string, unknown>
 			: { enabled: false },
 		configuredUsageRecording: usageRecording.enabled,
 		configuredUsageRecordingSource: usageRecording.source,
-		maxParallelTasks: runtime.getMaxParallelTasks(),
-		configuredMaxParallelTasks: parallelLimit.value,
-		configuredMaxParallelTasksSource: parallelLimit.source,
-		consultResources: runtime.getConsultResourcePolicy(),
-		consultationCwdPolicy: runtime.getConsultationCwdPolicy(),
-		configuredConsultationCwdPolicy: cwdPolicy.consultation.value,
-		consultationCwdPolicySource: cwdPolicy.consultation.source,
 		delegationCwdPolicy: runtime.getDelegationCwdPolicy(),
 		configuredDelegationCwdPolicy: cwdPolicy.delegation.value,
 		delegationCwdPolicySource: cwdPolicy.delegation.source,
-		configuredConsultResources: resources.value,
-		consultResourcesSource: resources.source,
-		settingsPath: safeDisplayPath(resources.path, process.cwd()),
-		settingsError:
-			configured.error ||
-			resources.error ||
-			cwdPolicy.error ||
-			completion.error ||
-			parallelLimit.error ||
-			detachedLimits.error ||
-			transport.error ||
-			usageRecording.error
-				? boundedPrivateText(
-						configured.error ??
-							resources.error ??
-							cwdPolicy.error ??
-							completion.error ??
-							parallelLimit.error ??
-							detachedLimits.error ??
-							transport.error ??
-							usageRecording.error ??
-							"",
-						2 * 1024,
-					)
-				: undefined,
+		settingsPath: safeDisplayPath(completion.path, process.cwd()),
+		settingsError: settingsError ? boundedPrivateText(settingsError, 2 * 1024) : undefined,
 	};
 }
 

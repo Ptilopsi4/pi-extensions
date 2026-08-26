@@ -24,7 +24,6 @@ export function renderInspectCall(args: Partial<SubagentInspectParams>, theme: T
 	if (args.agentScope) metadata.push(`[${args.agentScope}]`);
 	if (args.agent) metadata.push(`agent:${safeLine(args.agent, "", 256)}`);
 	if (args.agentId) metadata.push(`id:${safeLine(args.agentId, "", 256)}`);
-	if (args.workflowId) metadata.push(`workflow:${safeLine(args.workflowId, "", 256)}`);
 	if (args.includeClosed) metadata.push("include closed");
 	return new Text(toolHeader(theme, "subagent_inspect", action, metadata), 0, 0);
 }
@@ -74,23 +73,6 @@ function renderAction(
 			];
 			if (!expanded) lines.push(expansionHint());
 			return lines.join("\n");
-		}
-		case "list_workflows":
-			return renderList(
-				"workflow",
-				recordList(details.workflows),
-				details,
-				expanded,
-				theme,
-				formatWorkflow,
-			);
-		case "get_workflow": {
-			const workflow = recordValue(details.workflow);
-			if (!workflow) return undefined;
-			return [
-				`${statusBadge(theme, "completed")} · workflow ${theme.fg("accent", safeLine(workflow.workflowId, "workflow", 256))}`,
-				formatWorkflow(workflow, theme, expanded),
-			].join("\n");
 		}
 		case "list_models":
 			return renderList(
@@ -202,34 +184,6 @@ function formatRun(run: Record<string, unknown>, theme: Theme, expanded: boolean
 	return lines.join("\n");
 }
 
-function formatWorkflow(
-	workflow: Record<string, unknown>,
-	theme: Theme,
-	expanded: boolean,
-): string {
-	const id = safeLine(workflow.workflowId, "workflow", 256);
-	const states = recordValue(workflow.states);
-	const stateText = states
-		? Object.entries(states)
-				.map(([state, count]) => `${safeLine(state, "unknown", 128)}:${numberValue(count)}`)
-				.join(" · ")
-		: "";
-	const lines = [
-		`${theme.fg("muted", "• ")}${theme.fg("accent", id)} ${theme.fg("muted", `${numberValue(workflow.itemCount)} items · generation:${numberValue(workflow.generation)}`)}`,
-	];
-	if (stateText) lines.push(`  ${theme.fg("dim", stateText)}`);
-	if (expanded) {
-		for (const item of recordList(workflow.items).slice(0, COLLAPSED_LIST_LIMIT)) {
-			lines.push(
-				`  ${theme.fg("muted", "- ")}${theme.fg("toolOutput", safeLine(item.id, "task", 256))} ${theme.fg("dim", safeLine(item.state, "unknown", 128))}`,
-			);
-		}
-		const omitted = numberValue(workflow.omittedItems);
-		if (omitted > 0) lines.push(theme.fg("muted", `  … ${omitted} tasks omitted`));
-	}
-	return lines.join("\n");
-}
-
 function formatModel(model: Record<string, unknown>, theme: Theme, expanded: boolean): string {
 	const identity = `${safeLine(model.provider, "provider", 256)}/${safeLine(model.id, "model", 256)}`;
 	const current = booleanValue(model.current) ? theme.fg("success", " · current") : "";
@@ -257,8 +211,7 @@ function renderStatus(
 	const currentLimits = recordValue(status.statefulLimits) ?? recordValue(stateful.limits);
 	const lines = [
 		`${statusBadge(theme, "completed")} · runtime status`,
-		`${theme.fg("muted", "workflow: ")}${theme.fg("accent", safeLine(status.workflow, "unknown", 128))} · ${numberValue(stateful.activeAgents)} active · ${numberValue(stateful.retainedAgents)} retained`,
-		`${theme.fg("muted", "stateful: ")}${stateful.initialized === true ? "initialized" : "not initialized"} · resources: ${safeLine(status.consultResources, "unknown", 128)}`,
+		`${theme.fg("muted", "retained delegation: ")}${stateful.enabled === false ? "disabled" : stateful.initialized === true ? "initialized" : "not initialized"} · ${numberValue(stateful.activeAgents)} active · ${numberValue(stateful.retainedAgents)} retained`,
 	];
 	if (currentLimits) {
 		lines.push(`${theme.fg("muted", "limits: ")}${formatDetachedLimits(currentLimits)}`);

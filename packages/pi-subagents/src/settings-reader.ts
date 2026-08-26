@@ -3,21 +3,17 @@ import * as path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { SubagentSettings } from "./agents/types.js";
 import {
-	type BlockingParallelLimitSettingsSnapshot,
-	buildBlockingParallelLimitSettingsSnapshot,
 	buildCompletionDeliverySettingsSnapshot,
-	buildConsultResourceSettingsSnapshot,
 	buildCwdPolicySettingsSnapshot,
-	buildDelegationWorkflowSettingsSnapshot,
+	buildStatefulEnabledSettingsSnapshot,
 	buildStatefulLimitSettingsSnapshot,
 	buildStatefulTransportSettingsSnapshot,
 	buildSubagentSettingsSnapshot,
 	buildUsageRecordingSettingsSnapshot,
 	type CompletionDeliverySettingsSnapshot,
-	type ConsultResourceSettingsSnapshot,
 	type CwdPolicySettingsSnapshot,
-	type DelegationWorkflowSettingsSnapshot,
 	type InspectedSubagentSettingsDocument,
+	type StatefulEnabledSettingsSnapshot,
 	type StatefulLimitSettingsSnapshot,
 	type StatefulTransportSettingsSnapshot,
 	type SubagentSettingsSnapshot,
@@ -26,18 +22,11 @@ import {
 import { isPlainObject, normalizeSubagentSettings } from "./settings/schema.js";
 
 export {
-	type BlockingParallelLimitSettingsSnapshot,
 	type CompletionDeliverySettingsSnapshot,
-	type ConsultResourceSettingsSnapshot,
 	type CwdPolicyFieldSnapshot,
 	type CwdPolicySettingsSnapshot,
-	DEFAULT_CONSULT_RESOURCE_POLICY,
-	DEFAULT_CONSULTATION_CWD_POLICY,
 	DEFAULT_DELEGATION_CWD_POLICY,
-	type DelegationWorkflow,
-	type DelegationWorkflowSettingsSnapshot,
-	resolveBlockingMaxParallelTasks,
-	resolveDelegationWorkflow,
+	type StatefulEnabledSettingsSnapshot,
 	type StatefulLimitFieldSnapshot,
 	type StatefulLimitSettingsSnapshot,
 	type StatefulTransportSettingsSnapshot,
@@ -149,16 +138,12 @@ export function inspectSubagentSettings(): SubagentSettingsSnapshot {
 	return buildSubagentSettingsSnapshot(inspectSubagentSettingsDocument());
 }
 
-export function inspectConsultResourceSettings(): ConsultResourceSettingsSnapshot {
-	return buildConsultResourceSettingsSnapshot(inspectSubagentSettingsDocument());
-}
-
 export function inspectCwdPolicySettings(): CwdPolicySettingsSnapshot {
 	return buildCwdPolicySettingsSnapshot(inspectSubagentSettingsDocument());
 }
 
-export function inspectDelegationWorkflowSettings(): DelegationWorkflowSettingsSnapshot {
-	return buildDelegationWorkflowSettingsSnapshot(inspectSubagentSettingsDocument());
+export function inspectStatefulEnabledSettings(): StatefulEnabledSettingsSnapshot {
+	return buildStatefulEnabledSettingsSnapshot(inspectSubagentSettingsDocument());
 }
 
 export function inspectCompletionDeliverySettings(): CompletionDeliverySettingsSnapshot {
@@ -171,10 +156,6 @@ export function inspectUsageRecordingSettings(): UsageRecordingSettingsSnapshot 
 
 export function inspectStatefulTransportSettings(): StatefulTransportSettingsSnapshot {
 	return buildStatefulTransportSettingsSnapshot(inspectSubagentSettingsDocument());
-}
-
-export function inspectBlockingParallelLimitSettings(): BlockingParallelLimitSettingsSnapshot {
-	return buildBlockingParallelLimitSettingsSnapshot(inspectSubagentSettingsDocument());
 }
 
 export function inspectStatefulLimitSettings(): StatefulLimitSettingsSnapshot {

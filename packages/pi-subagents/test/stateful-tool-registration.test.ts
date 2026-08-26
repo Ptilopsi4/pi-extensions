@@ -424,12 +424,8 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 		assert.match(spawnGuidance, /next-turn.*current response.*does not depend/i);
 		assert.match(spawnGuidance, /overlap.*subagent_await/i);
 		assert.match(spawnGuidance, /completionRequirement.*required/i);
-		assert.match(spawnGuidance, /deprecated subagent/i);
+		assert.doesNotMatch(spawnGuidance, /deprecated subagent|subagent_consult/i);
 		assert.doesNotMatch(spawnGuidance, /even when.*final answer.*depends/i);
-		assert.match(
-			spawnGuidance,
-			/existing caller.*explicit user request.*chain.*fan-in.*panel.*workflow/i,
-		);
 		assert.match(
 			spawnGuidance,
 			/single subagent_spawn.*bounded.*clear ownership.*beside.*main-agent work/i,
@@ -437,10 +433,6 @@ test("stateful tools are available by default, disable cleanly, and expose the l
 		assert.match(
 			spawnGuidance,
 			/without concurrent main-agent work.*specialist model.*tool profile.*isolation/i,
-		);
-		assert.doesNotMatch(
-			spawnGuidance,
-			/use one blocking subagent parallel call for multiple independent one-shot tasks/i,
 		);
 		assert.match(spawnGuidance, /immediately continue.*identified.*local task/i);
 		assert.match(

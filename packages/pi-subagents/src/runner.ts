@@ -54,7 +54,7 @@ export {
 } from "./runner-outcome.js";
 export type { ChildLaunchPolicy, RecentActivityItem, SingleResult } from "./runner-types.js";
 export type { UsageStats } from "./runner-usage.js";
-export type { OnUpdateCallback, PanelDetails, SubagentDetails } from "./subagent-details.js";
+export type { OnUpdateCallback, SubagentDetails } from "./subagent-details.js";
 
 const MAX_RECENT_ACTIVITY_ITEMS = 10;
 const MAX_RECENT_ACTIVITY_BYTES = 8 * 1024;

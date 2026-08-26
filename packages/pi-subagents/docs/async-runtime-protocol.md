@@ -81,4 +81,4 @@ These patterns inform waiting, completion identity, and budget ownership, but Co
 Older persisted agents without requirement metadata behave as background work.
 Current Pi versions continue using bounded persisted at-least-once completion delivery and optional idle-root auto-resume.
 The package must not claim that prompt guidance, context injection, automatic delivery, or finalized-message replacement is a hard barrier.
-The deprecated synchronous `subagent` tool remains available for unmatched chain, fan-in, panel, workflow, and compatibility callers.
+The main agent owns sequencing, fan-out, fan-in, review, and verification after the synchronous execution routes were removed.

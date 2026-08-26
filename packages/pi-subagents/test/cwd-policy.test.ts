@@ -4,11 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
 import { test } from "vitest";
-import {
-	assertConsultationTargetAllowed,
-	assertDelegationTargetAllowed,
-	resolveSubagentTarget,
-} from "../src/cwd-policy.js";
+import { assertDelegationTargetAllowed, resolveSubagentTarget } from "../src/cwd-policy.js";
 
 function fixture() {
 	const root = mkdtempSync(path.join(os.tmpdir(), "pi-subagents-cwd-policy-"));
@@ -151,7 +147,7 @@ test("rejects missing paths and non-directories before launch", () => {
 	}
 });
 
-test("enforces consultation and delegation target policies", () => {
+test("enforces delegation target policies", () => {
 	const value = fixture();
 	try {
 		const external = resolveSubagentTarget({
@@ -160,11 +156,6 @@ test("enforces consultation and delegation target policies", () => {
 			currentProjectTrusted: true,
 			agentDir: value.agentDir,
 		});
-		assert.doesNotThrow(() => assertConsultationTargetAllowed(external, "anywhere"));
-		assert.throws(
-			() => assertConsultationTargetAllowed(external, "current-workspace"),
-			/current workspace/i,
-		);
 		assert.throws(() => assertDelegationTargetAllowed(external, "trusted-targets"), /\/trust/);
 		assert.doesNotThrow(() => assertDelegationTargetAllowed(external, "anywhere"));
 

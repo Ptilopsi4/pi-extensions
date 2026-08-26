@@ -91,14 +91,6 @@ benchmark-subagents samples="7":
 benchmark-codex-compact *args:
     node packages/pi-codex-compact/benchmark/run.mjs {{ args }}
 
-# Preview or explicitly run the paired synchronous/asynchronous subagent benchmark
-benchmark-async-subagents *args:
-    node scripts/benchmark-async-subagents.ts {{ args }}
-
-# Preview or run the four-arm parent, v1 sync, v1 async, and versioned bounded-job benchmark
-benchmark-subagent-capabilities *args:
-    node scripts/benchmark-subagent-capabilities.ts {{ args }}
-
 # Install dependencies, build local package artifacts, and start every local extension package
 # pi-statusline and pi-tui-kit are intentionally excluded from Pi extension loading
 # PI_TIMING reports startup timing and PI_CODING_AGENT_DIR isolates local development state

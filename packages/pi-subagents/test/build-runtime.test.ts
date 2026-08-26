@@ -15,6 +15,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { test } from "vitest";
+import { createMockContext } from "../../../test/support.js";
 
 const packageRoot = resolve("packages/pi-subagents");
 const builderUrl = pathToFileURL(join(packageRoot, "scripts/build-runtime.mjs")).href;
@@ -93,10 +94,8 @@ test("eager graph validation rejects every known first-use implementation", asyn
 		"src/completion-delivery.ts",
 		"src/config-status.ts",
 		"src/config-ui.ts",
-		"src/consult.ts",
 		"src/create-stateful-transport.ts",
 		"src/cwd-policy.ts",
-		"src/execution.ts",
 		"src/execution/runtime-policy.ts",
 		"src/in-process-transport.ts",
 		"src/inspect.ts",
@@ -303,6 +302,23 @@ test("generated runtime and child peer bridge load through Pi's Jiti resource lo
 			"subagent_peer_list",
 			"subagent_peer_send",
 		]);
+
+		const main = loaded.extensions[0];
+		assert.ok(main);
+		const context = createMockContext({ cwd: root });
+		const spawn = main.tools.get("subagent_spawn");
+		assert.ok(spawn);
+		await assert.rejects(
+			() =>
+				spawn.definition.execute(
+					"generated-spawn",
+					{ agent: "missing", task: "Trigger the generated lazy spawn boundary." },
+					new AbortController().signal,
+					undefined,
+					context.ctx,
+				),
+			/Unknown subagent missing/u,
+		);
 	} finally {
 		restoreEnvironment("PI_CODING_AGENT_DIR", previousEnvironment.agentDir);
 		restoreEnvironment("PI_SUBAGENT_PEER_HOST", previousEnvironment.host);

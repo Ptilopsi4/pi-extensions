@@ -53,17 +53,11 @@ class FakeTransport implements SubagentTransport {
 test("Subagents idle startup registers every surface without loading deferred implementations", async () => {
 	const mock = createMockPi();
 	const loads = {
-		blocking: 0,
 		config: 0,
-		consult: 0,
 		inspect: 0,
 		transport: 0,
 	};
 	subagents(mock.pi, {
-		loadBlockingExecution: async () => {
-			loads.blocking += 1;
-			return {} as never;
-		},
 		loadStatefulTransport: async () => {
 			loads.transport += 1;
 			return new FakeTransport();
@@ -71,12 +65,6 @@ test("Subagents idle startup registers every surface without loading deferred im
 		config: {
 			loadConfigUi: async () => {
 				loads.config += 1;
-				return {} as never;
-			},
-		},
-		consult: {
-			loadExecution: async () => {
-				loads.consult += 1;
 				return {} as never;
 			},
 		},
@@ -91,23 +79,19 @@ test("Subagents idle startup registers every surface without loading deferred im
 	await emitAll(mock, "session_start", { reason: "startup" }, context.ctx);
 
 	assert.deepEqual(loads, {
-		blocking: 0,
 		config: 0,
-		consult: 0,
 		inspect: 0,
 		transport: 0,
 	});
 	assert.deepEqual(
 		[...new Set(mock.tools.map((tool) => tool.name))],
 		[
-			"subagent",
 			"subagent_spawn",
 			"subagent_send",
 			"subagent_await",
 			"subagent_manage",
 			"subagent_mailbox",
 			"subagent_inspect",
-			"subagent_consult",
 		],
 	);
 	assert.ok(mock.commands.has("subagents"));
@@ -181,114 +165,6 @@ test("Subagents direct status ignores stale lazy status loads", async () => {
 	releaseStatus();
 	await running;
 	assert.equal(shows, 0);
-});
-
-test("blocking execution caches a successful module and retries a rejected load", async () => {
-	const mock = createMockPi();
-	let loads = 0;
-	let executions = 0;
-	subagents(mock.pi, {
-		loadBlockingExecution: async () => {
-			loads += 1;
-			if (loads === 1) throw new Error("temporary blocking loader failure");
-			return {
-				executeSubagent: async () => {
-					executions += 1;
-					return {
-						content: [{ type: "text" as const, text: "done" }],
-						details: {
-							mode: "single" as const,
-							agentScope: "user" as const,
-							projectAgentsDir: null,
-							results: [],
-						},
-					};
-				},
-			} as never;
-		},
-	});
-	const tool = mock.tools.find((candidate) => candidate.name === "subagent") as
-		| { execute: (...args: unknown[]) => Promise<unknown> }
-		| undefined;
-	assert.ok(tool);
-	const context = createMockContext();
-	await assert.rejects(
-		() =>
-			tool.execute(
-				"first",
-				{ agent: "explorer", task: "inspect" },
-				undefined,
-				undefined,
-				context.ctx,
-			),
-		/temporary blocking loader failure/u,
-	);
-	await tool.execute(
-		"second",
-		{ agent: "explorer", task: "inspect" },
-		undefined,
-		undefined,
-		context.ctx,
-	);
-	await tool.execute(
-		"third",
-		{ agent: "explorer", task: "inspect" },
-		undefined,
-		undefined,
-		context.ctx,
-	);
-
-	assert.equal(loads, 2);
-	assert.equal(executions, 2);
-});
-
-test("blocking execution cancellation waits for a pending import and starts no stale work", async () => {
-	const mock = createMockPi();
-	let startLoading!: () => void;
-	const loadingStarted = new Promise<void>((resolve) => {
-		startLoading = resolve;
-	});
-	let releaseLoading!: () => void;
-	const loadingGate = new Promise<void>((resolve) => {
-		releaseLoading = resolve;
-	});
-	let executions = 0;
-	subagents(mock.pi, {
-		loadBlockingExecution: async () => {
-			startLoading();
-			await loadingGate;
-			return {
-				executeSubagent: async () => {
-					executions += 1;
-					throw new Error("stale execution started");
-				},
-			} as never;
-		},
-	});
-	const tool = mock.tools.find((candidate) => candidate.name === "subagent") as
-		| { execute: (...args: unknown[]) => Promise<unknown> }
-		| undefined;
-	assert.ok(tool);
-	const context = createMockContext();
-	const running = tool.execute(
-		"pending",
-		{ agent: "explorer", task: "inspect" },
-		undefined,
-		undefined,
-		context.ctx,
-	);
-	void running.catch(() => undefined);
-	await loadingStarted;
-	let shutdownSettled = false;
-	const shutdown = emitAll(mock, "session_shutdown", { reason: "quit" }, context.ctx).then(() => {
-		shutdownSettled = true;
-	});
-	await new Promise((resolve) => setTimeout(resolve, 5));
-	assert.equal(shutdownSettled, false);
-	releaseLoading();
-	await shutdown;
-	await assert.rejects(running, (error) => error instanceof Error && error.name === "AbortError");
-	assert.equal(executions, 0);
 });
 
 test("stateful transport loads once on first turn and stays unloaded on idle shutdown", async () => {

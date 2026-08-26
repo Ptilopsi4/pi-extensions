@@ -244,7 +244,6 @@ const StatefulTurnLimitFields = {
 	),
 };
 export interface StatefulSubagentDependencies {
-	blockingEnabled?: boolean;
 	createInProcessSession?: ChildSessionFactory;
 	workspaceManager?: WorkspaceManager;
 	settings?: SubagentRuntimeSettings;
@@ -285,7 +284,6 @@ export function registerStatefulSubagents(
 	const settings = Object.hasOwn(dependencies, "settings")
 		? (dependencies.settings ?? {})
 		: (readSubagentSettings()?.stateful ?? {});
-	const blockingEnabled = dependencies.blockingEnabled !== false;
 	const enabled = settings.enabled !== false;
 	const transportKind = resolveStatefulTransportKind(settings.transport);
 	let completionDelivery = resolveCompletionDelivery(settings.completionDelivery);
@@ -676,7 +674,7 @@ export function registerStatefulSubagents(
 		description:
 			"Start an addressable background subagent with an opaque agentId and canonical taskPath, an optional thinking level and execution budgets chosen for the task difficulty, and asynchronous completion delivery. The current bounded capacity, completion policy, working-directory policy, and available agent definitions are published in the pi-subagents session-guidance message. Working-directory policy controls launch targets and protected project resources, not filesystem access or sandboxing.",
 		promptSnippet: "Start a reusable detached subagent; completion is delivered asynchronously",
-		promptGuidelines: createSpawnPromptGuidelines(blockingEnabled),
+		promptGuidelines: createSpawnPromptGuidelines(),
 		parameters: grammarSafeToolObject({
 			agent: Type.String({ minLength: 1 }),
 			taskName: Type.Optional(
@@ -1103,29 +1101,26 @@ export function registerStatefulSubagents(
 		},
 	});
 
-	if (blockingEnabled) {
-		pi.registerTool({
-			name: "subagent_await",
-			label: "Await Subagent",
-			description:
-				"Wait for one retained subagent's current turn to settle and return its latest bounded output. This blocks Pi from processing queued steering until the wait finishes. A wait timeout or caller cancellation stops only the wait and never interrupts or closes the subagent; use subagent_manage for lifecycle changes. Automatic completion delivery remains active and may later repeat the same at-least-once completion.",
-			promptSnippet:
-				"Intentionally block until one retained subagent settles or the wait times out",
-			promptGuidelines: [
-				"Use subagent_await only when the retained result is required before the next action, useful overlapping main-agent work is complete, and blocking Pi is intentional.",
-				"Do not repeatedly call subagent_await after a timeout; the subagent keeps running and completion delivery remains active. Use subagent_manage only when the user wants to interrupt or close it.",
-			],
-			parameters: SubagentAwaitParams,
-			...createStatefulToolRenderer("await"),
-			async execute(_id, params, signal): Promise<StatefulActionToolResult> {
-				const generation = runtimeGeneration;
-				const timeoutMs = params.timeoutMs ?? DEFAULT_SUBAGENT_AWAIT_TIMEOUT_MS;
-				const waited = await requireRegistry().wait(params.agentId, timeoutMs, signal);
-				assertCurrentSpawn(signal, generation, runtimeGeneration);
-				return awaitResult(waited.agent, waited.timedOut, timeoutMs);
-			},
-		});
-	}
+	pi.registerTool({
+		name: "subagent_await",
+		label: "Await Subagent",
+		description:
+			"Wait for one retained subagent's current turn to settle and return its latest bounded output. This blocks Pi from processing queued steering until the wait finishes. A wait timeout or caller cancellation stops only the wait and never interrupts or closes the subagent; use subagent_manage for lifecycle changes. Automatic completion delivery remains active and may later repeat the same at-least-once completion.",
+		promptSnippet: "Intentionally block until one retained subagent settles or the wait times out",
+		promptGuidelines: [
+			"Use subagent_await only when the retained result is required before the next action, useful overlapping main-agent work is complete, and blocking Pi is intentional.",
+			"Do not repeatedly call subagent_await after a timeout; the subagent keeps running and completion delivery remains active. Use subagent_manage only when the user wants to interrupt or close it.",
+		],
+		parameters: SubagentAwaitParams,
+		...createStatefulToolRenderer("await"),
+		async execute(_id, params, signal): Promise<StatefulActionToolResult> {
+			const generation = runtimeGeneration;
+			const timeoutMs = params.timeoutMs ?? DEFAULT_SUBAGENT_AWAIT_TIMEOUT_MS;
+			const waited = await requireRegistry().wait(params.agentId, timeoutMs, signal);
+			assertCurrentSpawn(signal, generation, runtimeGeneration);
+			return awaitResult(waited.agent, waited.timedOut, timeoutMs);
+		},
+	});
 
 	pi.registerTool({
 		name: "subagent_manage",

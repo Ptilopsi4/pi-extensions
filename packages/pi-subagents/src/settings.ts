@@ -6,22 +6,13 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
 	AgentConfig,
 	CompletionDelivery,
-	ConsultationCwdPolicy,
-	ConsultResourcePolicy,
 	DelegationCwdPolicy,
 	SubagentAgentConfig,
 	SubagentSettings,
 	SubagentThinkingLevel,
 	SubagentTransportKind,
 } from "./agents/types.js";
-import { MAX_CONFIGURABLE_PARALLEL_TASKS } from "./limits.js";
-import type { DelegationWorkflow } from "./settings/inspection.js";
-import {
-	hasOwn,
-	isPlainObject,
-	isPositiveInteger,
-	normalizeSubagentSettings,
-} from "./settings/schema.js";
+import { hasOwn, isPlainObject, normalizeSubagentSettings } from "./settings/schema.js";
 import {
 	pathEntryExists,
 	resolveSubagentSettingsPaths,
@@ -37,23 +28,15 @@ import {
 } from "./stateful-limits.js";
 
 export {
-	type BlockingParallelLimitSettingsSnapshot,
 	type CompletionDeliverySettingsSnapshot,
-	type ConsultResourceSettingsSnapshot,
 	type CwdPolicyFieldSnapshot,
 	type CwdPolicySettingsSnapshot,
 	consumeSubagentSettingsNotice,
-	DEFAULT_CONSULT_RESOURCE_POLICY,
-	DEFAULT_CONSULTATION_CWD_POLICY,
 	DEFAULT_DELEGATION_CWD_POLICY,
-	type DelegationWorkflow,
-	type DelegationWorkflowSettingsSnapshot,
 	hasOwn,
-	inspectBlockingParallelLimitSettings,
 	inspectCompletionDeliverySettings,
-	inspectConsultResourceSettings,
 	inspectCwdPolicySettings,
-	inspectDelegationWorkflowSettings,
+	inspectStatefulEnabledSettings,
 	inspectStatefulLimitSettings,
 	inspectStatefulTransportSettings,
 	inspectSubagentSettings,
@@ -61,8 +44,7 @@ export {
 	normalizeAgentSettings,
 	normalizeSubagentSettings,
 	readSubagentSettings,
-	resolveBlockingMaxParallelTasks,
-	resolveDelegationWorkflow,
+	type StatefulEnabledSettingsSnapshot,
 	type StatefulLimitFieldSnapshot,
 	type StatefulLimitSettingsSnapshot,
 	type StatefulTransportSettingsSnapshot,
@@ -91,16 +73,10 @@ export function saveSubagentConfig(settings: SubagentSettings): void {
 	writeSettingsObject(settings);
 }
 
-export function updateDelegationWorkflowSetting(
-	value: Exclude<DelegationWorkflow, "disabled">,
-): void {
+export function updateStatefulEnabledSetting(enabled: boolean): void {
 	withSettingsMutationLock(() => {
 		const update = readSettingsObjectForUpdate();
 		const raw = update.document;
-		const blocking = raw.blocking;
-		if (blocking !== undefined && !isPlainObject(blocking)) {
-			throw new Error(`Cannot update invalid ${SETTINGS_FILE} blocking settings`);
-		}
 		const stateful = raw.stateful;
 		if (stateful !== undefined && !isPlainObject(stateful)) {
 			throw new Error(`Cannot update invalid ${SETTINGS_FILE} stateful settings`);
@@ -108,14 +84,7 @@ export function updateDelegationWorkflowSetting(
 		writeSettingsObjectUnlocked(
 			{
 				...raw,
-				blocking: {
-					...(blocking ?? {}),
-					enabled: value !== "async-only",
-				},
-				stateful: {
-					...(stateful ?? {}),
-					enabled: value !== "blocking-only",
-				},
+				stateful: { ...(stateful ?? {}), enabled },
 			},
 			update.replaceCanonical,
 		);
@@ -182,32 +151,6 @@ export function updateUsageRecordingSetting(enabled: boolean): void {
 	});
 }
 
-export function updateBlockingMaxParallelTasksSetting(value: number): void {
-	if (!isPositiveInteger(value) || value > MAX_CONFIGURABLE_PARALLEL_TASKS) {
-		throw new Error(
-			`Maximum parallel tasks must be an integer between 1 and ${MAX_CONFIGURABLE_PARALLEL_TASKS}`,
-		);
-	}
-	withSettingsMutationLock(() => {
-		const update = readSettingsObjectForUpdate();
-		const raw = update.document;
-		const blocking = raw.blocking;
-		if (blocking !== undefined && !isPlainObject(blocking)) {
-			throw new Error(`Cannot update invalid ${SETTINGS_FILE} blocking settings`);
-		}
-		writeSettingsObjectUnlocked(
-			{
-				...raw,
-				blocking: {
-					...(blocking ?? {}),
-					maxParallelTasks: value,
-				},
-			},
-			update.replaceCanonical,
-		);
-	});
-}
-
 export function updateStatefulLimitSetting(
 	field: StatefulLimitField,
 	value: number,
@@ -240,33 +183,7 @@ export function updateStatefulLimitSetting(
 	});
 }
 
-export function updateConsultResourceSetting(value: ConsultResourcePolicy): void {
-	withSettingsMutationLock(() => {
-		const update = readSettingsObjectForUpdate();
-		const raw = update.document;
-		const consult = raw.consult;
-		if (consult !== undefined && !isPlainObject(consult)) {
-			throw new Error(`Cannot update invalid ${SETTINGS_FILE} consult settings`);
-		}
-		writeSettingsObjectUnlocked(
-			{
-				...raw,
-				consult: {
-					...(consult ?? {}),
-					resources: value,
-				},
-			},
-			update.replaceCanonical,
-		);
-	});
-}
-
-export function updateCwdPolicySetting(field: "consultation", value: ConsultationCwdPolicy): void;
-export function updateCwdPolicySetting(field: "delegation", value: DelegationCwdPolicy): void;
-export function updateCwdPolicySetting(
-	field: "consultation" | "delegation",
-	value: ConsultationCwdPolicy | DelegationCwdPolicy,
-): void {
+export function updateCwdPolicySetting(field: "delegation", value: DelegationCwdPolicy): void {
 	withSettingsMutationLock(() => {
 		const update = readSettingsObjectForUpdate();
 		const raw = update.document;
