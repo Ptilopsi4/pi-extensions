@@ -12,7 +12,6 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { HorizontalRule } from "../horizontal-rule.js";
 import type { MenuScreen, MenuSettingItem } from "../types.js";
 import { createBrowseComponent } from "./browse.js";
 import type {
@@ -29,7 +28,6 @@ import {
 	actionMenuItemPresentation,
 	actionMenuUnavailableDescription,
 	handleSearchInput,
-	menuHint,
 	renderFrame,
 	safeMenuText,
 } from "./rendering.js";
@@ -153,6 +151,7 @@ function createDetailComponent<ScreenId extends string, ActionId extends string>
 				options.screen.hint ?? "back",
 				width,
 				options,
+				{ confirmAction: "", navigation: false },
 			);
 		},
 		invalidate() {},
@@ -178,9 +177,6 @@ function createChoiceComponent<ScreenId extends string, ActionId extends string>
 	const searchInput = new Input();
 	const restoredSearchQuery = options.searchQuery ?? "";
 	if (restoredSearchQuery) handleSearchInput(searchInput, restoredSearchQuery);
-	const border = new HorizontalRule({
-		ruleStyle: (text: string) => options.theme.fg("border", text),
-	});
 	const allItems = options.screen.items.map((item) => {
 		const current = item.id === options.screen.currentItemId ? " ✓ current" : "";
 		const unavailable = item.disabled
@@ -283,55 +279,42 @@ function createChoiceComponent<ScreenId extends string, ActionId extends string>
 					: []),
 				...(selectedItem?.details ?? []).map(safeMenuText),
 			];
+			const detailRows = details.flatMap((line) =>
+				wrapTextWithAnsi(options.theme.fg("muted", line), safeWidth),
+			);
 			const choices =
 				allItems.length === 0
 					? [options.theme.fg("dim", "  No choices available")]
 					: filteredItems.length === 0
 						? [options.theme.fg("dim", "  No matching choices")]
-						: [
-								...list.render(safeWidth),
-								...(details.length > 0
-									? [
-											"",
-											...details.flatMap((line) =>
-												wrapTextWithAnsi(options.theme.fg("muted", line), safeWidth),
-											),
-										]
-									: []),
-							];
+						: [...list.render(safeWidth), ...(detailRows.length > 0 ? ["", ...detailRows] : [])];
 			const search = options.screen.enableSearch
 				? [
 						...renderChoiceSearchInput(searchInput, safeWidth),
 						"",
 						...choices,
-						options.theme.fg("dim", "Type to search"),
+						...(filteredItems.length > 0 ? [options.theme.fg("dim", "Type to search")] : []),
 					]
 				: choices;
-			const result = [
-				...border.render(safeWidth),
-				...wrapTextWithAnsi(
-					options.theme.fg("accent", options.theme.bold(safeMenuText(options.screen.title))),
-					safeWidth,
-				),
-				...(options.screen.lines ?? []).flatMap((line) =>
-					wrapTextWithAnsi(options.theme.fg("muted", safeMenuText(line)), safeWidth),
-				),
-				"",
-				...search,
-				...wrapTextWithAnsi(
-					options.theme.fg(
-						"dim",
-						options.interactionHint ??
-							menuHint(options.keybindings, options.screen.hint ?? "back", "select"),
-					),
-					safeWidth,
-				),
-				...border.render(safeWidth),
-			];
-			return result.map((line) => truncateToWidth(line, safeWidth, ""));
+			return renderFrame(
+				options.screen.title,
+				options.screen.lines ?? [],
+				search,
+				options.screen.hint ?? "back",
+				safeWidth,
+				options,
+				{
+					compactOverflowText:
+						filteredItems.length > 1
+							? `  (${selectedIndex + 1}/${filteredItems.length})`
+							: undefined,
+					confirmAction: "select",
+					pinnedContentRows: options.screen.enableSearch ? 1 : 0,
+					priorityTailRows: detailRows.length + (options.screen.enableSearch ? 1 : 0),
+				},
+			);
 		},
 		invalidate() {
-			border.invalidate();
 			list.invalidate();
 			if (options.screen.enableSearch) searchInput.invalidate();
 		},
@@ -395,9 +378,6 @@ function createSettingsComponent<ScreenId extends string, ActionId extends strin
 	options: SettingsOptions<ScreenId, ActionId>,
 ): MenuScreenComponent {
 	const searchInput = new Input();
-	const border = new HorizontalRule({
-		ruleStyle: (text: string) => options.theme.fg("border", text),
-	});
 	const searchableItems = options.screen.items.map((item) => ({
 		item,
 		label: safeMenuText(item.label),
@@ -484,34 +464,35 @@ function createSettingsComponent<ScreenId extends string, ActionId extends strin
 		},
 		render(width) {
 			const safeWidth = Math.max(1, width);
-			const result = [
-				...border.render(safeWidth),
-				...wrapTextWithAnsi(
-					options.theme.fg("accent", options.theme.bold(safeMenuText(options.screen.title))),
-					safeWidth,
-				),
-				...(options.screen.lines ?? []).flatMap((line) =>
-					wrapTextWithAnsi(options.theme.fg("muted", safeMenuText(line)), safeWidth),
-				),
-				"",
-				...searchInput.render(safeWidth),
-				"",
-				...renderSettingsRows(
-					filteredItems,
-					searchableItems,
-					selectedIndex,
-					displayed,
-					safeWidth,
-					options,
-				),
-				"",
-				...wrapTextWithAnsi(options.theme.fg("dim", settingsHint(options.keybindings)), safeWidth),
-				...border.render(safeWidth),
-			];
-			return result.map((line) => truncateToWidth(line, safeWidth, ""));
+			const settingsRows = renderSettingsRows(
+				filteredItems,
+				searchableItems,
+				selectedIndex,
+				displayed,
+				safeWidth,
+				options,
+			);
+			const content = [...searchInput.render(safeWidth), "", ...settingsRows.lines, ""];
+			return renderFrame(
+				options.screen.title,
+				options.screen.lines ?? [],
+				content,
+				"back",
+				safeWidth,
+				options,
+				{
+					compactOverflowText:
+						filteredItems.length > 1
+							? `  (${selectedIndex + 1}/${filteredItems.length})`
+							: undefined,
+					confirmAction: "change",
+					hint: settingsHint(options.keybindings),
+					pinnedContentRows: 1,
+					priorityTailRows: settingsRows.priorityTailRows,
+				},
+			);
 		},
 		invalidate() {
-			border.invalidate();
 			searchInput.invalidate();
 		},
 		handleInput(data) {
@@ -551,9 +532,13 @@ function renderSettingsRows<ScreenId extends string, ActionId extends string>(
 	displayed: ReadonlyMap<string, string>,
 	width: number,
 	options: SettingsOptions<ScreenId, ActionId>,
-): string[] {
-	if (allItems.length === 0) return [options.theme.fg("dim", "  No settings available")];
-	if (filteredItems.length === 0) return [options.theme.fg("dim", "  No matching settings")];
+): { lines: string[]; priorityTailRows: number } {
+	if (allItems.length === 0) {
+		return { lines: [options.theme.fg("dim", "  No settings available")], priorityTailRows: 1 };
+	}
+	if (filteredItems.length === 0) {
+		return { lines: [options.theme.fg("dim", "  No matching settings")], priorityTailRows: 1 };
+	}
 
 	const maxVisible = Math.min(filteredItems.length, 10);
 	const startIndex = Math.max(
@@ -592,6 +577,7 @@ function renderSettingsRows<ScreenId extends string, ActionId extends string>(
 	if (startIndex > 0 || endIndex < filteredItems.length) {
 		lines.push(options.theme.fg("dim", `  (${selectedIndex + 1}/${filteredItems.length})`));
 	}
+	let priorityTailRows = 0;
 	const selected = filteredItems[selectedIndex]?.item;
 	if (selected?.description) {
 		lines.push("");
@@ -600,9 +586,10 @@ function renderSettingsRows<ScreenId extends string, ActionId extends string>(
 			Math.max(1, width - 4),
 		)) {
 			lines.push(options.theme.fg("dim", `  ${line}`));
+			priorityTailRows += 1;
 		}
 	}
-	return lines;
+	return { lines, priorityTailRows };
 }
 
 function settingsHint(keybindings: MenuKeybindings) {
@@ -661,18 +648,18 @@ function commonListComponent<ScreenId extends string, ActionId extends string>(
 			const safeWidth = Math.max(1, width);
 			const selectedId = items[selectedIndex]?.value;
 			const details = selectedId ? (selectedDetails?.(selectedId) ?? []) : [];
+			const detailRows = details.flatMap((detail) =>
+				wrapTextWithAnsi(options.theme.fg("muted", safeMenuText(detail)), safeWidth),
+			);
 			const content = [
 				...list.render(safeWidth),
-				...(details.length > 0
-					? [
-							"",
-							...details.flatMap((detail) =>
-								wrapTextWithAnsi(options.theme.fg("muted", safeMenuText(detail)), safeWidth),
-							),
-						]
-					: []),
+				...(detailRows.length > 0 ? ["", ...detailRows] : []),
 			];
-			return renderFrame(options.screen.title, lines, content, destination, width, options);
+			return renderFrame(options.screen.title, lines, content, destination, width, options, {
+				compactOverflowText:
+					items.length > 1 ? `  (${selectedIndex + 1}/${items.length})` : undefined,
+				priorityTailRows: detailRows.length,
+			});
 		},
 		invalidate() {
 			list.invalidate();

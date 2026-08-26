@@ -18,10 +18,14 @@ import {
 	RPC_DOCUMENT_LINE_WIDTH,
 	RPC_DOCUMENT_PAGE_SIZE,
 } from "./document-formatting.js";
-import { handleSearchInput, renderHorizontalRule, safeMenuText } from "./rendering.js";
+import {
+	componentRows,
+	handleSearchInput,
+	renderHorizontalRule,
+	safeMenuText,
+} from "./rendering.js";
 import { reviewDialogPages } from "./review.js";
 
-const RESERVED_HOST_ROWS = 3;
 const MAX_CONTEXT_ROWS = 2;
 const MIN_FRAMED_ROWS = 5;
 
@@ -398,11 +402,6 @@ function detailLayout(availableRows: number, contentLength: number): BrowseDetai
 	const positionRows = contentLength > contentRows && contentRows >= 2 ? 1 : 0;
 	contentRows -= positionRows;
 	return { titleRows, contentRows, positionRows, hintRows };
-}
-
-function componentRows(rows: number) {
-	const terminalRows = Number.isFinite(rows) ? Math.floor(rows) : 24;
-	return Math.max(1, terminalRows - RESERVED_HOST_ROWS);
 }
 
 function listWindowStart(selectedIndex: number, itemCount: number, viewportSize: number) {

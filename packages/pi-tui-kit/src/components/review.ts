@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { MenuScreen, ReviewScreen } from "../types.js";
 import type {
@@ -11,10 +12,15 @@ import {
 	RPC_DOCUMENT_LINE_WIDTH,
 	RPC_DOCUMENT_PAGE_SIZE,
 } from "./document-formatting.js";
-import { menuHint, renderFrame, renderHorizontalRule, safeMenuText } from "./rendering.js";
+import {
+	componentRows,
+	fitCompactHintSegments,
+	menuHint,
+	renderHorizontalRule,
+	safeMenuText,
+} from "./rendering.js";
 
 const DEFAULT_REVIEW_VIEWPORT_SIZE = 14;
-const RESERVED_HOST_ROWS = 3;
 const MIN_FRAMED_ROWS = 5;
 
 export type ReviewOptions<
@@ -41,49 +47,33 @@ export function createReviewComponent<ScreenId extends string, ActionId extends 
 	return {
 		render(width) {
 			const safeWidth = Math.max(1, width);
-			const allLines = documentLineCache.lines(
+			const formattedLines = documentLineCache.lines(
 				options.screen.content,
 				options.screen.format,
 				safeWidth,
 			);
-			const terminalRows =
-				options.screen.viewportSize === "adaptive" ? options.tui.terminal.rows : undefined;
-			if (terminalRows !== undefined && Number.isFinite(terminalRows)) {
-				const frame = renderAdaptiveReviewFrame({
-					screen: options.screen,
-					allLines,
-					width: safeWidth,
-					terminalRows,
-					scrollOffset,
-					theme: options.theme,
-					keybindings: options.keybindings,
-				});
-				scrollOffset = frame.scrollOffset;
-				lastMaximumScroll = frame.maximumScroll;
-				lastViewportSize = frame.viewportSize;
-				return frame.lines;
-			}
-
-			const viewportSize = reviewViewportSize(options.screen);
-			lastMaximumScroll = Math.max(0, allLines.length - viewportSize);
-			scrollOffset = Math.max(0, Math.min(scrollOffset, lastMaximumScroll));
-			lastViewportSize = viewportSize;
-			const visible = allLines.slice(scrollOffset, scrollOffset + viewportSize);
-			const first = allLines.length === 0 ? 0 : scrollOffset + 1;
-			const last = Math.min(allLines.length, scrollOffset + viewportSize);
-			const position =
-				allLines.length > viewportSize
-					? [options.theme.fg("dim", `${first}-${last}/${allLines.length}`)]
-					: [];
-			return renderFrame(
-				options.screen.title,
-				options.screen.lines ?? [],
-				[...visible, ...position],
-				options.screen.hint ?? "back",
-				safeWidth,
-				options,
-				options.screen.confirm ? safeMenuText(options.screen.confirm.label) : "",
-			);
+			const allLines = formattedLines.some(
+				(line) => stripVTControlCharacters(line).trim().length > 0,
+			)
+				? formattedLines
+				: [];
+			const frame = renderAdaptiveReviewFrame({
+				screen: options.screen,
+				allLines,
+				width: safeWidth,
+				terminalRows: options.tui.terminal.rows,
+				maximumViewportSize:
+					options.screen.viewportSize === "adaptive"
+						? undefined
+						: Math.min(reviewViewportSize(options.screen), allLines.length),
+				scrollOffset,
+				theme: options.theme,
+				keybindings: options.keybindings,
+			});
+			scrollOffset = frame.scrollOffset;
+			lastMaximumScroll = frame.maximumScroll;
+			lastViewportSize = frame.viewportSize;
+			return frame.lines;
 		},
 		invalidate() {
 			documentLineCache.invalidate();
@@ -121,6 +111,7 @@ interface AdaptiveReviewFrameOptions<ActionId extends string> {
 	allLines: readonly string[];
 	width: number;
 	terminalRows: number;
+	maximumViewportSize?: number;
 	scrollOffset: number;
 	theme: MenuScreenComponentOptions<string, ActionId>["theme"];
 	keybindings: MenuKeybindings;
@@ -144,7 +135,7 @@ interface AdaptiveReviewChrome {
 function renderAdaptiveReviewFrame<ActionId extends string>(
 	options: AdaptiveReviewFrameOptions<ActionId>,
 ): AdaptiveReviewFrame {
-	const totalRows = Math.max(1, Math.floor(options.terminalRows) - RESERVED_HOST_ROWS);
+	const totalRows = componentRows(options.terminalRows);
 	const framed = totalRows >= MIN_FRAMED_ROWS;
 	const availableRows = framed ? totalRows - 2 : totalRows;
 	const destination = options.screen.hint ?? "back";
@@ -162,21 +153,31 @@ function renderAdaptiveReviewFrame<ActionId extends string>(
 		options.theme.fg("dim", menuHint(options.keybindings, destination, confirmAction)),
 		options.width,
 	).map((line) => truncateToWidth(line, options.width, ""));
-	const criticalHint = truncateToWidth(
-		options.theme.fg("dim", compactReviewHint(options.keybindings, destination, confirmAction)),
-		options.width,
-		"",
+	const criticalHint = options.theme.fg(
+		"dim",
+		compactReviewHint(options.keybindings, destination, confirmAction, options.width),
 	);
 
-	let chrome = allocateAdaptiveReviewChrome(
-		availableRows,
-		fullHeader,
-		fullHint,
-		criticalHint,
-		false,
-	);
+	let chrome =
+		options.allLines.length === 0
+			? allocateEmptyReviewChrome(availableRows, fullHeader, fullHint, criticalHint)
+			: allocateAdaptiveReviewChrome(
+					availableRows,
+					fullHeader,
+					fullHint,
+					criticalHint,
+					false,
+					options.maximumViewportSize,
+				);
 	if (availableRows >= 4 && options.allLines.length > chrome.viewportSize) {
-		chrome = allocateAdaptiveReviewChrome(availableRows, fullHeader, fullHint, criticalHint, true);
+		chrome = allocateAdaptiveReviewChrome(
+			availableRows,
+			fullHeader,
+			fullHint,
+			criticalHint,
+			true,
+			options.maximumViewportSize,
+		);
 	}
 
 	const maximumScroll = Math.max(0, options.allLines.length - chrome.viewportSize);
@@ -205,12 +206,28 @@ function renderAdaptiveReviewFrame<ActionId extends string>(
 	return { lines, scrollOffset, maximumScroll, viewportSize: chrome.viewportSize };
 }
 
+function allocateEmptyReviewChrome(
+	availableRows: number,
+	fullHeader: readonly string[],
+	fullHint: readonly string[],
+	criticalHint: string,
+): AdaptiveReviewChrome {
+	if (availableRows <= 0) {
+		return { header: [], separator: false, hint: [], showPosition: false, viewportSize: 0 };
+	}
+	const hint =
+		fullHint.length > 0 && fullHint.length < availableRows ? [...fullHint] : [criticalHint];
+	const header = fullHeader.slice(0, Math.max(0, availableRows - hint.length));
+	return { header, separator: false, hint, showPosition: false, viewportSize: 0 };
+}
+
 function allocateAdaptiveReviewChrome(
 	availableRows: number,
 	fullHeader: readonly string[],
 	fullHint: readonly string[],
 	criticalHint: string,
 	showPosition: boolean,
+	maximumViewportSize?: number,
 ): AdaptiveReviewChrome {
 	if (availableRows === 1) {
 		return { header: [], separator: false, hint: [], showPosition: false, viewportSize: 1 };
@@ -218,9 +235,9 @@ function allocateAdaptiveReviewChrome(
 	const compactHeader = [fullHeader[0] ?? ""];
 	if (availableRows === 2) {
 		return {
-			header: compactHeader,
+			header: [],
 			separator: false,
-			hint: [],
+			hint: [criticalHint],
 			showPosition: false,
 			viewportSize: 1,
 		};
@@ -236,6 +253,8 @@ function allocateAdaptiveReviewChrome(
 	}
 
 	let remainingRows = availableRows - 3 - Number(showPosition);
+	const reservedViewportRows = Math.min(remainingRows, Math.max(0, (maximumViewportSize ?? 1) - 1));
+	remainingRows -= reservedViewportRows;
 	const extraHeaderCount = Math.min(remainingRows, Math.max(0, fullHeader.length - 1));
 	const header = [...compactHeader, ...fullHeader.slice(1, 1 + extraHeaderCount)];
 	remainingRows -= extraHeaderCount;
@@ -254,7 +273,10 @@ function allocateAdaptiveReviewChrome(
 		separator,
 		hint,
 		showPosition,
-		viewportSize: 1 + remainingRows,
+		viewportSize: Math.min(
+			1 + reservedViewportRows + remainingRows,
+			maximumViewportSize === undefined ? Number.POSITIVE_INFINITY : maximumViewportSize,
+		),
 	};
 }
 
@@ -262,17 +284,21 @@ function compactReviewHint(
 	keybindings: MenuKeybindings,
 	destination: "back" | "close",
 	confirmAction: string,
+	width: number,
 ) {
 	const confirm = reviewBindingText(keybindings, "tui.select.confirm");
 	const cancel = reviewBindingText(keybindings, "tui.select.cancel", "ctrl+c");
 	const up = reviewBindingText(keybindings, "tui.select.up");
 	const down = reviewBindingText(keybindings, "tui.select.down");
-	return [
-		...(confirm && confirmAction ? [`${confirm} ${confirmAction}`] : []),
-		...(cancel ? [`${cancel} ${destination}`] : []),
-		...(destination === "back" || !cancel ? ["ctrl+c close"] : []),
-		...(up || down ? [`${[up, down].filter(Boolean).join("/")} navigate`] : []),
-	].join(" • ");
+	return fitCompactHintSegments(
+		[
+			...(cancel ? [`${cancel} ${destination}`] : []),
+			...(destination === "back" || !cancel ? ["ctrl+c close"] : []),
+			...(confirm && confirmAction ? [`${confirm} ${confirmAction}`] : []),
+			...(up || down ? [`${[up, down].filter(Boolean).join("/")} navigate`] : []),
+		],
+		width,
+	);
 }
 
 function reviewBindingText(

@@ -189,7 +189,7 @@ test("action screens prioritize actionable rows when terminal height is constrai
 		keybindings: inputFriendlyKeybindings,
 	});
 	const lines = plainRender(harness.component, 32);
-	assert.ok(lines.length <= 12);
+	assert.ok(lines.length <= 9);
 	assert.equal(lines[0], "─".repeat(32));
 	assert.equal(lines.at(-1), "─".repeat(32));
 	assert.match(lines.join("\n"), /→ Restore sync access/u);
@@ -202,11 +202,141 @@ test("action screens prioritize actionable rows when terminal height is constrai
 		keybindings: inputFriendlyKeybindings,
 	});
 	const tinyLines = plainRender(tinyHarness.component, 32);
-	assert.ok(tinyLines.length <= 7);
-	assert.equal(tinyLines[0], "─".repeat(32));
-	assert.equal(tinyLines.at(-1), "─".repeat(32));
+	assert.ok(tinyLines.length <= 4);
+	assert.doesNotMatch(tinyLines.join("\n"), /─/u);
 	assert.match(tinyLines.join("\n"), /→ Help/u);
 	assert.match(tinyLines.join("\n"), /esc\s+close/u);
+
+	const minimumHarness = componentHarness(screen, {
+		selectedItemId: "help",
+		plainTheme: true,
+		rows: 4,
+		keybindings: inputFriendlyKeybindings,
+	});
+	assert.deepEqual(plainRender(minimumHarness.component, 32), ["→ Help"]);
+
+	const narrowHarness = componentHarness(screen, {
+		plainTheme: true,
+		rows: 8,
+		keybindings: inputFriendlyKeybindings,
+	});
+	assert.ok(plainRender(narrowHarness.component, 10).includes("esc close"));
+});
+
+test("compact action screens indicate options hidden by outer compaction", () => {
+	const screen: MenuScreen<ScreenId, ActionId> = {
+		kind: "actions",
+		title: "Actions",
+		items: Array.from({ length: 6 }, (_, index) => ({
+			id: `action-${index}`,
+			label: `Action ${index + 1}`,
+			action: "run" as const,
+		})),
+		hint: "close",
+	};
+	const harness = componentHarness(screen, {
+		plainTheme: true,
+		rows: 12,
+		keybindings: inputFriendlyKeybindings,
+	});
+	let rendered = plainRender(harness.component, 40).join("\n");
+	assert.match(rendered, /\(1\/6\)/u);
+	assert.doesNotMatch(rendered, /Action 6/u);
+
+	for (let index = 0; index < 5; index += 1) harness.component.handleInput("\u001b[B");
+	rendered = plainRender(harness.component, 40).join("\n");
+	assert.match(rendered, /→ Action 6/u);
+	assert.match(rendered, /\(6\/6\)/u);
+});
+
+test("choice and settings screens reserve host rows and keep focused controls visible", () => {
+	const choice = componentHarness(choiceScreen, {
+		selectedItemId: "balanced",
+		plainTheme: true,
+		rows: 9,
+		keybindings: inputFriendlyKeybindings,
+	});
+	const choiceLines = plainRender(choice.component, 32);
+	assert.ok(choiceLines.length <= 6);
+	assert.equal(choiceLines[0], "─".repeat(32));
+	assert.equal(choiceLines.at(-1), "─".repeat(32));
+	assert.match(choiceLines.join("\n"), /→ Balanced/u);
+	assert.match(choiceLines.join("\n"), /\(2\/3\)/u);
+	assert.match(choiceLines.join("\n"), /esc\s+back/u);
+
+	const settings = componentHarness(largeSettingsScreen(), {
+		selectedItemId: "setting-11",
+		plainTheme: true,
+		rows: 9,
+		keybindings: inputFriendlyKeybindings,
+	});
+	const settingsLines = plainRender(settings.component, 40);
+	assert.ok(settingsLines.length <= 6);
+	assert.equal(settingsLines[0], "─".repeat(40));
+	assert.equal(settingsLines.at(-1), "─".repeat(40));
+	assert.ok(settingsLines.some((line) => line.startsWith("> ")));
+	assert.match(settingsLines.join("\n"), /→ Setting 11/u);
+	assert.match(settingsLines.join("\n"), /Description for setting 11/u);
+	assert.match(settingsLines.join("\n"), /Esc to go back/u);
+	const compactSettings = plainRender(settings.component, 80).join("\n");
+	assert.match(compactSettings, /Enter\/Space to change/u);
+	const narrowSettings = plainRender(settings.component, 25).join("\n");
+	assert.match(narrowSettings, /Esc to go back/u);
+	assert.match(narrowSettings, /\(12\/12\)/u);
+	assert.doesNotMatch(narrowSettings, /(^|\n)(?:to )?close($|\n)/u);
+});
+
+test("compact searchable choices preserve empty states ahead of search reminders", () => {
+	const harness = componentHarness(
+		{ ...choiceScreen, enableSearch: true },
+		{
+			plainTheme: true,
+			rows: 9,
+			keybindings: inputFriendlyKeybindings,
+		},
+	);
+	for (const input of ["z", "z", "z"]) harness.component.handleInput(input);
+	const rendered = plainRender(harness.component, 32).join("\n");
+	assert.match(rendered, /No matching choices/u);
+	assert.doesNotMatch(rendered, /Type to search/u);
+	assert.match(rendered, /esc\s+back/u);
+});
+
+test("compact interactive frames reserve their critical interaction hint", () => {
+	const harness = componentHarness(choiceScreen, {
+		selectedItemId: "verbose",
+		plainTheme: true,
+		rows: 9,
+		keybindings: inputFriendlyKeybindings,
+	});
+	const rendered = plainRender(harness.component, 32).join("\n");
+	assert.match(rendered, /→ \[-\] Verbose/u);
+	assert.match(rendered, /esc\s+back/u);
+});
+
+test("compact static frames reserve cancellation hints before wrapped titles", () => {
+	const harness = componentHarness(
+		{
+			...detailScreen,
+			title: "A very long detail title that wraps across every available compact row",
+			lines: [],
+		},
+		{ plainTheme: true, rows: 9, keybindings: inputFriendlyKeybindings },
+	);
+	const rendered = plainRender(harness.component, 20).join("\n");
+	assert.match(rendered, /A very long detail/u);
+	assert.match(rendered, /esc back/u);
+});
+
+test("compact detail frames preserve body text and advertise only supported controls", () => {
+	const harness = componentHarness(
+		{ ...detailScreen, title: "Details", lines: ["Important body"] },
+		{ plainTheme: true, rows: 8, keybindings: inputFriendlyKeybindings },
+	);
+	const rendered = plainRender(harness.component, 12).join("\n");
+	assert.match(rendered, /Important/u);
+	assert.match(rendered, /esc back/u);
+	assert.doesNotMatch(rendered, /navigate|select/u);
 });
 
 test("action screens honor injected navigation and distinguish Back from Ctrl+C Close", () => {
@@ -467,6 +597,31 @@ test("settings search reports no matches and all presentation remains width-safe
 	assert.ok(
 		plainRender(empty.component, 40).some((line) => line.includes("No settings available")),
 	);
+
+	const compactNoMatch = componentHarness(
+		{
+			kind: "settings",
+			title: "Compact settings",
+			items: [
+				{
+					id: "display",
+					label: "Display",
+					currentValue: "On",
+					values: ["On", "Off"],
+					action: "setting",
+				},
+			],
+		},
+		{ plainTheme: true, rows: 8, keybindings: inputFriendlyKeybindings },
+	);
+	compactNoMatch.component.handleInput("z");
+	assert.match(plainRender(compactNoMatch.component, 40).join("\n"), /No matching settings/u);
+	const compactEmpty = componentHarness(
+		{ kind: "settings", title: "Compact empty settings", items: [] },
+		{ plainTheme: true, rows: 8, keybindings: inputFriendlyKeybindings },
+	);
+	assert.match(plainRender(compactEmpty.component, 40).join("\n"), /No settings available/u);
+
 	for (const width of [1, 2, 8, 20, 40]) {
 		assert.ok(
 			harness.component.render(width).every((line) => visibleWidth(line) <= width),
@@ -936,6 +1091,86 @@ test("searchable multi-select filters label and declared search text by stable r
 
 	for (const input of ["\u007f", "\u007f"]) harness.component.handleInput(input);
 	assert.match(plainRender(harness.component, 60).join("\n"), /› \[x\] 讀取 📖/);
+});
+
+test("searchable multi-select keeps its focused query and selected row in compact frames", () => {
+	const screen: MenuScreen<ScreenId, ActionId> = {
+		kind: "multiSelect",
+		title: "Searchable tools",
+		enableSearch: true,
+		items: Array.from({ length: 8 }, (_, index) => ({
+			id: `tool-${index}`,
+			label: `tool_${index}`,
+			description: `Description for tool ${index}`,
+			searchText: "shared tool",
+			selected: false,
+		})),
+		action: "toggle",
+	};
+	const harness = componentHarness(screen, {
+		selectedItemId: "tool-7",
+		plainTheme: true,
+		rows: 10,
+		keybindings: inputFriendlyKeybindings,
+	});
+	for (const input of ["t", "o", "o", "l"]) harness.component.handleInput(input);
+	const lines = plainRender(harness.component, 32);
+	assert.ok(lines.length <= 7);
+	assert.equal(lines[0], "─".repeat(32));
+	assert.equal(lines.at(-1), "─".repeat(32));
+	assert.ok(lines.some((line) => line.startsWith("> tool")));
+	assert.match(lines.join("\n"), /› \[ \] tool_7/u);
+	assert.match(lines.join("\n"), /Description for tool 7/u);
+	assert.match(lines.join("\n"), /\(8\/8\)/u);
+});
+
+test("compact searchable multi-select preserves empty states ahead of search reminders", () => {
+	const screen: MenuScreen<ScreenId, ActionId> = {
+		kind: "multiSelect",
+		title: "Searchable tools",
+		enableSearch: true,
+		items: [{ id: "read", label: "Read", selected: false }],
+		action: "toggle",
+		actions: [],
+	};
+	const noMatch = componentHarness(screen, {
+		plainTheme: true,
+		rows: 9,
+		keybindings: inputFriendlyKeybindings,
+	});
+	for (const input of ["z", "z", "z"]) noMatch.component.handleInput(input);
+	const noMatchText = plainRender(noMatch.component, 32).join("\n");
+	assert.match(noMatchText, /No matching items/u);
+	assert.doesNotMatch(noMatchText, /Type to search/u);
+
+	const empty = componentHarness(
+		{ ...screen, items: [] },
+		{ plainTheme: true, rows: 9, keybindings: inputFriendlyKeybindings },
+	);
+	const emptyText = plainRender(empty.component, 32).join("\n");
+	assert.match(emptyText, /No items available/u);
+	assert.doesNotMatch(emptyText, /No matching items|Type to search/u);
+});
+
+test("compact searchable multi-select keeps its selected action visible after an empty filter", () => {
+	const screen: MenuScreen<ScreenId, ActionId> = {
+		kind: "multiSelect",
+		title: "Searchable tools",
+		enableSearch: true,
+		items: [{ id: "read", label: "Read", selected: false }],
+		action: "toggle",
+		actions: [{ id: "save", label: "Save changes", action: "run" }],
+	};
+	const harness = componentHarness(screen, {
+		plainTheme: true,
+		rows: 8,
+		keybindings: inputFriendlyKeybindings,
+	});
+	for (const input of ["z", "z", "z"]) harness.component.handleInput(input);
+	const rendered = plainRender(harness.component, 32).join("\n");
+	assert.match(rendered, /> zzz/u);
+	assert.match(rendered, /› Save changes/u);
+	assert.doesNotMatch(rendered, /No matching items/u);
 });
 
 test("searchable multi-select keeps actions available for no matches and distinguishes empty", async () => {
