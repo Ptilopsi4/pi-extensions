@@ -21,6 +21,7 @@ const MAX_OUTPUT_NODES = 100_000;
 export interface WebMcpToolDescriptor {
 	annotations: WebMcpProtocolAnnotation;
 	description: string;
+	documentId: string;
 	frameId: string;
 	frameOrigin: string;
 	inputSchema: Record<string, unknown>;
@@ -33,6 +34,7 @@ export interface WebMcpToolDescriptor {
 }
 
 export interface WebMcpToolIdentity {
+	documentId: string;
 	frameId: string;
 	frameOrigin: string;
 	name: string;
@@ -44,6 +46,7 @@ export interface WebMcpToolIdentity {
 export function normalizeWebMcpTool(
 	tool: WebMcpProtocolTool,
 	context: {
+		documentId: string;
 		frameOrigin: string;
 		pageId: string;
 		pageUrl: string;
@@ -54,6 +57,9 @@ export function normalizeWebMcpTool(
 	const description = boundedString(tool.description, "tool description", 16 * 1024);
 	const title =
 		tool.title === undefined ? undefined : boundedString(tool.title, "tool title", 1_024);
+	const documentId = boundedString(context.documentId, "document loader ID", 512, {
+		nonEmpty: true,
+	});
 	const frameId = boundedString(tool.frameId, "frame ID", 512, { nonEmpty: true });
 	const frameOrigin = boundedString(context.frameOrigin, "frame origin", 2_048, {
 		nonEmpty: true,
@@ -74,6 +80,7 @@ export function normalizeWebMcpTool(
 	return {
 		annotations,
 		description,
+		documentId,
 		frameId,
 		frameOrigin,
 		inputSchema: canonicalSchema,
@@ -90,6 +97,7 @@ export function webMcpIdentity(tool: WebMcpToolDescriptor): WebMcpToolIdentity {
 	return {
 		sessionGeneration: tool.sessionGeneration,
 		pageId: tool.pageId,
+		documentId: tool.documentId,
 		frameId: tool.frameId,
 		frameOrigin: tool.frameOrigin,
 		name: tool.name,
@@ -114,6 +122,7 @@ export function requireMatchingWebMcpTool(
 		[
 			["session generation", current.sessionGeneration, expected.sessionGeneration],
 			["page", current.pageId, expected.pageId],
+			["document", current.documentId, expected.documentId],
 			["frame", current.frameId, expected.frameId],
 			["frame origin", current.frameOrigin, expected.frameOrigin],
 			["schema or annotations", current.schemaDigest, expected.schemaDigest],

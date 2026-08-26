@@ -128,16 +128,16 @@ Do not add `promptSnippet` or `promptGuidelines` to the WebMCP gateway tools.
 
 The list tool should accept an optional `pageId` and default to the existing selected-or-first-page behavior.
 
-The list result should include session generation, page ID, frame ID, frame origin, tool name, optional title, description, input schema, annotations, and a deterministic schema-and-annotation digest.
+The list result should include session generation, page ID, document loader ID, frame ID, frame origin, tool name, optional title, description, input schema, annotations, and a deterministic schema-and-annotation digest.
 
-The call tool should accept session generation, page ID, frame ID, frame origin, tool name, schema digest, and a JSON object input.
+The call tool should accept session generation, page ID, document loader ID, frame ID, frame origin, tool name, schema digest, and a JSON object input.
 
 The call tool should rediscover the exact tool immediately before invocation and reject when its page, frame, origin, name, schema digest, or session generation changed.
 
 The tool identity contract should be:
 
 ```text
-session generation + page target + frame ID + frame origin + tool name + schema digest
+session generation + page target + document loader ID + frame ID + frame origin + tool name + schema digest
 ```
 
 Page tool descriptions and schemas should appear only in the list tool result at the conversation tail.
@@ -327,7 +327,7 @@ Revalidate generation and target state after every `await` that can outlive navi
 - The managed browser's dynamic endpoint works without a proxy or fixed-port assumption.
 - Exactly two fixed WebMCP gateway definitions are provider-visible.
 - Page-provided definitions never become dynamic Pi tools.
-- A call cannot execute against a stale page, frame, origin, schema, annotation, or session generation.
+- A call cannot execute against a stale page, document, frame, origin, schema, annotation, or session generation.
 - Every page-provided tool call requires observable confirmation.
 - Pi cancellation reaches Chrome and releases the page invocation.
 - Every operation-owned socket and listener is released on success, error, cancellation, replacement, and shutdown.

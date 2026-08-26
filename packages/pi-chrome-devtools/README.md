@@ -153,7 +153,7 @@ For local pages outside an Origin Trial, open `chrome://flags/#enable-webmcp-tes
 The extension does not automatically add testing flags to a managed browser.
 
 `chrome_devtools_webmcp_list_tools` opens an operation-scoped page CDP session, lists frame-aware page tools, and returns bounded metadata with a deterministic schema-and-annotation digest.
-`chrome_devtools_webmcp_call_tool` re-discovers the exact page, frame, origin, tool, schema, annotations, and session generation before invocation and again after confirmation.
+`chrome_devtools_webmcp_call_tool` re-discovers the exact page, document loader, frame, origin, tool, schema, annotations, and session generation before invocation and again after confirmation.
 The call gateway rejects print and JSON modes because they cannot provide observable confirmation.
 TUI and RPC modes use Pi's standard confirmation dialog.
 Cancellation is forwarded to Chrome through `WebMCP.cancelInvocation` after Chrome returns an invocation ID.

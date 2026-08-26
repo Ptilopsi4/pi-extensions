@@ -21,6 +21,7 @@ export interface WebMcpProtocolTool {
 
 export interface WebMcpFrame {
 	id: string;
+	loaderId: string;
 	securityOrigin?: string;
 	url: string;
 }
@@ -248,6 +249,7 @@ function parseFrameTree(value: unknown): WebMcpFrame[] | undefined {
 		const frame = tree.frame;
 		if (
 			typeof frame.id !== "string" ||
+			typeof frame.loaderId !== "string" ||
 			typeof frame.url !== "string" ||
 			(frame.securityOrigin !== undefined && typeof frame.securityOrigin !== "string")
 		) {
@@ -255,6 +257,7 @@ function parseFrameTree(value: unknown): WebMcpFrame[] | undefined {
 		}
 		frames.push({
 			id: frame.id,
+			loaderId: frame.loaderId,
 			url: frame.url,
 			...(frame.securityOrigin === undefined ? {} : { securityOrigin: frame.securityOrigin }),
 		});

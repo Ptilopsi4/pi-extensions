@@ -108,14 +108,17 @@ function normalizeInventory(
 	page: DevToolsPage,
 	operation: WebMcpOperationIdentity,
 ) {
-	const frameOrigins = new Map(frames.map((frame) => [frame.id, frameOrigin(frame)]));
+	const frameDocuments = new Map(
+		frames.map((frame) => [frame.id, { documentId: frame.loaderId, origin: frameOrigin(frame) }]),
+	);
 	const tools = protocolTools.map((tool) => {
-		const origin = frameOrigins.get(tool.frameId);
-		if (!origin) {
+		const frame = frameDocuments.get(tool.frameId);
+		if (!frame) {
 			throw new Error(`WebMCP tool ${webMcpErrorMessage(tool.name)} belongs to an unknown frame.`);
 		}
 		return normalizeWebMcpTool(tool, {
-			frameOrigin: origin,
+			documentId: frame.documentId,
+			frameOrigin: frame.origin,
 			pageId: page.id,
 			pageUrl: page.url,
 			sessionGeneration: generationToken(operation),

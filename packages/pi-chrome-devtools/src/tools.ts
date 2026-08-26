@@ -140,13 +140,17 @@ export const webMcpCallTool = defineTool({
 	name: WEBMCP_TOOL_NAMES[1],
 	label: "Chrome DevTools: Call WebMCP Tool (Experimental)",
 	description:
-		"Call one previously listed page-provided WebMCP tool after exact page, frame, origin, schema, annotation, and session revalidation. Every call requires observable user confirmation and output is bounded to Pi's 50 KB or 2,000-line limit.",
+		"Call one previously listed page-provided WebMCP tool after exact page, document, frame, origin, schema, annotation, and session revalidation. Every call requires observable user confirmation and output is bounded to Pi's 50 KB or 2,000-line limit.",
 	parameters: Type.Object({
 		sessionGeneration: Type.String({
 			description: "Session generation token returned by chrome_devtools_webmcp_list_tools.",
 			maxLength: 100,
 		}),
 		pageId: Type.String({ description: "Page id returned by the list tool.", maxLength: 512 }),
+		documentId: Type.String({
+			description: "Document loader id returned by the list tool.",
+			maxLength: 512,
+		}),
 		frameId: Type.String({ description: "Frame id returned by the list tool.", maxLength: 512 }),
 		frameOrigin: Type.String({
 			description: "Exact frame origin returned by the list tool.",

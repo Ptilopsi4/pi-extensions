@@ -28,6 +28,7 @@ interface Scenario {
 		status?: "Canceled" | "Completed" | "Error";
 		errorText?: string;
 	};
+	loaderId?: (socketIndex: number) => string;
 	tools?: (socketIndex: number) => ScenarioTool[];
 }
 
@@ -238,6 +239,10 @@ test("call-time rediscovery rejects changed schemas, removed tools, frames, and 
 			tools: () => [defaultTool],
 			frameUrl: (index: number) => (index < 2 ? PAGE_URL : "about:blank#removed"),
 		},
+		{
+			tools: () => [defaultTool],
+			loaderId: (index: number) => (index < 2 ? "loader-1" : "loader-reloaded"),
+		},
 	]) {
 		await withScenario(scenario, async () => {
 			const { ctx } = approvingContext();
@@ -245,7 +250,7 @@ test("call-time rediscovery rejects changed schemas, removed tools, frames, and 
 			const identity = listed.details.identities[0];
 			await assert.rejects(
 				executeWebMcpCallTool({ ...identity, toolName: identity.name, input: {} }, undefined, ctx),
-				/no longer available|frame origin.*changed/u,
+				/no longer available|frame origin.*changed|document changed/u,
 			);
 		});
 	}
@@ -447,6 +452,7 @@ class ScriptedWebSocket extends EventTarget {
 					frameTree: {
 						frame: {
 							id: FRAME_ID,
+							loaderId: this.transport.scenario.loaderId?.(this.index) ?? "loader-1",
 							url: this.transport.scenario.frameUrl?.(this.index) ?? PAGE_URL,
 						},
 					},

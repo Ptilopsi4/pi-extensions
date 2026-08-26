@@ -140,6 +140,7 @@ function expectedIdentity(params: CallInput): WebMcpToolIdentity {
 	return {
 		sessionGeneration: params.sessionGeneration,
 		pageId: params.pageId,
+		documentId: params.documentId,
 		frameId: params.frameId,
 		frameOrigin: params.frameOrigin,
 		name: params.toolName,

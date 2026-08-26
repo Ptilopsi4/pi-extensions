@@ -14,6 +14,7 @@ import {
 } from "../src/webmcp/policy.js";
 
 const context = {
+	documentId: "loader-1",
 	frameOrigin: "https://example.test",
 	pageId: "page-1",
 	pageUrl: "https://example.test/app",
@@ -61,6 +62,7 @@ test("identity validation rejects stale session, page, origin, schema, and annot
 	for (const [field, value] of [
 		["sessionGeneration", "5:0"],
 		["pageId", "other-page"],
+		["documentId", "loader-reloaded"],
 		["frameOrigin", "https://other.test"],
 		["schemaDigest", "0".repeat(64)],
 	] as const) {
