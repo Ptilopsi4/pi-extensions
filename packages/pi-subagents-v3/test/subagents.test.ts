@@ -3,7 +3,7 @@ import { afterEach, beforeEach, test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import { createBrokerClient } from "../src/child-communication-bridge.js";
 import { MessageBroker } from "../src/message-broker.js";
-import subagentsV3, { type SubagentsV3Dependencies } from "../src/subagents-v3.js";
+import subagentsV3, { type SubagentsV3Dependencies } from "../src/subagents.js";
 import type { ChildRequest, ChildResult } from "../src/types.js";
 
 interface RegisteredTool {
