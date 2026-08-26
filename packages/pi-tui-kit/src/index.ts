@@ -11,6 +11,10 @@ export {
 	runCustomInteraction,
 } from "./custom-interaction.js";
 export {
+	EditorStatusWidget,
+	type EditorStatusWidgetOptions,
+} from "./editor-status-widget.js";
+export {
 	HorizontalRule,
 	type HorizontalRuleLabelAlignment,
 	type HorizontalRuleOptions,

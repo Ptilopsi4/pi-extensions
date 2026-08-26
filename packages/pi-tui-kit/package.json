@@ -25,6 +25,10 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
+		"./editor-status-widget": {
+			"types": "./dist/editor-status-widget.d.ts",
+			"import": "./dist/editor-status-widget.js"
+		},
 		"./interaction-hints": {
 			"types": "./dist/interaction-hints.d.ts",
 			"import": "./dist/interaction-hints.js"
