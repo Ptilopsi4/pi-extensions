@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { createSubagentWidgetController } from "./subagent-widget.js";
 import { registerSubagentTools, type SubagentToolsDependencies } from "./tools.js";
+import { createSubagentWidgetController } from "./widget.js";
 
 export type SubagentsV3Dependencies = SubagentToolsDependencies;
 
