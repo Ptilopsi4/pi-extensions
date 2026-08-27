@@ -34,10 +34,18 @@ afterEach(async () => {
 	);
 });
 
-test("normalizes the default-Off setting and rejects invalid values", () => {
+test("normalizes default-Off settings and rejects invalid values", () => {
 	assert.deepEqual(normalizeUsageSettings({}), DEFAULT_USAGE_SETTINGS);
-	assert.deepEqual(normalizeUsageSettings({ codexFastMode: true }), { codexFastMode: true });
+	assert.deepEqual(normalizeUsageSettings({ codexFastMode: true }), {
+		codexFastMode: true,
+		experimentalXaiUsage: false,
+	});
+	assert.deepEqual(normalizeUsageSettings({ experimentalXaiUsage: true }), {
+		codexFastMode: false,
+		experimentalXaiUsage: true,
+	});
 	assert.equal(normalizeUsageSettings({ codexFastMode: "true" }), undefined);
+	assert.equal(normalizeUsageSettings({ experimentalXaiUsage: "true" }), undefined);
 	assert.equal(normalizeUsageSettings([]), undefined);
 });
 
@@ -51,6 +59,7 @@ test("missing loads are side-effect free and valid loads preserve unknown fields
 	const loaded = await loadUsageSettings(path);
 	assert.equal(loaded.kind, "loaded");
 	assert.equal(loaded.settings.codexFastMode, true);
+	assert.equal(loaded.settings.experimentalXaiUsage, false);
 	assert.equal(loaded.document?.future, "kept");
 });
 
@@ -68,6 +77,10 @@ test("malformed, invalid, oversized, and symbolic-link settings stay read-only",
 	await writeFile(invalidPath, '{"codexFastMode":"yes"}\n');
 	assert.equal((await loadUsageSettings(invalidPath)).kind, "invalid");
 
+	const invalidXaiPath = await tempSettingsPath();
+	await writeFile(invalidXaiPath, '{"experimentalXaiUsage":1}\n');
+	assert.equal((await loadUsageSettings(invalidXaiPath)).kind, "invalid");
+
 	const oversizedPath = await tempSettingsPath();
 	await writeFile(oversizedPath, JSON.stringify({ padding: "x".repeat(70 * 1024) }));
 	assert.match((await loadUsageSettings(oversizedPath)).issue ?? "", /64 KiB/);
@@ -82,15 +95,19 @@ test("malformed, invalid, oversized, and symbolic-link settings stay read-only",
 test("the first explicit save creates a private file and preserves unknown fields", async () => {
 	const path = await tempSettingsPath();
 	const runtime = createUsageSettingsRuntime(path);
-	await runtime.update({ codexFastMode: true });
-	assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { codexFastMode: true });
+	await runtime.update({ codexFastMode: true, experimentalXaiUsage: true });
+	assert.deepEqual(JSON.parse(await readFile(path, "utf8")), {
+		codexFastMode: true,
+		experimentalXaiUsage: true,
+	});
 	if (process.platform !== "win32") assert.equal((await stat(path)).mode & 0o777, 0o600);
 
 	await writeFile(path, '{"codexFastMode":true,"future":"kept"}\n');
 	if (process.platform !== "win32") await chmod(path, 0o644);
-	await runtime.update({ codexFastMode: false });
+	await runtime.update({ codexFastMode: false, experimentalXaiUsage: false });
 	assert.deepEqual(JSON.parse(await readFile(path, "utf8")), {
 		codexFastMode: false,
+		experimentalXaiUsage: false,
 		future: "kept",
 	});
 	if (process.platform !== "win32") assert.equal((await stat(path)).mode & 0o777, 0o600);
@@ -103,12 +120,13 @@ test("serialized updates reread the latest document and leave no temporary files
 	await runtime.reload();
 	await writeFile(path, '{"codexFastMode":false,"external":"newer"}\n');
 	await Promise.all([
-		runtime.update({ codexFastMode: true }),
-		runtime.update({ codexFastMode: false }),
+		runtime.update({ codexFastMode: true, experimentalXaiUsage: true }),
+		runtime.update({ codexFastMode: false, experimentalXaiUsage: false }),
 	]);
 	await runtime.flush();
 	assert.deepEqual(JSON.parse(await readFile(path, "utf8")), {
 		codexFastMode: false,
+		experimentalXaiUsage: false,
 		external: "newer",
 	});
 	assert.deepEqual(
@@ -117,16 +135,28 @@ test("serialized updates reread the latest document and leave no temporary files
 	);
 });
 
+test("reload waits for queued writes and observes the latest durable xAI value", async () => {
+	const path = await tempSettingsPath();
+	const runtime = createUsageSettingsRuntime(path);
+	const update = runtime.update({ experimentalXaiUsage: true });
+	const reload = runtime.reload();
+	await update;
+	const reloaded = await reload;
+	assert.equal(reloaded.settings.experimentalXaiUsage, true);
+	assert.equal(JSON.parse(await readFile(path, "utf8")).experimentalXaiUsage, true);
+});
+
 test("aborted saves retain prior runtime state", async () => {
 	const abortedPath = await tempSettingsPath();
 	const abortedRuntime = createUsageSettingsRuntime(abortedPath);
 	const controller = new AbortController();
 	controller.abort();
 	await assert.rejects(
-		abortedRuntime.update({ codexFastMode: true }, controller.signal),
+		abortedRuntime.update({ codexFastMode: true, experimentalXaiUsage: true }, controller.signal),
 		/aborted/i,
 	);
 	assert.equal(abortedRuntime.get().settings.codexFastMode, false);
+	assert.equal(abortedRuntime.get().settings.experimentalXaiUsage, false);
 	assert.equal((await loadUsageSettings(abortedPath)).kind, "missing");
 });
 
@@ -142,8 +172,12 @@ test("failed saves retain prior runtime state, clean up, and do not poison retri
 			},
 		},
 	});
-	await assert.rejects(runtime.update({ codexFastMode: true }), /rename rejected/);
+	await assert.rejects(
+		runtime.update({ codexFastMode: true, experimentalXaiUsage: true }),
+		/rename rejected/,
+	);
 	assert.equal(runtime.get().settings.codexFastMode, false);
+	assert.equal(runtime.get().settings.experimentalXaiUsage, false);
 	assert.equal((await loadUsageSettings(path)).kind, "missing");
 	assert.deepEqual(
 		(await readdir(join(path, ".."))).filter((name) => name.endsWith(".tmp")),

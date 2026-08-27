@@ -9,10 +9,12 @@ export const MAX_USAGE_SETTINGS_BYTES = 64 * 1024;
 
 export interface UsageSettings {
 	codexFastMode: boolean;
+	experimentalXaiUsage: boolean;
 }
 
 export const DEFAULT_USAGE_SETTINGS: Readonly<UsageSettings> = Object.freeze({
 	codexFastMode: false,
+	experimentalXaiUsage: false,
 });
 
 export interface UsageSettingsState {
@@ -52,11 +54,21 @@ export function normalizeUsageSettings(value: unknown): UsageSettings | undefine
 	if (Object.hasOwn(value, "codexFastMode") && typeof value.codexFastMode !== "boolean") {
 		return undefined;
 	}
+	if (
+		Object.hasOwn(value, "experimentalXaiUsage") &&
+		typeof value.experimentalXaiUsage !== "boolean"
+	) {
+		return undefined;
+	}
 	return {
 		codexFastMode:
 			typeof value.codexFastMode === "boolean"
 				? value.codexFastMode
 				: DEFAULT_USAGE_SETTINGS.codexFastMode,
+		experimentalXaiUsage:
+			typeof value.experimentalXaiUsage === "boolean"
+				? value.experimentalXaiUsage
+				: DEFAULT_USAGE_SETTINGS.experimentalXaiUsage,
 	};
 }
 

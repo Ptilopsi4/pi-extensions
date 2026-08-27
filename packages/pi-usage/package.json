@@ -1,7 +1,7 @@
 {
 	"name": "@narumitw/pi-usage",
 	"version": "0.53.0",
-	"description": "Pi extension that shows current-account usage for Codex, GitHub Copilot, OpenRouter, OpenCode Zen, and Z.AI.",
+	"description": "Pi extension that shows current-account usage for Codex, GitHub Copilot, OpenRouter, OpenCode Zen, Z.AI, and opt-in experimental xAI OAuth subscriptions.",
 	"type": "module",
 	"license": "MIT",
 	"private": false,
@@ -17,7 +17,9 @@
 		"opencode",
 		"zen",
 		"zai",
-		"glm"
+		"glm",
+		"xai",
+		"grok"
 	],
 	"files": [
 		"src",
@@ -42,12 +44,14 @@
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-ai": "*",
-		"@earendil-works/pi-coding-agent": "*"
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.10",
 		"@earendil-works/pi-ai": "0.84.3",
 		"@earendil-works/pi-coding-agent": "0.84.3",
+		"@earendil-works/pi-tui": "0.84.3",
 		"@types/node": "26.2.0",
 		"esbuild": "0.28.2",
 		"typescript": "7.0.2"

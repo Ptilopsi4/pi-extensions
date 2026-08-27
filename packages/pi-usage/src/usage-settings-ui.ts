@@ -1,0 +1,143 @@
+import {
+	type ExtensionCommandContext,
+	getSettingsListTheme,
+} from "@earendil-works/pi-coding-agent";
+import {
+	Container,
+	Key,
+	matchesKey,
+	type SettingItem,
+	SettingsList,
+	Text,
+} from "@earendil-works/pi-tui";
+import { errorMessage } from "./core.js";
+import type { UsageSettings, UsageSettingsRuntime } from "./settings.js";
+
+const OFF = "Off";
+const ON = "On";
+const EXPERIMENTAL_ON = "Experimental (On)";
+
+export const XAI_EXPERIMENTAL_WARNING =
+	"Experimental: enabling xAI usage sends the matched Pi xAI OAuth bearer to the undocumented cli-chat-proxy.grok.com consumer endpoint.";
+
+type UsageSettingId = keyof UsageSettings;
+
+export async function showUsageSettings(
+	ctx: ExtensionCommandContext,
+	settingsRuntime: UsageSettingsRuntime,
+	parentSignal: AbortSignal,
+	isCurrent: () => boolean,
+	onApplied: (id: UsageSettingId, previous: boolean, next: boolean) => void,
+): Promise<boolean> {
+	if (ctx.mode !== "tui") {
+		if (ctx.hasUI) ctx.ui.notify(`Edit settings manually: ${settingsRuntime.get().path}`, "info");
+		return false;
+	}
+	if (parentSignal.aborted || !isCurrent()) return false;
+
+	return ctx.ui.custom<boolean>((tui, theme, keybindings, done) => {
+		const localController = new AbortController();
+		const signal = AbortSignal.any([parentSignal, localController.signal]);
+		let changed = false;
+		let closing = false;
+		let saveQueue = Promise.resolve();
+		const state = settingsRuntime.get();
+		const items: SettingItem[] = [
+			{
+				id: "codexFastMode",
+				label: "Codex Fast mode",
+				description: "Use faster Codex routing at increased plan allowance consumption.",
+				currentValue: state.settings.codexFastMode ? ON : OFF,
+				values: [OFF, ON],
+			},
+			{
+				id: "experimentalXaiUsage",
+				label: "Experimental xAI usage",
+				description: XAI_EXPERIMENTAL_WARNING,
+				currentValue: state.settings.experimentalXaiUsage ? EXPERIMENTAL_ON : OFF,
+				values: [OFF, EXPERIMENTAL_ON],
+			},
+		];
+		const container = new Container();
+		container.addChild(new Text(theme.fg("accent", theme.bold("pi-usage Settings")), 1, 1));
+		container.addChild(new Text(theme.fg("warning", XAI_EXPERIMENTAL_WARNING), 1, 0));
+
+		let settingsList: SettingsList;
+		const finish = () => {
+			if (closing) return;
+			closing = true;
+			void saveQueue.finally(() => done(changed));
+		};
+		settingsList = new SettingsList(
+			items,
+			items.length + 2,
+			getSettingsListTheme(),
+			(id, value) => {
+				if (closing || signal.aborted || !isCurrent()) return;
+				const settingId = id as UsageSettingId;
+				const requested = value !== OFF;
+				saveQueue = saveQueue.then(async () => {
+					const previous = settingsRuntime.get().settings[settingId];
+					if (settingsRuntime.get().kind === "invalid") {
+						settingsList.updateValue(id, displayValue(settingId, previous));
+						if (!signal.aborted && isCurrent()) {
+							ctx.ui.notify("Repair pi-usage.json and reload before changing settings.", "error");
+							tui.requestRender();
+						}
+						return;
+					}
+					try {
+						await settingsRuntime.update({ [settingId]: requested }, signal);
+					} catch (error) {
+						settingsList.updateValue(id, displayValue(settingId, previous));
+						if (!signal.aborted && isCurrent()) {
+							ctx.ui.notify(`Could not save pi-usage.json: ${errorMessage(error)}`, "error");
+							tui.requestRender();
+						}
+						return;
+					}
+					if (previous !== requested) {
+						changed = true;
+						onApplied(settingId, previous, requested);
+					}
+					if (signal.aborted || !isCurrent()) return;
+					settingsList.updateValue(id, displayValue(settingId, requested));
+					tui.requestRender();
+				});
+			},
+			finish,
+		);
+		container.addChild(settingsList);
+
+		const abort = () => {
+			localController.abort();
+			finish();
+		};
+		parentSignal.addEventListener("abort", abort, { once: true });
+		return {
+			render: (width: number) => container.render(width),
+			invalidate: () => container.invalidate(),
+			handleInput(data: string) {
+				if (closing) return;
+				if (keybindings.matches(data, "tui.select.cancel")) finish();
+				else if (keybindings.matches(data, "tui.select.up")) settingsList.handleInput("\u001b[A");
+				else if (keybindings.matches(data, "tui.select.down")) {
+					settingsList.handleInput("\u001b[B");
+				} else if (keybindings.matches(data, "tui.select.confirm")) {
+					settingsList.handleInput("\r");
+				} else if (matchesKey(data, Key.ctrl("c"))) finish();
+				else settingsList.handleInput(data);
+				tui.requestRender();
+			},
+			dispose() {
+				localController.abort();
+				parentSignal.removeEventListener("abort", abort);
+			},
+		};
+	});
+}
+
+function displayValue(id: UsageSettingId, enabled: boolean): string {
+	if (!enabled) return OFF;
+	return id === "experimentalXaiUsage" ? EXPERIMENTAL_ON : ON;
+}

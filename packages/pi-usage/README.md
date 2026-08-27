@@ -2,15 +2,17 @@
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-usage)](https://www.npmjs.com/package/@narumitw/pi-usage) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-Check the limits and usage for the provider account Pi is actually using, and toggle Fast mode for supported OpenAI Codex models.
+Check the limits and usage for the provider account Pi is actually using, toggle Fast mode for supported OpenAI Codex models, and explicitly opt in to experimental xAI OAuth subscription reporting.
 
 The extension reports each provider's native semantics instead of presenting unlike quotas as equivalent.
+Experimental xAI reporting defaults Off because it uses an undocumented first-party consumer endpoint.
 
 ## ✨ Features
 
 - Shows current-account usage and next actions through `/usage`.
 - Supports OpenAI Codex subscription windows, credits, resets, and model-specific buckets.
 - Supports GitHub Copilot allowances and OpenRouter per-key limits and spend windows.
+- Supports explicitly enabled experimental xAI OAuth subscription allowance and credit reporting.
 - Toggles persistent Codex Fast routing through `/fast` or the contextual usage menu.
 - Redeems eligible Codex resets only after fresh account matching and explicit confirmation.
 - Refreshes one or all configured providers with bounded concurrency and partial-result preservation.
@@ -58,6 +60,7 @@ In TUI or RPC mode, the standard menu first queries the current model provider a
 
 ```text
 Refresh current usage
+Settings
 Turn Fast mode on/off       # Supported current Codex models only
 Redeem usage limit reset…   # Current Codex OAuth accounts only
 View another configured provider…
@@ -79,13 +82,23 @@ Successful, already-completed, not-needed, and no-credit outcomes are reported s
 
 ## ⚙️ Settings
 
+Choose **Settings** in `/usage` to edit Codex Fast mode and Experimental xAI usage through Pi's settings-list interaction in TUI mode.
+The xAI row shows its endpoint and credential warning before activation and labels the enabled value experimental.
+RPC mode reports the active manual settings path instead of opening terminal UI.
+
+Both preferences live in Pi's user agent directory as `pi-usage.json`, normally `~/.pi/agent/pi-usage.json`.
+The file reloads at every session start and is not created until the first successful save.
+Changes save immediately in input order inside one Pi process.
+Unknown JSON fields are preserved, writes use a private temporary file plus rename, and malformed or invalid files remain untouched.
+A failed save restores the prior displayed and effective value, while shutdown waits for queued writes.
+Separate Pi processes are not mutually locked.
+
 ### Codex Fast mode
 
 Run bare `/fast` to toggle Fast for the active supported Codex model, or use **Turn Fast mode on/off** in `/usage`.
 
 Fast is about 1.5× faster and uses more of your plan allowance.
-The preference defaults to Off and is saved as `codexFastMode` in Pi's user agent directory as `pi-usage.json`, normally `~/.pi/agent/pi-usage.json`.
-The extension reloads this file at every session start and does not create it until the first successful toggle.
+The `codexFastMode` preference defaults to Off.
 
 Fast currently applies only to official `openai-codex-responses` requests for `gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna` at `https://chatgpt.com`.
 It sends `service_tier: "priority"` while enabled and explicit `service_tier: "default"` otherwise.
@@ -94,9 +107,25 @@ Unsupported models and custom or proxy origins are left unchanged.
 
 `/fast` supports TUI and RPC mode, accepts no arguments, and rejects print or JSON mode before mutation.
 A toggle affects provider requests whose payload hook starts after the save; a request already sent is unchanged.
-Settings operations are serialized inside one Pi process, but separate Pi processes are not mutually locked.
-Unknown JSON fields are preserved, writes use a private temporary file plus rename, and a malformed or invalid file is never overwritten.
 Repair or remove an invalid file, then run `/reload` before trying the toggle again.
+
+### Experimental xAI usage
+
+> **Experimental privacy warning:** enabling this setting sends the xAI OAuth bearer matched to Pi's current runtime account to the undocumented first-party `https://cli-chat-proxy.grok.com` consumer service.
+
+The `experimentalXaiUsage` preference defaults to `false`.
+Enable it in the TUI Settings screen or edit the active user file manually, then run `/reload`:
+
+```json
+{
+  "experimentalXaiUsage": true
+}
+```
+
+The disabled, missing, malformed, and invalid-settings states perform no xAI usage auth resolution or consumer requests.
+Enabling the preference makes xAI available only through explicit `/usage` current, configured-provider, or all-provider actions.
+It does not schedule xAI requests or publish xAI data to the statusline.
+Turning it Off clears xAI cache state and prevents stale in-flight results from being published.
 
 ## 📋 Provider semantics
 
@@ -154,6 +183,38 @@ OpenRouter documents the distinction between credit and rate limits in its [API 
 
 The fixed endpoint is queried only when the candidate OpenCode Go model and the resolved provider-auth base URL, when present, use the official `https://opencode.ai` origin; other origins fail before sending the credential.
 
+### xAI consumer subscriptions (experimental)
+
+- Provider ID: `xai`
+- Semantics: consumer subscription allowance and credits, not xAI API-team billing
+- Identity route: `GET https://cli-chat-proxy.grok.com/v1/user?include=subscription`
+- Billing route: `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`
+- Displayed data: included allowance percentage or legacy monetary limit, weekly or monthly period and reset, on-demand spend and cap, prepaid balance, and a sanitized optional plan tier
+- Statusline: not published; xAI is queried only through an explicit `/usage` action while the opt-in is enabled
+
+The adapter accepts only the official Pi inference origin `https://api.x.ai` and a freshly resolved bearer that exactly matches one complete Pi OAuth credential.
+Pi's reviewed OAuth scope is `openid profile email offline_access grok-cli:access api:access`.
+`XAI_API_KEY`, duplicate or conflicting OAuth candidates, account mismatches, incomplete OAuth records, custom origins, and proxy-resolved origins fail before consumer-proxy access.
+API-key users can review API-team spend through [console.x.ai](https://console.x.ai/) instead.
+The public Management API requires a separate management key and team ID and is intentionally outside this runtime-credential integration.
+
+The identity response supplies a transient proxy-canonical `userId` that is validated and sent as `x-userid` only on the billing request.
+The extension sends the matched bearer as `Authorization` and does not read Grok Build files, device state, names, email, or other profile fields.
+Responses are body-bounded, redirects are rejected, raw identity and billing payloads are not retained, and secrets are redacted from errors.
+Included allowance, on-demand usage, and prepaid balance remain distinct because they represent different billing concepts.
+
+The implementation contract was selected from these first-party revisions:
+
+- Pi [`providers/xai.ts`](https://github.com/earendil-works/pi/blob/e86823096c5bad39e1ca282ec24bc5eb9bec745b/packages/ai/src/providers/xai.ts) and [`auth/oauth/xai.ts`](https://github.com/earendil-works/pi/blob/e86823096c5bad39e1ca282ec24bc5eb9bec745b/packages/ai/src/auth/oauth/xai.ts) at `e868230`, revalidated byte-for-byte for those files at [`ccfe79e`](https://github.com/earendil-works/pi/tree/ccfe79ed238674f760c986e3a61493aab794000a).
+- Grok Build [`UserInfo`](https://github.com/xai-org/grok-build/blob/77cd7eb675ba911c225c3aaeeece3a20cbccc426/crates/codegen/xai-grok-shell/src/auth/model.rs), [`enrichment.rs`](https://github.com/xai-org/grok-build/blob/77cd7eb675ba911c225c3aaeeece3a20cbccc426/crates/codegen/xai-grok-shell/src/auth/manager/enrichment.rs), [`subscription_check.rs`](https://github.com/xai-org/grok-build/blob/77cd7eb675ba911c225c3aaeeece3a20cbccc426/crates/codegen/xai-grok-shell/src/agent/subscription_check.rs), [`billing.rs`](https://github.com/xai-org/grok-build/blob/77cd7eb675ba911c225c3aaeeece3a20cbccc426/crates/codegen/xai-grok-shell/src/extensions/billing.rs), and [`xai-grok-version`](https://github.com/xai-org/grok-build/blob/77cd7eb675ba911c225c3aaeeece3a20cbccc426/crates/codegen/xai-grok-version/Cargo.toml) at `77cd7eb`.
+- [xAI Management API team billing boundary at `723dd2a`](https://github.com/xai-org/xai-proto/blob/723dd2aa22d17be35617463837dc47cda008d90e/proto/xai/management_api/v1/billing.proto).
+
+The approved 2026-08-27 disposable-or-maintainer-account protocol smoke used only Pi's OAuth bearer, read no Grok-local files, received HTTP 200 without redirects from both routes, and found the reviewed Grok-specific client headers unnecessary.
+The sanitized identity shape contained a string `userId` and nullable `subscriptionTier`; the billing shape contained an object `config` with period and distinct on-demand and prepaid wrappers, without retaining field values.
+
+These consumer routes are not a stable public API and may change or disappear without notice.
+Disable `experimentalXaiUsage` to stop all xAI consumer usage traffic while preserving other provider behavior.
+
 ### Z.AI (GLM Coding Plan)
 
 - Provider ID: `zai` and `zai-coding-cn`
@@ -184,6 +245,7 @@ After the active runtime credential changes, the next command, turn, or schedule
 
 The `usage` status item is active only for selected providers that publish statusline usage.
 It refreshes every five minutes while the session remains on such a provider and is cleared when the model changes to an unsupported or menu-only provider.
+xAI is always menu-only and never starts a scheduled status refresh.
 
 Manual another-provider and all-provider queries never publish to the statusline.
 `@narumitw/pi-statusline` supplies the default `📊` icon; `pi-usage` publishes text-only values.
@@ -219,8 +281,9 @@ Protocol v1 interoperability is characterized for the repository's supported Pi 
 ## 🚧 Limitations
 
 - Only providers with a meaningful usage source and verifiable Pi runtime auth are supported.
-- GitHub Copilot quota, Z.AI quota, and OpenAI Codex reset redemption use undocumented provider endpoints that may change without notice.
+- GitHub Copilot quota, Z.AI quota, experimental xAI consumer usage, and OpenAI Codex reset redemption use undocumented provider endpoints that may change without notice.
 - Codex reset redemption requires a current ChatGPT OAuth credential from Pi's login or a compatible credential source; Codex API keys cannot redeem earned subscription resets.
+- Experimental xAI usage supports only a uniquely matched Pi OAuth subscription credential; xAI API keys and Management API credentials are unsupported.
 - Credentials resolved for custom provider base URLs are never forwarded to the providers' official usage endpoints; effective auth origin validation requires Pi 0.81.0 or newer.
 - Provider reports are snapshots and may themselves be delayed by the provider.
 - OpenRouter successful inference responses do not expose proactive request-rate counters; `/usage` reports the documented per-key credit/spend fields instead.
@@ -240,6 +303,7 @@ packages/pi-usage/
 ├── src/
 │   ├── index.ts       # Pi package entrypoint and helper export barrel
 │   ├── usage.ts       # Menu, cache, and usage lifecycle orchestration
+│   ├── usage-settings-ui.ts # Pi SettingsList interaction and save rollback
 │   ├── codex-fast.ts  # Fast eligibility, request tier, and cost correction
 │   ├── codex-fast-runtime.ts # Fast command, persistence lifecycle, and request hooks
 │   ├── settings.ts    # Validated user settings and atomic persistence
@@ -264,7 +328,7 @@ The generated runtime is built from the authoritative `src/index.ts` graph and d
 
 ## 🔎 Keywords
 
-Pi extension, Pi coding agent, usage, quota, OpenAI Codex usage, ChatGPT subscription limits, GitHub Copilot AI credits, GitHub Copilot premium requests, OpenRouter credits, API-key spend limits, TypeScript Pi package, npm Pi extension.
+Pi extension, Pi coding agent, usage, quota, OpenAI Codex usage, ChatGPT subscription limits, GitHub Copilot AI credits, GitHub Copilot premium requests, OpenRouter credits, xAI OAuth usage, Grok subscription allowance, API-key spend limits, TypeScript Pi package, npm Pi extension.
 
 ## 📄 License
 

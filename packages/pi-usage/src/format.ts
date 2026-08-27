@@ -19,6 +19,7 @@ export function formatUsageReport(report: UsageReport, displayState: UsageDispla
 	else if (report.providerId === "github-copilot") formatGitHubCopilotReport(lines, report);
 	else if (report.providerId === "openrouter") formatOpenRouterReport(lines, report);
 	else if (report.providerId === "opencode-go") formatOpenCodeZenReport(lines, report);
+	else if (report.providerId === "xai") formatXaiReport(lines, report);
 	else if (report.providerId === "zai" || report.providerId === "zai-coding-cn") {
 		formatZaiReport(lines, report);
 	} else formatGenericReport(lines, report);
@@ -160,6 +161,35 @@ function formatOpenCodeZenStatusline(report: UsageReport): string | undefined {
 		parts.push(`${clampPercent(bucket.used).toFixed(0)}% ${compact}`);
 	}
 	return parts.length > 1 ? parts.join(" ") : undefined;
+}
+
+function formatXaiReport(lines: string[], report: UsageReport): void {
+	const included = report.buckets.find((bucket) => bucket.id === "included-allowance");
+	if (included) {
+		let value = "unavailable";
+		if (included.unit === "percent" && included.used !== undefined) {
+			value = `${included.used}% used`;
+			if (included.remaining !== undefined) value += ` · ${included.remaining}% left`;
+		} else if (included.used !== undefined || included.limit !== undefined) {
+			value = `${formatUsd(included.used ?? 0)} used`;
+			if (included.limit !== undefined) value += ` of ${formatUsd(included.limit)}`;
+		}
+		const period = included.period ? ` · ${included.period}` : "";
+		const reset = included.resetsAt ? ` (resets ${formatReset(included.resetsAt)})` : "";
+		lines.push(`${"Included allowance:".padEnd(VALUE_COLUMN)}${value}${period}${reset}`);
+	}
+	const onDemand = report.buckets.find((bucket) => bucket.id === "on-demand");
+	if (onDemand) {
+		let value =
+			onDemand.used === undefined ? "usage unavailable" : `${formatUsd(onDemand.used)} used`;
+		if (onDemand.limit !== undefined) value += ` of ${formatUsd(onDemand.limit)} cap`;
+		lines.push(`${"On-demand usage:".padEnd(VALUE_COLUMN)}${value}`);
+	}
+	for (const metric of report.metrics) {
+		lines.push(
+			`${`${metric.label}:`.padEnd(VALUE_COLUMN)}${formatMetricValue(metric.value, metric.unit)}`,
+		);
+	}
 }
 
 function formatZaiReport(lines: string[], report: UsageReport): void {
