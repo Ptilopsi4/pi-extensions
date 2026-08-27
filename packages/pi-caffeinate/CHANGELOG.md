@@ -1,5 +1,11 @@
 # @narumitw/pi-caffeinate
 
+## 0.49.6
+
+### Patch Changes
+
+- 358a179: Lazy-load Linux D-Bus support so other platforms do not load `dbus-native` during Pi startup.
+
 ## 0.49.5
 
 ### Patch Changes
