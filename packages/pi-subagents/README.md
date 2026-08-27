@@ -155,7 +155,6 @@ Legacy `pi-subagents.json` and retained-state files are left untouched for downg
 - Jobs cannot receive parent context, custom agent catalogs, extension tools, external working directories, or package-managed worktrees.
 - The runtime has one subprocess transport and no automatic transport selection.
 - The main agent must decompose work, avoid conflicting writers, perform fan-in, run deterministic checks, and decide what evidence is sufficient.
-- Disconnected retained-runtime source remains temporarily in the package for a separate deletion pass and is unreachable from the registered entrypoint.
 
 See [`docs/bounded-runtime-migration.md`](./docs/bounded-runtime-migration.md) for the breaking migration from retained agents.
 

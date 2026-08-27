@@ -8,7 +8,7 @@ It starts one fresh Pi subprocess per accepted job through `src/job-process.ts`.
 
 The prior RPC contract included persistent child sessions, request correlation, turn cancellation, readiness negotiation, and transport metadata.
 
-Those behaviors are unsupported by the current four-tool contract and remain only in disconnected source pending the dedicated deletion pass.
+Those behaviors are unsupported by the current four-tool contract, and their executable source has been deleted.
 
 Do not use this note as active implementation or user guidance.
 

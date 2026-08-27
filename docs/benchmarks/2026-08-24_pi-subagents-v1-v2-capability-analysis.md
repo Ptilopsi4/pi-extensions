@@ -1,5 +1,7 @@
 # Pi Subagents v1/v2 Capability Benchmark Analysis
 
+> **Historical benchmark report:** The measured v1 retained runtime and its runner have been removed, so this document is evidence only and is not runnable guidance.
+
 ## Decision summary
 
 The final diagnostic run is a quality tie on the four common workloads.

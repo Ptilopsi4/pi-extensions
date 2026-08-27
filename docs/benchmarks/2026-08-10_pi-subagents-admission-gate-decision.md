@@ -1,5 +1,7 @@
 # Pi Subagents Admission Gate Decision
 
+> **Historical benchmark decision:** This report evaluates the removed retained orchestration architecture and does not define an active workflow.
+
 - **Decision:** Revise.
 - **Recorded:** 2026-08-10.
 - **Scope approval:** The explicit request to implement the delegation-intelligence roadmap authorizes only the revised opt-in scope below.

@@ -59,9 +59,9 @@ If added, it should use one bounded per-child IPC channel and must not restore r
 
 Durability, lanes, forks, recovery, queues, tool replay, and long-lived conversation ownership belong in Pi's future public Harness surface rather than this extension.
 
-Source-entrypoint migration and removal of the build-backed runtime remain separate performance work.
+The retained implementation, tests, dependencies, and executable benchmarks have been deleted from this package.
 
-Disconnected retained source, tests, benchmarks, dependencies, and build assumptions require a dedicated deletion pass before release.
+Source-entrypoint migration and removal of the build-backed runtime remain separate performance work.
 
 ## References
 

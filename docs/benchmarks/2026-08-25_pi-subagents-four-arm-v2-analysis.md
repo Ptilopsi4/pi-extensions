@@ -1,5 +1,7 @@
 # Pi Subagents Four-Arm Benchmark v2 Analysis
 
+> **Historical benchmark report:** The measured retained-runtime arms and their runner have been removed, so this document is evidence only and is not runnable guidance.
+
 ## Decision summary
 
 All four arms completed all four workloads with full evidence, exact topology compliance, complete result visibility, and passing mutation verification.

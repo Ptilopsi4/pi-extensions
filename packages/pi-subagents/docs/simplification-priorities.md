@@ -6,6 +6,8 @@ This prioritization was adopted for the bounded-runtime cutover of `@narumitw/pi
 
 The active contract is documented in [`tools.md`](./tools.md) and [`implementation-notes/pi-subagents-current-direction.md`](./implementation-notes/pi-subagents-current-direction.md).
 
+The bounded-runtime cutover and retained-implementation deletion are complete on the implementation branch.
+
 Items marked for later work remain proposals until a separate objective approves them.
 
 ## Summary
@@ -256,7 +258,7 @@ No speculative Harness adapter or abstraction should be added before that point.
 
 ## Delivery sequence
 
-### Stage 1 — Establish the replacement runtime
+### Stage 1 — Establish the replacement runtime (complete)
 
 1. Port the smallest bounded subprocess runtime from `pi-subagents-v3` into `pi-subagents` without creating a package dependency.
 2. Register only spawn, await, cancel, and inspect.
@@ -264,7 +266,7 @@ No speculative Harness adapter or abstraction should be added before that point.
 4. Add focused tests for every bounded lifecycle state and session transition.
 5. Keep the old runtime disconnected from the entrypoint while replacement tests stabilize.
 
-### Stage 2 — Cut over the public surface
+### Stage 2 — Cut over the public surface (complete)
 
 1. Switch the package entrypoint to the bounded runtime.
 2. Replace retained identifiers with `jobId` in the new public schemas and results.
@@ -272,9 +274,9 @@ No speculative Harness adapter or abstraction should be added before that point.
 4. Update the major Changeset to describe the complete outcome rather than only the synchronous-tool removal.
 5. Update the README and tool reference to describe only the bounded surface.
 
-### Stage 3 — Delete retained implementation clusters
+### Stage 3 — Delete retained implementation clusters (complete)
 
-Delete implementation and tests in dependency order.
+The deletion pass removed implementation and tests in dependency order.
 
 1. Remove retained registry and persistence.
 2. Remove send, mailbox, peer communication, hierarchy, and task paths.
