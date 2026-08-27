@@ -16,9 +16,6 @@ import type { UsageSettings, UsageSettingsRuntime } from "./settings.js";
 const OFF = "Off";
 const ON = "On";
 
-export const XAI_USAGE_WARNING =
-	"Warning: xAI usage sends the matched Pi xAI OAuth bearer to the undocumented cli-chat-proxy.grok.com consumer endpoint.";
-
 type UsageSettingId = keyof UsageSettings;
 
 export async function showUsageSettings(
@@ -52,14 +49,13 @@ export async function showUsageSettings(
 			{
 				id: "xaiUsage",
 				label: "xAI usage",
-				description: XAI_USAGE_WARNING,
+				description: "Report OAuth subscription allowance and credits.",
 				currentValue: state.kind !== "invalid" && state.settings.xaiUsage ? ON : OFF,
 				values: [OFF, ON],
 			},
 		];
 		const container = new Container();
 		container.addChild(new Text(theme.fg("accent", theme.bold("pi-usage Settings")), 1, 1));
-		container.addChild(new Text(theme.fg("warning", XAI_USAGE_WARNING), 1, 0));
 
 		let settingsList: SettingsList;
 		const finish = () => {

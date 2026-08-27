@@ -397,7 +397,7 @@ export default function usageExtension(
 					status: "unsupported",
 					message:
 						providerId === "xai" && !xaiUsageEnabled()
-							? "xAI usage is disabled. Open Settings to review the privacy warning and enable it."
+							? "xAI usage is disabled. Open Settings to enable it."
 							: model
 								? `Usage reporting is not supported for ${providerDisplayName(ctx, providerId)}.`
 								: "No model is selected.",

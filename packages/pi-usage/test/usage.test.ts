@@ -1090,7 +1090,7 @@ test("statusline follows runtime auth changes and clears for unsupported selecte
 	assert.equal(fetches, 5);
 });
 
-test("disabled xAI reports the privacy warning with zero auth and network requests", async (t) => {
+test("disabled xAI reports its state with zero auth and network requests", async (t) => {
 	const originalFetch = globalThis.fetch;
 	t.onTestFinished(() => {
 		globalThis.fetch = originalFetch;
@@ -1514,7 +1514,7 @@ test("the Settings menu action gives RPC mode the active manual settings path", 
 	assert.match(notifications[0]?.message ?? "", /Edit settings manually: \/tmp\/pi-usage\.json/);
 });
 
-test("the TUI SettingsList shows the warning and applies xAI changes immediately", async (t) => {
+test("the TUI SettingsList describes and applies xAI changes immediately", async (t) => {
 	const settings = memorySettingsRuntime(false);
 	const rendered: string[][] = [];
 	let applied = 0;
@@ -1577,8 +1577,11 @@ test("the TUI SettingsList shows the warning and applies xAI changes immediately
 	assert.equal(changed, true);
 	assert.equal(settings.state().settings.xaiUsage, true);
 	assert.equal(applied, 1);
-	assert.match(rendered[0]?.join("\n") ?? "", /undocumented\s+cli-chat-proxy\.grok\.com/);
-	assert.doesNotMatch(rendered[0]?.join("\n") ?? "", /experimental/iu);
+	const renderedSettings = rendered.map((lines) => lines.join("\n"));
+	assert.ok(
+		renderedSettings.some((frame) => /OAuth subscription allowance and credits/.test(frame)),
+	);
+	assert.doesNotMatch(renderedSettings.join("\n"), /warning|undocumented|experimental/iu);
 });
 
 test("Ctrl+C hard-cancels Settings before conflicting configurable actions", async (t) => {

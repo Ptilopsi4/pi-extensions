@@ -5,7 +5,7 @@
 Check the limits and usage for the provider account Pi is actually using, toggle Fast mode for supported OpenAI Codex models, and report xAI OAuth subscription usage.
 
 The extension reports each provider's native semantics instead of presenting unlike quotas as equivalent.
-xAI reporting defaults On, and the Settings screen warns that it uses an undocumented first-party consumer endpoint.
+xAI reporting defaults On and follows the current official Grok Build implementation.
 
 ## ✨ Features
 
@@ -83,7 +83,6 @@ Successful, already-completed, not-needed, and no-credit outcomes are reported s
 ## ⚙️ Settings
 
 Choose **Settings** in `/usage` to edit Codex Fast mode and xAI usage through Pi's settings-list interaction in TUI mode.
-The xAI row retains a warning that usage queries send the matched OAuth bearer to an undocumented first-party endpoint.
 RPC mode reports the active manual settings path instead of opening terminal UI.
 
 Both preferences live in Pi's user agent directory as `pi-usage.json`, normally `~/.pi/agent/pi-usage.json`.
@@ -110,8 +109,6 @@ A toggle affects provider requests whose payload hook starts after the save; a r
 Repair or remove an invalid file, then run `/reload` before trying the toggle again.
 
 ### xAI usage
-
-> **Privacy warning:** xAI usage sends the OAuth bearer matched to Pi's current runtime account to the undocumented first-party `https://cli-chat-proxy.grok.com` consumer service.
 
 The `xaiUsage` preference defaults to `true` when the settings file or field is absent.
 Turn it Off in the TUI Settings screen or edit the active user file manually, then run `/reload`:
@@ -204,7 +201,8 @@ It does not read Grok Build files, device state, names, email, or other profile 
 Responses are body-bounded, redirects are rejected, raw identity and billing payloads are not retained, and secrets are redacted from errors.
 Included allowance, on-demand usage, and prepaid balance remain distinct because they represent different billing concepts.
 
-The implementation contract was selected from these first-party revisions:
+The current official Grok Build implementation is the ground truth for the xAI integration contract.
+The implementation contract was verified against these first-party revisions:
 
 - Pi [`providers/xai.ts`](https://github.com/earendil-works/pi/blob/e86823096c5bad39e1ca282ec24bc5eb9bec745b/packages/ai/src/providers/xai.ts) and [`auth/oauth/xai.ts`](https://github.com/earendil-works/pi/blob/e86823096c5bad39e1ca282ec24bc5eb9bec745b/packages/ai/src/auth/oauth/xai.ts) at `e868230`, revalidated byte-for-byte for those files at [`ccfe79e`](https://github.com/earendil-works/pi/tree/ccfe79ed238674f760c986e3a61493aab794000a).
 - Grok Build [`UserInfo`](https://github.com/xai-org/grok-build/blob/9684fa3cdbf2995e30ea8b9b637f1db008f144fc/crates/codegen/xai-grok-shell/src/auth/model.rs), [`subscription_check.rs`](https://github.com/xai-org/grok-build/blob/9684fa3cdbf2995e30ea8b9b637f1db008f144fc/crates/codegen/xai-grok-shell/src/agent/subscription_check.rs), [`billing.rs`](https://github.com/xai-org/grok-build/blob/9684fa3cdbf2995e30ea8b9b637f1db008f144fc/crates/codegen/xai-grok-shell/src/extensions/billing.rs), [`auth/config.rs`](https://github.com/xai-org/grok-build/blob/9684fa3cdbf2995e30ea8b9b637f1db008f144fc/crates/codegen/xai-grok-shell/src/auth/config.rs), [`xai-grok-http`](https://github.com/xai-org/grok-build/blob/9684fa3cdbf2995e30ea8b9b637f1db008f144fc/crates/codegen/xai-grok-http/src/lib.rs), and [`xai-grok-version`](https://github.com/xai-org/grok-build/blob/9684fa3cdbf2995e30ea8b9b637f1db008f144fc/crates/codegen/xai-grok-version/Cargo.toml) at `9684fa3`.
@@ -214,7 +212,6 @@ The approved 2026-08-27 disposable-or-maintainer-account protocol smoke used onl
 The implementation also sends the non-secret client headers present on both routes in current Grok Build source, with `x-userid` added only for billing.
 The sanitized identity shape contained a string `userId` and nullable `subscriptionTier`; the billing shape contained an object `config` with period and distinct on-demand and prepaid wrappers, without retaining field values.
 
-These consumer routes are not a stable public API and may change or disappear without notice.
 Disable `xaiUsage` to stop all xAI consumer usage traffic while preserving other provider behavior.
 
 ### Z.AI (GLM Coding Plan)
@@ -283,7 +280,7 @@ Protocol v1 interoperability is characterized for the repository's supported Pi 
 ## 🚧 Limitations
 
 - Only providers with a meaningful usage source and verifiable Pi runtime auth are supported.
-- GitHub Copilot quota, Z.AI quota, xAI consumer usage, and OpenAI Codex reset redemption use undocumented provider endpoints that may change without notice.
+- GitHub Copilot quota, Z.AI quota, and OpenAI Codex reset redemption use undocumented provider endpoints that may change without notice.
 - Codex reset redemption requires a current ChatGPT OAuth credential from Pi's login or a compatible credential source; Codex API keys cannot redeem earned subscription resets.
 - xAI usage supports only a uniquely matched Pi OAuth subscription credential; xAI API keys and Management API credentials are unsupported.
 - Credentials resolved for custom provider base URLs are never forwarded to the providers' official usage endpoints; effective auth origin validation requires Pi 0.81.0 or newer.
