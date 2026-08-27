@@ -23,7 +23,7 @@ const GENERATED_BANNER = [
 	"// @ts-nocheck -- generated JavaScript uses a .ts extension for Pi's Jiti loader.",
 ].join("\n");
 const FORBIDDEN_EAGER_INPUTS = [];
-const FORBIDDEN_EAGER_EXTERNALS = ["@narumitw/pi-tui-kit"];
+const FORBIDDEN_EAGER_EXTERNALS = ["@narumitw/pi-tui-kit", "dbus-native"];
 
 export async function buildRuntime({
 	outputDirectory = distDirectory,
