@@ -51,6 +51,7 @@ export interface CdpConnectOptions extends CdpOperationOptions {
 
 const MAX_BUFFERED_EVENTS_PER_METHOD = 32;
 const MAX_CDP_MESSAGE_BYTES = 8 * 1024 * 1024;
+const activePageIds = new WeakMap<object, string>();
 
 interface PageOperationOptions {
 	sessionOwner?: object;
@@ -84,13 +85,13 @@ export async function resolvePage(pageId?: string, options: PageOperationOptions
 	const pages = await listPages(options);
 	if (pageId) return requirePage(pageId, pages);
 
-	const page = resolveDefaultPage(pages);
+	const page = resolveDefaultPage(pages, options.sessionOwner);
 	if (!page) {
 		throw new Error(
 			[
 				`No Chrome pages found at ${devToolsEndpoint(options.sessionOwner)}.`,
 				"Use chrome_devtools_navigate with a URL to create a page, or open a Chrome tab manually.",
-				launchHint(),
+				launchHint(options.sessionOwner),
 			].join("\n"),
 		);
 	}
@@ -105,20 +106,30 @@ export async function resolvePageForNavigation(
 	const pages = await listPages(options);
 	if (pageId) return { created: false, page: requirePage(pageId, pages) };
 
-	const page = resolveDefaultPage(pages);
+	const page = resolveDefaultPage(pages, options.sessionOwner);
 	if (page) return { created: false, page };
 
 	return { created: true, page: await createPage("about:blank", options) };
 }
 
-function resolveDefaultPage(pages: DevToolsPage[]) {
-	if (!state.activePageId) return pages[0];
+function resolveDefaultPage(pages: DevToolsPage[], owner?: object) {
+	const activePageId = owner ? activePageIds.get(owner) : state.activePageId;
+	if (!activePageId) return pages[0];
 
-	const activePage = pages.find((candidate) => candidate.id === state.activePageId);
+	const activePage = pages.find((candidate) => candidate.id === activePageId);
 	if (activePage) return activePage;
 
-	state.activePageId = undefined;
+	setActivePageId(owner, undefined);
 	return pages[0];
+}
+
+export function setActivePageId(owner: object | undefined, pageId: string | undefined) {
+	if (!owner) {
+		state.activePageId = pageId;
+		return;
+	}
+	if (pageId) activePageIds.set(owner, pageId);
+	else activePageIds.delete(owner);
 }
 
 function requirePage(pageId: string, pages: DevToolsPage[]) {

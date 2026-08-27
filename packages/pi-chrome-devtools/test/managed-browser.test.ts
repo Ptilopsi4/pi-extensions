@@ -3,14 +3,20 @@ import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { test } from "vitest";
 import {
+	browserSettingsForOwner,
 	buildManagedBrowserLaunchArguments,
 	classifyExtensionBrowserVersion,
+	devToolsEndpoint,
+	endpointSourceLabel,
 	ensureDevToolsEndpoint,
 	managedBrowserForOwner,
 	setBrowserManagerOperationsForTests,
 	shutdownManagedBrowser,
+	startManagedBrowserSession,
+	syncManagedBrowserSettings,
 } from "../src/browser-manager.js";
 import { beginWebMcpOperation, state } from "../src/runtime.js";
+import type { EffectiveBrowserSettings } from "../src/settings.js";
 
 class FakeChildProcess extends EventEmitter {
 	exited = false;
@@ -294,6 +300,9 @@ test("managed browsers and shutdown stay scoped to each session manager", async 
 	const firstOwner = {};
 	const secondOwner = {};
 	const children = [new FakeChildProcess(), new FakeChildProcess()];
+	const fetchedUrls: string[] = [];
+	const spawnArguments: string[][] = [];
+	const spawnExecutables: string[] = [];
 	let profileIndex = 0;
 	let spawnIndex = 0;
 	const removed: string[] = [];
@@ -308,17 +317,67 @@ test("managed browsers and shutdown stay scoped to each session manager", async 
 		rm: async (target) => {
 			removed.push(target);
 		},
-		fetch: async () =>
-			new Response(JSON.stringify({ Browser: "Chrome/149" }), {
+		fetch: async (input) => {
+			fetchedUrls.push(input);
+			return new Response(JSON.stringify({ Browser: "Chrome/149" }), {
 				status: 200,
 				headers: { "content-type": "application/json" },
-			}),
-		spawn: () => {
+			});
+		},
+		spawn: (executable, args) => {
+			spawnExecutables.push(executable);
+			spawnArguments.push(args);
 			const child = children[spawnIndex++];
 			assert.ok(child);
 			queueMicrotask(() => child.emit("spawn"));
 			return child as unknown as ChildProcess;
 		},
+	});
+	startManagedBrowserSession(firstOwner);
+	startManagedBrowserSession(secondOwner);
+	const firstSettings = {
+		endpoint: "http://localhost:9222",
+		host: "localhost",
+		port: 9222,
+		hostConfigured: true,
+		portConfigured: false,
+		autoLaunchEnabled: true,
+		executablePath: "/test/first-chrome-for-testing",
+		extensionPaths: ["/projects/first/extension"],
+		endpointSource: "user",
+		autoLaunchSource: "user",
+		executablePathSource: "user",
+		extensionPathsSource: "project",
+	} satisfies EffectiveBrowserSettings;
+	const secondSettings = {
+		endpoint: "http://127.0.0.1:9555",
+		host: "127.0.0.1",
+		port: 9555,
+		hostConfigured: true,
+		portConfigured: false,
+		autoLaunchEnabled: true,
+		executablePath: "/test/second-chromium",
+		extensionPaths: ["/projects/second/extension"],
+		endpointSource: "environment",
+		autoLaunchSource: "environment",
+		executablePathSource: "environment",
+		extensionPathsSource: "user",
+	} satisfies EffectiveBrowserSettings;
+	syncManagedBrowserSettings(firstOwner, firstSettings);
+	syncManagedBrowserSettings(secondOwner, secondSettings);
+	Object.assign(state, {
+		host: "global-settings-must-not-leak.example",
+		port: 9666,
+		configuredPort: 9666,
+		hostConfigured: true,
+		portConfigured: true,
+		autoLaunchEnabled: false,
+		browserExecutable: undefined,
+		extensionPaths: [],
+		endpointSource: "default",
+		autoLaunchSource: "default",
+		browserExecutableSource: "default",
+		extensionPathsSource: "default",
 	});
 	try {
 		await ensureDevToolsEndpoint(undefined, undefined, firstOwner);
@@ -326,6 +385,19 @@ test("managed browsers and shutdown stay scoped to each session manager", async 
 		assert.notEqual(managedBrowserForOwner(firstOwner), managedBrowserForOwner(secondOwner));
 		assert.equal(managedBrowserForOwner(firstOwner)?.port, 9333);
 		assert.equal(managedBrowserForOwner(secondOwner)?.port, 9444);
+		assert.deepEqual(browserSettingsForOwner(firstOwner), firstSettings);
+		assert.deepEqual(browserSettingsForOwner(secondOwner), secondSettings);
+		assert.equal(devToolsEndpoint(firstOwner), "http://localhost:9333");
+		assert.equal(devToolsEndpoint(secondOwner), "http://127.0.0.1:9444");
+		assert.equal(endpointSourceLabel(firstOwner), "user");
+		assert.equal(endpointSourceLabel(secondOwner), "environment");
+		assert.deepEqual(spawnExecutables, ["/test/first-chrome-for-testing", "/test/second-chromium"]);
+		assert.deepEqual(fetchedUrls, [
+			"http://localhost:9333/json/version",
+			"http://127.0.0.1:9444/json/version",
+		]);
+		assert.ok(spawnArguments[0]?.includes("--load-extension=/projects/first/extension"));
+		assert.ok(spawnArguments[1]?.includes("--load-extension=/projects/second/extension"));
 
 		const firstOperation = beginWebMcpOperation(firstOwner);
 		const secondOperation = beginWebMcpOperation(secondOwner);
@@ -343,6 +415,7 @@ test("managed browsers and shutdown stay scoped to each session manager", async 
 		await shutdownManagedBrowser(undefined, { owner: firstOwner });
 		await shutdownManagedBrowser(undefined, { owner: secondOwner });
 		restore();
+		resetRuntime();
 	}
 });
 

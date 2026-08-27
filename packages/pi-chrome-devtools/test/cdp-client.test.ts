@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { CdpClient, type CdpWebSocketConstructor } from "../src/cdp-client.js";
-import { enableWebMcp } from "../src/webmcp/protocol.js";
+import {
+	setBrowserManagerOperationsForTests,
+	syncManagedBrowserSettings,
+} from "../src/browser-manager.js";
+import {
+	CdpClient,
+	type CdpWebSocketConstructor,
+	resolvePage,
+	setActivePageId,
+} from "../src/cdp-client.js";
+import { state } from "../src/runtime.js";
+import { enableWebMcp, watchWebMcpIdentity } from "../src/webmcp/protocol.js";
 
 class FakeWebSocket extends EventTarget {
 	closeCalls = 0;
@@ -151,6 +161,83 @@ test("buffers an event that arrives before its command response", async () => {
 	client.close();
 });
 
+test("selected pages remain scoped to their session manager", async () => {
+	const firstOwner = {};
+	const secondOwner = {};
+	const previousAutoLaunch = state.autoLaunchEnabled;
+	state.autoLaunchEnabled = false;
+	syncManagedBrowserSettings(firstOwner, {
+		endpoint: "http://127.0.0.1:9333",
+		host: "127.0.0.1",
+		port: 9333,
+		hostConfigured: true,
+		portConfigured: true,
+		autoLaunchEnabled: false,
+		extensionPaths: [],
+		endpointSource: "user",
+		autoLaunchSource: "user",
+		executablePathSource: "default",
+		extensionPathsSource: "default",
+	});
+	syncManagedBrowserSettings(secondOwner, {
+		endpoint: "http://127.0.0.1:9444",
+		host: "127.0.0.1",
+		port: 9444,
+		hostConfigured: true,
+		portConfigured: true,
+		autoLaunchEnabled: false,
+		extensionPaths: [],
+		endpointSource: "user",
+		autoLaunchSource: "user",
+		executablePathSource: "default",
+		extensionPathsSource: "default",
+	});
+	const restore = setBrowserManagerOperationsForTests({
+		fetch: async (input) => {
+			const url = new URL(input);
+			if (url.pathname === "/json/version") return new Response("{}", { status: 200 });
+			const pagePrefix = url.port === "9333" ? "first" : "second";
+			return new Response(
+				JSON.stringify([
+					{
+						id: `${pagePrefix}-default`,
+						title: "Default",
+						type: "page",
+						url: "about:blank",
+						webSocketDebuggerUrl: `ws://127.0.0.1/${pagePrefix}-default`,
+					},
+					...(pagePrefix === "first"
+						? [
+								{
+									id: "first-selected",
+									title: "Selected",
+									type: "page",
+									url: "https://first.test",
+									webSocketDebuggerUrl: "ws://127.0.0.1/first-selected",
+								},
+							]
+						: []),
+				]),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			);
+		},
+	});
+	try {
+		setActivePageId(firstOwner, "first-selected");
+		setActivePageId(secondOwner, "missing-in-second");
+		assert.equal(
+			(await resolvePage(undefined, { sessionOwner: secondOwner })).id,
+			"second-default",
+		);
+		assert.equal((await resolvePage(undefined, { sessionOwner: firstOwner })).id, "first-selected");
+	} finally {
+		setActivePageId(firstOwner, undefined);
+		setActivePageId(secondOwner, undefined);
+		state.autoLaunchEnabled = previousAutoLaunch;
+		restore();
+	}
+});
+
 test("owns an inventory waiter rejection before the enable command settles", async () => {
 	const { client, socket } = await connectClient();
 	const enabled = enableWebMcp(client, new AbortController().signal);
@@ -159,6 +246,21 @@ test("owns an inventory waiter rejection before the enable command settles", asy
 	socket.respond({});
 
 	await assert.rejects(enabled, /malformed WebMCP\.toolsAdded/u);
+	client.close();
+});
+
+test("identity watchers own buffered predicate failures during construction", async () => {
+	const { client, socket } = await connectClient();
+	socket.message({ method: "WebMCP.toolsAdded", params: { tools: "malformed" } });
+	const watch = watchWebMcpIdentity(
+		client,
+		{ documentId: "loader-1", frameId: "frame-1", toolName: "read" },
+		new AbortController().signal,
+	);
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	assert.equal(watch.signal.aborted, true);
+	assert.match(String(watch.signal.reason), /malformed WebMCP tool-change event/u);
+	await watch.dispose();
 	client.close();
 });
 

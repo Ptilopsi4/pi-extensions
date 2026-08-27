@@ -1,5 +1,10 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { shutdownManagedBrowser, startManagedBrowserSession } from "./browser-manager.js";
+import {
+	shutdownManagedBrowser,
+	startManagedBrowserSession,
+	syncManagedBrowserSettings,
+} from "./browser-manager.js";
+import { setActivePageId } from "./cdp-client.js";
 import {
 	availableChromeDevtoolsTools,
 	configureChromeDevtoolsToolExposure,
@@ -98,12 +103,14 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 		});
 		startManagedBrowserSession(ctx.sessionManager);
 		if (generation !== state.sessionGeneration) return;
+		setActivePageId(ctx.sessionManager, undefined);
 		state.activePageId = undefined;
 		state.lastLaunchAttempt = undefined;
 		const projectTrusted = ctx.isProjectTrusted();
 		const settings = await loadSettings({ cwd: ctx.cwd, projectTrusted });
 		if (generation !== state.sessionGeneration) return;
 		applyRuntimeBrowserSettings(settings.effectiveBrowser, settings.paths, projectTrusted);
+		syncManagedBrowserSettings(ctx.sessionManager, settings.effectiveBrowser);
 		applyRuntimeWebMcpSetting(settings.effectiveWebMcpEnabled, ctx.sessionManager);
 		state.settingsNotice = settings.notice;
 		for (const warning of settings.warnings) {

@@ -154,26 +154,14 @@ export function watchWebMcpIdentity(
 	const staleController = new AbortController();
 	const watchSignal = AbortSignal.any([signal, stopController.signal]);
 	const options = { signal: watchSignal, timeoutMs: IDENTITY_WATCH_TIMEOUT_MS };
-	const watches = [
-		client.waitForEvent(
-			"Page.frameNavigated",
-			(value): value is unknown =>
-				frameNavigationChangesIdentity(value, expected.frameId, expected.documentId),
-			options,
-		),
-		client.waitForEvent(
-			"WebMCP.toolsAdded",
-			(value): value is unknown => toolChangeMatchesIdentity(value, expected),
-			options,
-		),
-		client.waitForEvent(
-			"WebMCP.toolsRemoved",
-			(value): value is unknown => toolChangeMatchesIdentity(value, expected),
-			options,
-		),
-	];
-	const settledWatches = watches.map((watch) =>
-		watch.then(
+	const settleWatch = (create: () => Promise<unknown>) => {
+		let watch: Promise<unknown>;
+		try {
+			watch = create();
+		} catch (error) {
+			watch = Promise.reject(error);
+		}
+		return watch.then(
 			() => {
 				if (staleController.signal.aborted) return;
 				staleController.abort(
@@ -189,8 +177,32 @@ export function watchWebMcpIdentity(
 				}
 				staleController.abort(error);
 			},
+		);
+	};
+	const settledWatches = [
+		settleWatch(() =>
+			client.waitForEvent(
+				"Page.frameNavigated",
+				(value): value is unknown =>
+					frameNavigationChangesIdentity(value, expected.frameId, expected.documentId),
+				options,
+			),
 		),
-	);
+		settleWatch(() =>
+			client.waitForEvent(
+				"WebMCP.toolsAdded",
+				(value): value is unknown => toolChangeMatchesIdentity(value, expected),
+				options,
+			),
+		),
+		settleWatch(() =>
+			client.waitForEvent(
+				"WebMCP.toolsRemoved",
+				(value): value is unknown => toolChangeMatchesIdentity(value, expected),
+				options,
+			),
+		),
+	];
 	return {
 		signal: AbortSignal.any([signal, staleController.signal]),
 		async dispose() {

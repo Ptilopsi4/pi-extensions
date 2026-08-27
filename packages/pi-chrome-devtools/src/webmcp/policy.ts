@@ -306,6 +306,14 @@ function rejectRegexBearingSchema(schema: unknown): void {
 
 function rejectExpensiveValidationSchema(schema: unknown) {
 	let branches = 0;
+	const countBranches = (count: number) => {
+		branches += count;
+		if (branches > MAX_SCHEMA_VALIDATION_BRANCHES) {
+			throw new Error(
+				`WebMCP input schema exceeds the validation branch limit of ${MAX_SCHEMA_VALIDATION_BRANCHES}.`,
+			);
+		}
+	};
 	const visit = (candidate: unknown): void => {
 		if (Array.isArray(candidate)) {
 			for (const child of candidate) visit(child);
@@ -314,13 +322,12 @@ function rejectExpensiveValidationSchema(schema: unknown) {
 		if (!isRecord(candidate)) return;
 		for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
 			const alternatives = candidate[keyword];
-			if (!Array.isArray(alternatives)) continue;
-			branches += alternatives.length;
-			if (branches > MAX_SCHEMA_VALIDATION_BRANCHES) {
-				throw new Error(
-					`WebMCP input schema exceeds the validation branch limit of ${MAX_SCHEMA_VALIDATION_BRANCHES}.`,
-				);
-			}
+			if (Array.isArray(alternatives)) countBranches(alternatives.length);
+		}
+		for (const keyword of ["dependencies", "dependentSchemas"] as const) {
+			const dependencies = candidate[keyword];
+			if (!isRecord(dependencies)) continue;
+			countBranches(Object.values(dependencies).filter(isRecord).length);
 		}
 		for (const child of Object.values(candidate)) visit(child);
 	};
