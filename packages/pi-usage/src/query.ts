@@ -31,6 +31,11 @@ const OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key";
 const OPENCODE_GO_USAGE_URL = "https://opencode.ai/zen/go/v1/usage";
 const XAI_USER_URL = "https://cli-chat-proxy.grok.com/v1/user?include=subscription";
 const XAI_BILLING_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
+const XAI_CLIENT_HEADERS = Object.freeze({
+	"X-XAI-Token-Auth": "xai-grok-cli",
+	"x-grok-client-version": "1.0.10",
+	"x-grok-client-mode": "interactive",
+});
 const MAX_SUCCESS_BODY_BYTES = 64 * 1024;
 const MAX_ERROR_BODY_BYTES = 4 * 1024;
 
@@ -149,11 +154,11 @@ export const SUPPORTED_ADAPTERS: readonly UsageProviderAdapter[] = [
 //   "openid profile email offline_access grok-cli:access api:access" at
 //   e86823096c5bad39e1ca282ec24bc5eb9bec745b, unchanged at
 //   ccfe79ed238674f760c986e3a61493aab794000a.
-// - Grok Build identity and credits routes/structs at 77cd7eb675ba911c225c3aaeeece3a20cbccc426.
+// - Grok Build identity, credits routes/structs, required token-auth and version headers, and
+//   client-mode telemetry at 9684fa3cdbf2995e30ea8b9b637f1db008f144fc (client version 1.0.10).
 // - xAI Management API's separate team billing boundary at
 //   723dd2aa22d17be35617463837dc47cda008d90e.
-// The approved 2026-08-27 protocol smoke found Authorization sufficient for identity and billing,
-// but x-userid remains attached to billing to bind the proxy-canonical identity as Grok Build does.
+// x-userid remains attached only to billing to bind the proxy-canonical identity as Grok Build does.
 export const XAI_ADAPTER: UsageProviderAdapter = {
 	id: "xai",
 	displayName: "xAI",
@@ -165,10 +170,14 @@ export const XAI_ADAPTER: UsageProviderAdapter = {
 	async query(auth, signal, timeoutMs, guard) {
 		if (!guard) throw new Error("xAI usage requires request-boundary revalidation.");
 		const startedAt = Date.now();
+		const clientAuth = {
+			...auth,
+			headers: { ...auth.headers, ...XAI_CLIENT_HEADERS },
+		};
 		await guard();
 		const userPayload = (await fetchProviderJson(
 			XAI_USER_URL,
-			auth,
+			clientAuth,
 			signal,
 			remainingTimeout(timeoutMs, startedAt),
 			"xAI consumer identity endpoint",
@@ -177,9 +186,9 @@ export const XAI_ADAPTER: UsageProviderAdapter = {
 		await guard();
 		const userId = validatedXaiUserId(userPayload.userId);
 		const billingAuth = {
-			...auth,
-			headers: { ...auth.headers, "x-userid": userId },
-			secrets: [...auth.secrets, userId],
+			...clientAuth,
+			headers: { ...clientAuth.headers, "x-userid": userId },
+			secrets: [...clientAuth.secrets, userId],
 		};
 		await guard();
 		const billingPayload = (await fetchProviderJson(

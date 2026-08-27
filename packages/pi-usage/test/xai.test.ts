@@ -301,10 +301,16 @@ test("identity-first transport sends only approved headers in exact order and do
 	assert.equal(requests[0]?.init?.redirect, "error");
 	assert.deepEqual(Object.fromEntries(new Headers(requests[0]?.init?.headers)), {
 		authorization: "Bearer oauth-access",
+		"x-grok-client-mode": "interactive",
+		"x-grok-client-version": "1.0.10",
+		"x-xai-token-auth": "xai-grok-cli",
 	});
 	assert.deepEqual(Object.fromEntries(new Headers(requests[1]?.init?.headers)), {
 		authorization: "Bearer oauth-access",
+		"x-grok-client-mode": "interactive",
+		"x-grok-client-version": "1.0.10",
 		"x-userid": "fixture-user-0001",
+		"x-xai-token-auth": "xai-grok-cli",
 	});
 	assert.equal(JSON.stringify(report).includes("fixture-user-0001"), false);
 });
