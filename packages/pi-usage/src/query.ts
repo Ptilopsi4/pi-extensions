@@ -9,6 +9,7 @@ import { normalizeCodexBackendPayload } from "./providers/codex.js";
 import { normalizeGitHubCopilotUsagePayload } from "./providers/github-copilot.js";
 import { normalizeOpenCodeZenPayload } from "./providers/opencode-zen.js";
 import { normalizeOpenRouterKeyPayload } from "./providers/openrouter.js";
+import { normalizeZaiQuotaPayload } from "./providers/zai.js";
 import type {
 	CodexBackendPayload,
 	GitHubCopilotUsagePayload,
@@ -18,6 +19,7 @@ import type {
 	ResolvedUsageAuth,
 	UsageProviderAdapter,
 	UsageReport,
+	ZaiQuotaPayload,
 } from "./types.js";
 
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
@@ -93,6 +95,41 @@ export const SUPPORTED_ADAPTERS: readonly UsageProviderAdapter[] = [
 				"OpenCode Zen usage endpoint",
 			);
 			return normalizeOpenCodeZenPayload(payload as OpenCodeZenPayload, Date.now());
+		},
+	},
+	{
+		id: "zai",
+		displayName: "Z.AI",
+		semantics: { kind: "consumer-subscription", label: "GLM Coding Plan usage" },
+		async query(auth, signal, timeoutMs) {
+			const payload = await fetchProviderJson(
+				zaiMonitorUrl(auth.model.baseUrl),
+				zaiMonitorAuth(auth),
+				signal,
+				timeoutMs,
+				"Z.AI quota endpoint",
+			);
+			return normalizeZaiQuotaPayload("zai", "Z.AI", payload as ZaiQuotaPayload, Date.now());
+		},
+	},
+	{
+		id: "zai-coding-cn",
+		displayName: "Z.AI Coding CN",
+		semantics: { kind: "consumer-subscription", label: "GLM Coding Plan usage" },
+		async query(auth, signal, timeoutMs) {
+			const payload = await fetchProviderJson(
+				zaiMonitorUrl(auth.model.baseUrl),
+				zaiMonitorAuth(auth),
+				signal,
+				timeoutMs,
+				"Z.AI Coding CN quota endpoint",
+			);
+			return normalizeZaiQuotaPayload(
+				"zai-coding-cn",
+				"Z.AI Coding CN",
+				payload as ZaiQuotaPayload,
+				Date.now(),
+			);
 		},
 	},
 ];
@@ -468,6 +505,8 @@ function hasOfficialUrlOrigin(value: string, providerId: string): boolean {
 		if (providerId === "openai-codex") return url.origin === "https://chatgpt.com";
 		if (providerId === "openrouter") return url.origin === "https://openrouter.ai";
 		if (providerId === "opencode-go") return url.origin === "https://opencode.ai";
+		if (providerId === "zai") return url.origin === "https://api.z.ai";
+		if (providerId === "zai-coding-cn") return url.origin === "https://open.bigmodel.cn";
 		if (providerId === "github-copilot") {
 			return (
 				url.protocol === "https:" && /^api\.[a-z0-9-]+\.githubcopilot\.com$/u.test(url.hostname)
@@ -497,6 +536,20 @@ function opencodeUsageUrl(baseUrl: string | undefined): string {
 	const base = baseUrl?.trim().replace(/\/+$/u, "");
 	if (!base) throw new Error("OpenCode Go model base URL is unavailable.");
 	return `${base}/usage`;
+}
+
+function zaiMonitorUrl(baseUrl: string | undefined): string {
+	const base = baseUrl?.trim();
+	if (!base) throw new Error("Z.AI model base URL is unavailable.");
+	return `${new URL(base).origin}/api/monitor/usage/quota/limit`;
+}
+
+function zaiMonitorAuth(auth: ResolvedUsageAuth): ResolvedUsageAuth {
+	const authorization = headerValue(auth.headers, "Authorization");
+	const token =
+		authorization === undefined ? undefined : (bearerToken(authorization) ?? authorization);
+	if (token === undefined || token === authorization) return auth;
+	return { ...auth, headers: { ...auth.headers, Authorization: token } };
 }
 
 function isAbortError(error: unknown): boolean {

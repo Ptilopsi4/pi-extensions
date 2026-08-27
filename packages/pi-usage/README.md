@@ -154,6 +154,18 @@ OpenRouter documents the distinction between credit and rate limits in its [API 
 
 The usage endpoint is derived from the model's base URL (`…/zen/go/v1/usage`) and is only queried when the resolved origin is `https://opencode.ai`; other origins fail before sending the credential.
 
+### Z.AI (GLM Coding Plan)
+
+- Provider ID: `zai` and `zai-coding-cn`
+- Semantics: GLM Coding Plan quota windows—the rolling 5-hour token window, weekly tokens where the plan reports them, and monthly MCP tool calls
+- Source: `GET {origin}/api/monitor/usage/quota/limit` with the origin derived from the model base URL (`https://api.z.ai` or `https://open.bigmodel.cn`) using Pi's resolved inference API key
+- Displayed data: per-window usage with reset times, per-tool MCP usage details, and the reported plan level. Weekly quotas that report only a percentage are shown as percent-based windows alongside the 5-hour window
+- Statusline: not published; Z.AI usage is visible through `/usage` only
+
+The quota monitor expects the raw API key without a `Bearer` prefix, so the extension strips a `Bearer` prefix from the resolved authorization before sending it to the monitor endpoint.
+Fingerprinting and redaction keep using the original resolved credential.
+Only the official `api.z.ai` and `open.bigmodel.cn` origins are queried; other origins fail before sending the credential.
+
 ## 🧭 Current and configured accounts
 
 `Current` means the provider and credential used by Pi's selected model.

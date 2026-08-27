@@ -36,6 +36,7 @@ export { normalizeCodexBackendPayload } from "./providers/codex.js";
 export { normalizeGitHubCopilotUsagePayload } from "./providers/github-copilot.js";
 export { normalizeOpenCodeZenPayload } from "./providers/opencode-zen.js";
 export { normalizeOpenRouterKeyPayload } from "./providers/openrouter.js";
+export { normalizeZaiQuotaPayload } from "./providers/zai.js";
 export {
 	adapterForProvider,
 	isStaleExtensionContextError,
