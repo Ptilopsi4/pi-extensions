@@ -29,6 +29,13 @@ const zaiModel = {
 	baseUrl: "https://api.z.ai/api/coding/paas/v4",
 };
 
+const kimiModel = {
+	id: "kimi-k2",
+	name: "Kimi K2",
+	provider: "kimi-coding",
+	baseUrl: "https://api.kimi.com/coding",
+};
+
 function codexAccessToken(accountId: string): string {
 	const payload = Buffer.from(
 		JSON.stringify({
@@ -59,6 +66,22 @@ function usageFetch(input: string | URL | Request): Promise<Response> {
 						usage_weekly: 5,
 						usage_monthly: 25,
 					},
+				}),
+				{ status: 200 },
+			),
+		);
+	}
+	if (url.endsWith("/coding/v1/usages")) {
+		return Promise.resolve(
+			new Response(
+				JSON.stringify({
+					usage: { used: "40", limit: "1000" },
+					limits: [
+						{
+							window: { duration: "300", timeUnit: "TIME_UNIT_MINUTE" },
+							detail: { used: "1", limit: "100" },
+						},
+					],
 				}),
 				{ status: 200 },
 			),
@@ -336,18 +359,21 @@ test("command arguments are rejected instead of becoming a hidden interface", as
 	assert.match(notifications[0]?.message ?? "", /does not accept arguments/);
 });
 
-test("explicit all-provider query labels current/configured and retains provider failures", async (t) => {
+test("explicit all-provider query labels current/configured and retains Kimi plus failures", async (t) => {
 	const originalFetch = globalThis.fetch;
 	t.onTestFinished(() => {
 		globalThis.fetch = originalFetch;
 	});
 	globalThis.fetch = async (input) => {
-		if (String(input).endsWith("/api/v1/key")) return usageFetch(input);
+		if (String(input).endsWith("/api/v1/key") || String(input).endsWith("/coding/v1/usages")) {
+			return usageFetch(input);
+		}
 		return new Response("backend unavailable", { status: 503, statusText: "Unavailable" });
 	};
 
 	const titles: string[] = [];
 	const choices = ["View all configured providers…", "Close"];
+	const configured = new Set(["openrouter", "openai-codex", "kimi-coding"]);
 	const mock = createMockPi();
 	usageExtension(mock.pi);
 	const command = mock.commands.get("usage");
@@ -361,10 +387,18 @@ test("explicit all-provider query labels current/configured and retains provider
 			return choices.shift();
 		},
 		modelRegistry: {
-			getProviderAuth: async (provider: string) => ({ auth: { apiKey: `${provider}-key` } }),
-			getAvailable: () => [openRouterModel, codexModel],
-			getAll: () => [openRouterModel, codexModel],
-			getProviderAuthStatus: () => ({ configured: true, source: "stored" }),
+			getProviderAuth: async (provider: string) => ({
+				auth: {
+					apiKey: `${provider}-key`,
+					...(provider === "kimi-coding" ? { baseUrl: kimiModel.baseUrl } : {}),
+				},
+			}),
+			getAvailable: () => [openRouterModel, codexModel, kimiModel],
+			getAll: () => [openRouterModel, codexModel, kimiModel],
+			getProviderAuthStatus: (provider: string) => ({
+				configured: configured.has(provider),
+				source: "stored",
+			}),
 			getProviderDisplayName: (provider: string) => provider,
 		},
 	});
@@ -374,6 +408,8 @@ test("explicit all-provider query labels current/configured and retains provider
 	assert.equal(titles.length, 2);
 	assert.match(titles[1] ?? "", /OpenRouter Usage · Current/);
 	assert.match(titles[1] ?? "", /OpenAI Codex · Configured/);
+	assert.match(titles[1] ?? "", /Kimi For Coding Usage · Configured/);
+	assert.match(titles[1] ?? "", /1 of 100 used · 99% left/);
 	assert.match(titles[1] ?? "", /query failed/i);
 	assert.equal(statuses.get("usage"), "openrouter $75.00 left");
 });
@@ -667,6 +703,82 @@ test("session shutdown aborts usage action and provider selectors", async (t) =>
 	assert.equal(dialogSignals.length, 2);
 	assert.equal(dialogSignals[0], dialogSignals[1]);
 	assert.equal(dialogSignals[0]?.aborted, true);
+});
+
+test("current Kimi usage follows account changes and clears status on model replacement", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	let activeKey = "kimi-account-a";
+	const fetchedKeys: string[] = [];
+	globalThis.fetch = async (_input, init) => {
+		const authorization = new Headers(init?.headers).get("authorization") ?? "";
+		fetchedKeys.push(authorization);
+		const used = activeKey === "kimi-account-a" ? "1" : "25";
+		return new Response(
+			JSON.stringify({
+				usage: { used: "40", limit: "1000" },
+				limits: [
+					{
+						window: { duration: 300, timeUnit: "TIME_UNIT_MINUTE" },
+						detail: { used, limit: "100" },
+					},
+				],
+			}),
+			{ status: 200 },
+		);
+	};
+	const mock = createMockPi();
+	usageExtension(mock.pi);
+	const command = mock.commands.get("usage");
+	assert.ok(command);
+	const titles: string[] = [];
+	const { ctx, statuses } = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		model: kimiModel,
+		select: async (title: string) => {
+			titles.push(title);
+			return "Close";
+		},
+		modelRegistry: {
+			getProviderAuth: async () => ({
+				auth: { apiKey: activeKey, baseUrl: kimiModel.baseUrl },
+			}),
+			getAvailable: () => [kimiModel],
+			getAll: () => [kimiModel],
+		},
+	});
+
+	mock.events.get("session_start")?.[0]?.({}, ctx);
+	await settle();
+	assert.equal(statuses.get("usage"), "kimi 99% 5h 96% wk");
+	await command.handler("", ctx);
+	assert.match(titles[0] ?? "", /Kimi For Coding Usage · Current/);
+	assert.match(titles[0] ?? "", /1 of 100 used · 99% left/);
+
+	activeKey = "kimi-account-b";
+	mock.events.get("turn_start")?.[0]?.({}, ctx);
+	await settle();
+	assert.equal(statuses.get("usage"), "kimi 75% 5h 96% wk");
+	assert.ok(fetchedKeys.includes("Bearer kimi-account-a"));
+	assert.ok(fetchedKeys.includes("Bearer kimi-account-b"));
+
+	mock.events.get("model_select")?.[0]?.(
+		{
+			model: {
+				id: "other",
+				name: "Other",
+				provider: "unsupported",
+				baseUrl: "https://example.test",
+			},
+		},
+		ctx,
+	);
+	assert.equal(statuses.get("usage"), undefined);
+	mock.events.get("session_shutdown")?.[0]?.({}, ctx);
+	assert.equal(statuses.get("usage"), undefined);
 });
 
 test("menu-only providers query through /usage without automatic status refresh", async (t) => {

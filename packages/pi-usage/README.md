@@ -10,6 +10,7 @@ The extension reports each provider's native semantics instead of presenting unl
 
 - Shows current-account usage and next actions through `/usage`.
 - Supports OpenAI Codex subscription windows, credits, resets, and model-specific buckets.
+- Supports Kimi For Coding plan windows, resets, and separately labeled booster-wallet currency.
 - Supports GitHub Copilot allowances and OpenRouter per-key limits and spend windows.
 - Toggles persistent Codex Fast routing through `/fast` or the contextual usage menu.
 - Redeems eligible Codex resets only after fresh account matching and explicit confirmation.
@@ -118,6 +119,28 @@ API-key credentials, configured-but-not-current Codex accounts, account changes 
 Backend-provided titles and descriptions are sanitized for terminal display.
 Opaque credit and account IDs are never shown or persisted by the extension.
 
+### Kimi For Coding
+
+- Provider ID: `kimi-coding`
+- Semantics: Kimi Coding Plan request windows plus a separate Extra Usage booster wallet
+- Source: `GET https://api.kimi.com/coding/v1/usages` using Pi's freshly resolved runtime Bearer credential
+- Displayed data: the weekly plan summary, returned sub-windows such as five-hour or daily limits, used and remaining request percentages, valid reset times, wallet balance, monthly spend, and monthly charge limit
+- Statusline examples: `kimi 99% 5h 96% wk` or `kimi 95% 1d`
+
+Both Pi API-key credentials and Pi OAuth credentials are accepted because current Pi resolves each form as Bearer authorization for the same official Kimi inference origin.
+The extension queries the fixed usage endpoint only when both the selected model origin and the effective resolved-auth origin are `https://api.kimi.com`.
+Custom and proxy origins fail before network access, redirects are rejected, and the credential is never sent to an override from Kimi Code's environment-specific development path.
+
+Plan buckets remain integer request counts and are rendered with their source-defined windows.
+Unknown units, duplicate windows, missing counts, invalid timestamps, and malformed rows remain unavailable rather than receiving guessed semantics.
+Booster-wallet `amount` and `amountLeft` values use Kimi's first-party conversion of 1,000,000 fixed-point units per cent, while monthly values already arrive in cents.
+Wallet values retain their currency and stay separate from plan requests and percentages in reports and the statusline.
+
+The contract was revalidated on 2026-08-27 against [Pi `c49906ec77788625aacbdc53ebca6fbe65bd20f5`](https://github.com/earendil-works/pi/tree/c49906ec77788625aacbdc53ebca6fbe65bd20f5), including [`kimi-coding.ts`](https://github.com/earendil-works/pi/blob/c49906ec77788625aacbdc53ebca6fbe65bd20f5/packages/ai/src/providers/kimi-coding.ts) and [`auth/oauth/kimi-coding.ts`](https://github.com/earendil-works/pi/blob/c49906ec77788625aacbdc53ebca6fbe65bd20f5/packages/ai/src/auth/oauth/kimi-coding.ts).
+It was also revalidated against [Kimi Code `676e4d82240855044fe809fea89ce1dbe8e512cf`](https://github.com/MoonshotAI/kimi-code/tree/676e4d82240855044fe809fea89ce1dbe8e512cf), including [`managed-usage.ts`](https://github.com/MoonshotAI/kimi-code/blob/676e4d82240855044fe809fea89ce1dbe8e512cf/packages/oauth/src/managed-usage.ts) and its [tests](https://github.com/MoonshotAI/kimi-code/blob/676e4d82240855044fe809fea89ce1dbe8e512cf/packages/oauth/test/managed-usage.test.ts).
+The pinned Pi source at `e86823096c5bad39e1ca282ec24bc5eb9bec745b` has no changes in either reviewed Kimi file at the selected revision.
+The pinned Kimi managed-usage source at `cd7c97b377a77f7ae1b9d541cafe314e986ec074` is an ancestor of that selected revision and has no changes in the reviewed source or tests.
+
 ### GitHub Copilot
 
 - Provider ID: `github-copilot`
@@ -219,7 +242,7 @@ Protocol v1 interoperability is characterized for the repository's supported Pi 
 ## 🚧 Limitations
 
 - Only providers with a meaningful usage source and verifiable Pi runtime auth are supported.
-- GitHub Copilot quota, Z.AI quota, and OpenAI Codex reset redemption use undocumented provider endpoints that may change without notice.
+- GitHub Copilot quota, Kimi managed usage, Z.AI quota, and OpenAI Codex reset redemption rely on provider-owned endpoints that may change without notice.
 - Codex reset redemption requires a current ChatGPT OAuth credential from Pi's login or a compatible credential source; Codex API keys cannot redeem earned subscription resets.
 - Credentials resolved for custom provider base URLs are never forwarded to the providers' official usage endpoints; effective auth origin validation requires Pi 0.81.0 or newer.
 - Provider reports are snapshots and may themselves be delayed by the provider.
@@ -264,7 +287,7 @@ The generated runtime is built from the authoritative `src/index.ts` graph and d
 
 ## 🔎 Keywords
 
-Pi extension, Pi coding agent, usage, quota, OpenAI Codex usage, ChatGPT subscription limits, GitHub Copilot AI credits, GitHub Copilot premium requests, OpenRouter credits, API-key spend limits, TypeScript Pi package, npm Pi extension.
+Pi extension, Pi coding agent, usage, quota, OpenAI Codex usage, ChatGPT subscription limits, Kimi For Coding, Kimi Coding Plan usage, GitHub Copilot AI credits, GitHub Copilot premium requests, OpenRouter credits, API-key spend limits, TypeScript Pi package, npm Pi extension.
 
 ## 📄 License
 

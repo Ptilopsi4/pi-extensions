@@ -4,7 +4,7 @@ export type PiModel = NonNullable<ExtensionContext["model"]>;
 export type UsageModel = Pick<PiModel, "id" | "name" | "provider">;
 
 export type UsageSemanticsKind = "consumer-subscription" | "api-key" | "project";
-export type UsageUnit = "percent" | "usd" | "count";
+export type UsageUnit = "percent" | "usd" | "currency" | "count";
 export type UsageDisplayState = "current" | "configured";
 
 export interface UsageSemantics {
@@ -32,6 +32,7 @@ export interface UsageMetric {
 	label: string;
 	value: number | string;
 	unit?: UsageUnit;
+	currency?: string;
 }
 
 export interface UsageReport {
@@ -100,6 +101,12 @@ export type OpenCodeZenPayload = {
 
 export type ZaiQuotaPayload = {
 	data?: unknown;
+};
+
+export type KimiCodingUsagePayload = {
+	usage?: unknown;
+	limits?: unknown;
+	boosterWallet?: unknown;
 };
 
 export type CodexBackendPayload = {

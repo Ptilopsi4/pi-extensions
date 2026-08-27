@@ -19,6 +19,7 @@ export function formatUsageReport(report: UsageReport, displayState: UsageDispla
 	else if (report.providerId === "github-copilot") formatGitHubCopilotReport(lines, report);
 	else if (report.providerId === "openrouter") formatOpenRouterReport(lines, report);
 	else if (report.providerId === "opencode-go") formatOpenCodeZenReport(lines, report);
+	else if (report.providerId === "kimi-coding") formatKimiCodingReport(lines, report);
 	else if (report.providerId === "zai" || report.providerId === "zai-coding-cn") {
 		formatZaiReport(lines, report);
 	} else formatGenericReport(lines, report);
@@ -39,6 +40,7 @@ export function formatUsageStatusline(report: UsageReport, model?: UsageModel): 
 		if (typeof total?.value === "number") return `openrouter ${formatUsd(total.value)} used`;
 	}
 	if (report.providerId === "opencode-go") return formatOpenCodeZenStatusline(report);
+	if (report.providerId === "kimi-coding") return formatKimiCodingStatusline(report);
 	return undefined;
 }
 
@@ -160,6 +162,62 @@ function formatOpenCodeZenStatusline(report: UsageReport): string | undefined {
 		parts.push(`${clampPercent(bucket.used).toFixed(0)}% ${compact}`);
 	}
 	return parts.length > 1 ? parts.join(" ") : undefined;
+}
+
+function formatKimiCodingReport(lines: string[], report: UsageReport): void {
+	for (const bucket of report.buckets) {
+		const reset = bucket.resetsAt ? ` (resets ${formatReset(bucket.resetsAt)})` : "";
+		if (bucket.used === undefined || bucket.limit === undefined) {
+			lines.push(`${`${bucket.label}:`.padEnd(VALUE_COLUMN)}unavailable${reset}`);
+			continue;
+		}
+		lines.push(
+			`${`${bucket.label}:`.padEnd(VALUE_COLUMN)}${bucket.used} of ${bucket.limit} used · ${percentRemaining(bucket)}% left${reset}`,
+		);
+	}
+	const balance = report.metrics.find((metric) => metric.id === "booster-balance");
+	const total = report.metrics.find((metric) => metric.id === "booster-total");
+	const monthlyUsed = report.metrics.find((metric) => metric.id === "booster-monthly-used");
+	const monthlyLimit = report.metrics.find((metric) => metric.id === "booster-monthly-limit");
+	if (!balance && !monthlyUsed && !monthlyLimit) return;
+	lines.push("", "Extra usage wallet:");
+	if (balance) {
+		const totalSuffix = total ? ` of ${formatCurrencyMetric(total)}` : "";
+		lines.push(`${"Balance:".padEnd(VALUE_COLUMN)}${formatCurrencyMetric(balance)}${totalSuffix}`);
+	}
+	if (monthlyUsed) {
+		lines.push(`${"Used this month:".padEnd(VALUE_COLUMN)}${formatCurrencyMetric(monthlyUsed)}`);
+	}
+	if (monthlyLimit) {
+		lines.push(`${"Monthly limit:".padEnd(VALUE_COLUMN)}${formatCurrencyMetric(monthlyLimit)}`);
+	}
+}
+
+function formatKimiCodingStatusline(report: UsageReport): string | undefined {
+	const fiveHour = report.buckets.find((bucket) => bucket.id === "five-hour");
+	const weekly = report.buckets.find((bucket) => bucket.id === "weekly");
+	const subWindow = fiveHour ?? report.buckets.find((bucket) => bucket.id !== "weekly");
+	const selected = [subWindow, weekly].filter(
+		(bucket, index, buckets): bucket is UsageBucket =>
+			bucket !== undefined && buckets.indexOf(bucket) === index,
+	);
+	const parts = ["kimi"];
+	for (const bucket of selected) {
+		if (!bucket.limit || bucket.remaining === undefined) continue;
+		const fallback = bucket.id === "weekly" ? "weekly" : "5h";
+		parts.push(
+			`${percentRemaining(bucket)}% ${formatWindowLabel(bucket.windowMinutes, fallback, true)}`,
+		);
+	}
+	return parts.length > 1 ? parts.join(" ") : undefined;
+}
+
+function formatCurrencyMetric(metric: UsageReport["metrics"][number]): string {
+	if (typeof metric.value !== "number") return String(metric.value);
+	const currency = metric.currency ?? "USD";
+	if (currency === "USD") return `$${metric.value.toFixed(2)}`;
+	if (currency === "CNY") return `¥${metric.value.toFixed(2)}`;
+	return `${metric.value.toFixed(2)} ${currency}`;
 }
 
 function formatZaiReport(lines: string[], report: UsageReport): void {
