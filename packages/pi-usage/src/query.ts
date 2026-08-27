@@ -9,6 +9,7 @@ import { normalizeCodexBackendPayload } from "./providers/codex.js";
 import { normalizeGitHubCopilotUsagePayload } from "./providers/github-copilot.js";
 import { normalizeOpenCodeZenPayload } from "./providers/opencode-zen.js";
 import { normalizeOpenRouterKeyPayload } from "./providers/openrouter.js";
+import { normalizeXaiBillingPayload } from "./providers/xai.js";
 import { normalizeZaiQuotaPayload } from "./providers/zai.js";
 import type {
 	CodexBackendPayload,
@@ -19,6 +20,8 @@ import type {
 	ResolvedUsageAuth,
 	UsageProviderAdapter,
 	UsageReport,
+	XaiBillingPayload,
+	XaiUserPayload,
 	ZaiQuotaPayload,
 } from "./types.js";
 
@@ -26,10 +29,19 @@ const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const GITHUB_COPILOT_USAGE_URL = "https://api.github.com/copilot_internal/user";
 const OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key";
 const OPENCODE_GO_USAGE_URL = "https://opencode.ai/zen/go/v1/usage";
+const XAI_USER_URL = "https://cli-chat-proxy.grok.com/v1/user?include=subscription";
+const XAI_BILLING_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
+const XAI_CLIENT_HEADERS = Object.freeze({
+	"X-XAI-Token-Auth": "xai-grok-cli",
+	"x-grok-client-version": "1.0.10",
+	"x-grok-client-mode": "interactive",
+});
 const MAX_SUCCESS_BODY_BYTES = 64 * 1024;
 const MAX_ERROR_BODY_BYTES = 4 * 1024;
 
 export const AUTH_FINGERPRINT_SALT = randomBytes(32);
+
+export type UsageRequestGuard = () => Promise<void>;
 
 export const SUPPORTED_ADAPTERS: readonly UsageProviderAdapter[] = [
 	{
@@ -137,10 +149,70 @@ export const SUPPORTED_ADAPTERS: readonly UsageProviderAdapter[] = [
 	},
 ];
 
+// Reviewed contract pins:
+// - Pi xAI provider at https://api.x.ai and OAuth scope
+//   "openid profile email offline_access grok-cli:access api:access" at
+//   e86823096c5bad39e1ca282ec24bc5eb9bec745b, unchanged at
+//   ccfe79ed238674f760c986e3a61493aab794000a.
+// - Grok Build identity, credits routes/structs, required token-auth and version headers, and
+//   client-mode telemetry at 9684fa3cdbf2995e30ea8b9b637f1db008f144fc (client version 1.0.10).
+// - xAI Management API's separate team billing boundary at
+//   723dd2aa22d17be35617463837dc47cda008d90e.
+// x-userid remains attached only to billing to bind the proxy-canonical identity as Grok Build does.
+export const XAI_ADAPTER: UsageProviderAdapter = {
+	id: "xai",
+	displayName: "xAI",
+	semantics: {
+		kind: "consumer-subscription",
+		label: "xAI consumer subscription usage",
+	},
+	publishesStatusline: false,
+	async query(auth, signal, timeoutMs, guard) {
+		if (!guard) throw new Error("xAI usage requires request-boundary revalidation.");
+		const startedAt = Date.now();
+		const clientAuth = {
+			...auth,
+			headers: { ...auth.headers, ...XAI_CLIENT_HEADERS },
+		};
+		await guard();
+		const userPayload = (await fetchProviderJson(
+			XAI_USER_URL,
+			clientAuth,
+			signal,
+			remainingTimeout(timeoutMs, startedAt),
+			"xAI consumer identity endpoint",
+			{ redirect: "error", userAgent: false },
+		)) as XaiUserPayload;
+		await guard();
+		const userId = validatedXaiUserId(userPayload.userId);
+		const billingAuth = {
+			...clientAuth,
+			headers: { ...clientAuth.headers, "x-userid": userId },
+			secrets: [...clientAuth.secrets, userId],
+		};
+		await guard();
+		const billingPayload = (await fetchProviderJson(
+			XAI_BILLING_URL,
+			billingAuth,
+			signal,
+			remainingTimeout(timeoutMs, startedAt),
+			"xAI consumer billing endpoint",
+			{ redirect: "error", userAgent: false },
+		)) as XaiBillingPayload;
+		await guard();
+		return normalizeXaiBillingPayload(billingPayload, userPayload.subscriptionTier, Date.now());
+	},
+};
+
+export function usageAdapters(xaiUsage = true): readonly UsageProviderAdapter[] {
+	return xaiUsage ? [...SUPPORTED_ADAPTERS, XAI_ADAPTER] : SUPPORTED_ADAPTERS;
+}
+
 export function adapterForProvider(
 	providerId: string | undefined,
+	xaiUsage = true,
 ): UsageProviderAdapter | undefined {
-	return SUPPORTED_ADAPTERS.find((adapter) => adapter.id === providerId);
+	return usageAdapters(xaiUsage).find((adapter) => adapter.id === providerId);
 }
 
 export function isStaleExtensionContextError(error: unknown): boolean {
@@ -204,6 +276,13 @@ export async function resolveUsageAuth(
 			offered.offeredCount === 0,
 		);
 	}
+	if (adapter.id === "xai") {
+		const offered = candidateReader
+			? candidateReader(ctx, adapter.id)
+			: fallbackOAuthCredentialCandidates(adapter.id, credentialReader);
+		if (!offered.ok) throw new Error("xAI OAuth credential discovery failed closed.");
+		return resolveXaiUsageAuth(auth, model, salt, offered.candidates);
+	}
 	const authorization = authorizationFrom(auth);
 	if (!authorization) return undefined;
 	const headers = { Authorization: authorization };
@@ -224,9 +303,10 @@ export async function queryProviderUsage(
 	auth: ResolvedUsageAuth,
 	signal: AbortSignal,
 	timeoutMs: number,
+	guard?: UsageRequestGuard,
 ): Promise<UsageReport> {
 	try {
-		return await adapter.query(auth, signal, timeoutMs);
+		return await adapter.query(auth, signal, timeoutMs, guard);
 	} catch (error) {
 		if (isStaleExtensionContextError(error) || isAbortError(error)) throw error;
 		throw new Error(redactUsageError(errorMessage(error), auth.secrets));
@@ -266,6 +346,8 @@ export async function fetchProviderJson(
 	request: {
 		method?: "GET" | "POST";
 		body?: Record<string, unknown>;
+		redirect?: RequestRedirect;
+		userAgent?: boolean;
 	} = {},
 ): Promise<Record<string, unknown>> {
 	const controller = new AbortController();
@@ -279,7 +361,9 @@ export async function fetchProviderJson(
 	}, timeoutMs);
 	try {
 		const headers = { ...auth.headers };
-		if (!hasHeader(headers, "User-Agent")) headers["User-Agent"] = "pi-usage";
+		if (request.userAgent !== false && !hasHeader(headers, "User-Agent")) {
+			headers["User-Agent"] = "pi-usage";
+		}
 		if (request.body && !hasHeader(headers, "Content-Type")) {
 			headers["Content-Type"] = "application/json";
 		}
@@ -287,6 +371,7 @@ export async function fetchProviderJson(
 			method: request.method ?? "GET",
 			headers,
 			...(request.body ? { body: JSON.stringify(request.body) } : {}),
+			...(request.redirect ? { redirect: request.redirect } : {}),
 			signal: controller.signal,
 		});
 		if (controller.signal.aborted)
@@ -296,6 +381,7 @@ export async function fetchProviderJson(
 			response.ok ? MAX_SUCCESS_BODY_BYTES : MAX_ERROR_BODY_BYTES,
 			!response.ok,
 			description,
+			controller.signal,
 		);
 		if (controller.signal.aborted)
 			throw Object.assign(new Error("Usage query aborted."), { name: "AbortError" });
@@ -332,12 +418,16 @@ async function readBoundedResponse(
 	maxBytes: number,
 	truncateOverflow: boolean,
 	description: string,
+	signal: AbortSignal,
 ): Promise<string> {
 	if (!response.body) return "";
 	const reader = response.body.getReader();
 	const chunks: Uint8Array[] = [];
 	let total = 0;
 	let truncated = false;
+	const abort = () => void reader.cancel().catch(() => undefined);
+	if (signal.aborted) abort();
+	else signal.addEventListener("abort", abort, { once: true });
 	try {
 		while (true) {
 			const { done, value } = await reader.read();
@@ -354,6 +444,7 @@ async function readBoundedResponse(
 			total += value.byteLength;
 		}
 	} finally {
+		signal.removeEventListener("abort", abort);
 		reader.releaseLock();
 	}
 	if (truncated && !truncateOverflow) {
@@ -387,6 +478,73 @@ type UsageAuthRegistry = {
 		| undefined
 	>;
 };
+
+function resolveXaiUsageAuth(
+	auth: RequestAuth,
+	model: PiModel,
+	salt: Uint8Array,
+	candidates: readonly unknown[],
+): ResolvedUsageAuth {
+	const resolvedAccess = bearerToken(headerValue(auth.headers, "Authorization")) ?? auth.apiKey;
+	if (!resolvedAccess) throw new Error("xAI runtime authentication was incomplete.");
+	let sawOAuth = false;
+	let sawMatchingAccess = false;
+	let sawIncompleteMatch = false;
+	const matches: Array<{ access: string; refresh: string }> = [];
+	for (const candidate of candidates) {
+		try {
+			const credential = asObject(candidate);
+			if (credential?.type !== "oauth") continue;
+			sawOAuth = true;
+			if (credential.access !== resolvedAccess) continue;
+			sawMatchingAccess = true;
+			if (
+				typeof credential.access !== "string" ||
+				!credential.access ||
+				typeof credential.refresh !== "string" ||
+				!credential.refresh ||
+				typeof credential.expires !== "number" ||
+				!Number.isFinite(credential.expires)
+			) {
+				sawIncompleteMatch = true;
+				continue;
+			}
+			matches.push({ access: credential.access, refresh: credential.refresh });
+		} catch {
+			// Malformed candidates never authorize a consumer-proxy request.
+		}
+	}
+	if (sawIncompleteMatch) throw new Error("The matching xAI OAuth credential was incomplete.");
+	if (matches.length > 1) {
+		throw new Error("Multiple OAuth credentials match the active xAI runtime account.");
+	}
+	const match = matches[0];
+	if (!match) {
+		if (!sawOAuth) {
+			throw new Error(
+				"xAI consumer usage requires the OAuth subscription account configured through Pi /login; XAI_API_KEY users can review API spend at console.x.ai.",
+			);
+		}
+		if (sawMatchingAccess) throw new Error("The matching xAI OAuth credential was incomplete.");
+		throw new Error("The active xAI runtime account does not match Pi's stored OAuth account.");
+	}
+	const authorization = `Bearer ${match.access}`;
+	const headers = { Authorization: authorization };
+	return {
+		apiKey: match.access,
+		headers,
+		fingerprint: fingerprintResolvedAuth({ headers }, salt),
+		secrets: [
+			match.access,
+			match.refresh,
+			resolvedAccess,
+			auth.apiKey,
+			headerValue(auth.headers, "Authorization"),
+			authorization,
+		].filter((value): value is string => Boolean(value)),
+		model,
+	};
+}
 
 function resolveGitHubCopilotUsageAuth(
 	auth: RequestAuth,
@@ -509,6 +667,7 @@ function hasOfficialUrlOrigin(value: string, providerId: string): boolean {
 		if (providerId === "openai-codex") return url.origin === "https://chatgpt.com";
 		if (providerId === "openrouter") return url.origin === "https://openrouter.ai";
 		if (providerId === "opencode-go") return url.origin === "https://opencode.ai";
+		if (providerId === "xai") return url.origin === "https://api.x.ai";
 		if (providerId === "zai") return url.origin === "https://api.z.ai";
 		if (providerId === "zai-coding-cn") return url.origin === "https://open.bigmodel.cn";
 		if (providerId === "github-copilot") {
@@ -534,6 +693,19 @@ function headerValue(
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {
 	return Object.keys(headers).some((key) => key.toLowerCase() === name.toLowerCase());
+}
+
+function validatedXaiUserId(value: unknown): string {
+	if (typeof value !== "string" || !/^[A-Za-z0-9._~-]{1,128}$/u.test(value)) {
+		throw new Error("xAI consumer identity returned an unsafe canonical user ID.");
+	}
+	return value;
+}
+
+function remainingTimeout(timeoutMs: number, startedAt: number): number {
+	const remaining = timeoutMs - (Date.now() - startedAt);
+	if (remaining <= 0) throw new Error("Timed out while fetching xAI consumer usage.");
+	return remaining;
 }
 
 function zaiMonitorUrl(baseUrl: string | undefined): string {

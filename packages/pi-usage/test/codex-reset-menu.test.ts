@@ -308,6 +308,7 @@ test("TUI reset confirmation is width-safe and external disposal aborts confirme
 	const rootScreen = tui.resultPromise;
 	assert.match(tui.render(32).join("\n"), /Provider usage/iu);
 	tui.press("tui.select.down");
+	tui.press("tui.select.down");
 	tui.press("tui.select.confirm");
 	await rootScreen;
 

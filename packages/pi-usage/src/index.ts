@@ -36,6 +36,7 @@ export { normalizeCodexBackendPayload } from "./providers/codex.js";
 export { normalizeGitHubCopilotUsagePayload } from "./providers/github-copilot.js";
 export { normalizeOpenCodeZenPayload } from "./providers/opencode-zen.js";
 export { normalizeOpenRouterKeyPayload } from "./providers/openrouter.js";
+export { normalizeXaiBillingPayload } from "./providers/xai.js";
 export { normalizeZaiQuotaPayload } from "./providers/zai.js";
 export {
 	adapterForProvider,
@@ -44,6 +45,8 @@ export {
 	queryProviderUsage,
 	resolveUsageAuth,
 	SUPPORTED_ADAPTERS,
+	usageAdapters,
+	XAI_ADAPTER,
 } from "./query.js";
 export type {
 	UsageSettings,
@@ -69,5 +72,7 @@ export type {
 	UsageSemantics,
 	UsageSemanticsKind,
 	UsageUnit,
+	XaiBillingPayload,
+	XaiUserPayload,
 } from "./types.js";
 export { default } from "./usage.js";

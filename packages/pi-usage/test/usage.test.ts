@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import { initTheme } from "@earendil-works/pi-coding-agent";
+import {
+	getKeybindings,
+	KeybindingsManager,
+	setKeybindings,
+	TUI_KEYBINDINGS,
+} from "@earendil-works/pi-tui";
 import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import { OAUTH_CREDENTIAL_SOURCE_CHANNEL } from "../src/oauth-credential-source.js";
+import type { UsageSettingsRuntime, UsageSettingsState } from "../src/settings.js";
 import usageExtension from "../src/usage.js";
+import { showUsageSettings } from "../src/usage-settings-ui.js";
 
 initTheme("dark", false);
 
@@ -22,6 +30,13 @@ const codexModel = {
 	baseUrl: "https://chatgpt.com/backend-api",
 };
 
+const xaiModel = {
+	id: "grok-4.5",
+	name: "Grok 4.5",
+	provider: "xai",
+	baseUrl: "https://api.x.ai/v1",
+};
+
 const zaiModel = {
 	id: "glm-5.3",
 	name: "GLM-5.3",
@@ -36,6 +51,37 @@ function codexAccessToken(accountId: string): string {
 		}),
 	).toString("base64url");
 	return `header.${payload}.signature`;
+}
+
+function memorySettingsRuntime(
+	xaiUsage = true,
+	failUpdates = false,
+	kind: UsageSettingsState["kind"] = "loaded",
+): { runtime: UsageSettingsRuntime; state: () => UsageSettingsState } {
+	let state: UsageSettingsState = {
+		kind,
+		path: "/tmp/pi-usage.json",
+		settings: { codexFastMode: false, xaiUsage },
+		...(kind === "invalid"
+			? { issue: "invalid test settings" }
+			: { document: { codexFastMode: false, xaiUsage } }),
+	};
+	const runtime: UsageSettingsRuntime = {
+		get: () => structuredClone(state),
+		reload: async () => structuredClone(state),
+		update: async (patch, signal) => {
+			signal?.throwIfAborted();
+			if (failUpdates) throw new Error("disk full");
+			state = {
+				...state,
+				settings: { ...state.settings, ...patch },
+				document: { ...state.document, ...patch },
+			};
+			return structuredClone(state);
+		},
+		flush: async () => undefined,
+	};
+	return { runtime, state: () => structuredClone(state) };
 }
 
 async function settle(): Promise<void> {
@@ -131,6 +177,7 @@ test("/usage automatically queries the current runtime account and shows state p
 	assert.match(selections[0]?.title ?? "", /test-key/);
 	assert.deepEqual(selections[0]?.options, [
 		"Refresh current usage",
+		"Settings",
 		"View another configured provider…",
 		"View all configured providers…",
 		"Close",
@@ -1041,4 +1088,818 @@ test("statusline follows runtime auth changes and clears for unsupported selecte
 	await settle();
 	assert.equal(statuses.get("usage"), "openrouter $5.00 left");
 	assert.equal(fetches, 5);
+});
+
+test("disabled xAI reports its state with zero auth and network requests", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	let fetches = 0;
+	let authCalls = 0;
+	globalThis.fetch = async () => {
+		fetches += 1;
+		throw new Error("must not fetch");
+	};
+	const settings = memorySettingsRuntime(false);
+	const mock = createMockPi();
+	usageExtension(mock.pi, { settingsRuntime: settings.runtime });
+	const command = mock.commands.get("usage");
+	assert.ok(command);
+	let title = "";
+	const { ctx, statuses } = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		model: xaiModel,
+		select: async (value: string) => {
+			title = value;
+			return "Close";
+		},
+		modelRegistry: {
+			getApiKeyAndHeaders: async () => {
+				authCalls += 1;
+				return { ok: true, apiKey: "xai-access" };
+			},
+			getProviderAuth: async () => {
+				authCalls += 1;
+				return { auth: { apiKey: "xai-access" } };
+			},
+			getAvailable: () => [xaiModel],
+			getAll: () => [xaiModel],
+			getProviderDisplayName: () => "xAI",
+		},
+	});
+
+	await command.handler("", ctx);
+
+	assert.match(title, /xAI usage is disabled/);
+	assert.equal(authCalls, 0);
+	assert.equal(fetches, 0);
+	assert.equal(statuses.get("usage"), undefined);
+});
+
+test("invalid settings keep xAI disabled without resolving auth or fetching", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	let fetches = 0;
+	let authCalls = 0;
+	globalThis.fetch = async () => {
+		fetches += 1;
+		throw new Error("must not fetch");
+	};
+	const settings = memorySettingsRuntime(true, false, "invalid");
+	const mock = createMockPi();
+	usageExtension(mock.pi, { settingsRuntime: settings.runtime });
+	const command = mock.commands.get("usage");
+	assert.ok(command);
+	const { ctx } = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		model: xaiModel,
+		select: async () => "Close",
+		modelRegistry: {
+			getProviderAuth: async () => {
+				authCalls += 1;
+				return { auth: { apiKey: "xai-access" } };
+			},
+			getAvailable: () => [xaiModel],
+			getAll: () => [xaiModel],
+			getProviderDisplayName: () => "xAI",
+		},
+	});
+
+	await command.handler("", ctx);
+
+	assert.equal(authCalls, 0);
+	assert.equal(fetches, 0);
+});
+
+test("enabled xAI queries only through explicit usage and never publishes status", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	const requests: string[] = [];
+	globalThis.fetch = async (input) => {
+		requests.push(String(input));
+		return requests.length === 1
+			? new Response(JSON.stringify({ userId: "fixture-user", subscriptionTier: "SuperGrok" }), {
+					status: 200,
+				})
+			: new Response(
+					JSON.stringify({
+						config: {
+							creditUsagePercent: 25,
+							currentPeriod: { type: "USAGE_PERIOD_TYPE_WEEKLY" },
+						},
+					}),
+					{ status: 200 },
+				);
+	};
+	const settings = memorySettingsRuntime(true);
+	const credential = {
+		type: "oauth",
+		access: "xai-access",
+		refresh: "xai-refresh",
+		expires: Date.now() + 60_000,
+	};
+	const mock = createMockPi();
+	usageExtension(mock.pi, {
+		settingsRuntime: settings.runtime,
+		credentialReader: () => credential,
+	});
+	const command = mock.commands.get("usage");
+	assert.ok(command);
+	let title = "";
+	const { ctx, statuses } = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		model: xaiModel,
+		select: async (value: string) => {
+			title = value;
+			return "Close";
+		},
+		modelRegistry: {
+			getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "xai-access" }),
+			getProviderAuth: async () => ({ auth: { apiKey: "xai-access" } }),
+			getAvailable: () => [xaiModel],
+			getAll: () => [xaiModel],
+			getProviderAuthStatus: () => ({ configured: true }),
+			getProviderDisplayName: () => "xAI",
+		},
+	});
+
+	mock.events.get("session_start")?.[0]?.({}, ctx);
+	await settle();
+	assert.equal(requests.length, 0);
+	await command.handler("", ctx);
+
+	assert.deepEqual(requests, [
+		"https://cli-chat-proxy.grok.com/v1/user?include=subscription",
+		"https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+	]);
+	assert.match(title, /Included allowance:\s+25% used · 75% left · Weekly/);
+	assert.match(title, /Plan tier:\s+SuperGrok/);
+	assert.equal(statuses.get("usage"), undefined);
+});
+
+test("xAI opt-out after identity prevents billing and stale publication", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	const settings = memorySettingsRuntime(true);
+	let fetches = 0;
+	globalThis.fetch = async () => {
+		fetches += 1;
+		await settings.runtime.update({ xaiUsage: false });
+		return new Response(JSON.stringify({ userId: "fixture-user" }), { status: 200 });
+	};
+	const credential = {
+		type: "oauth",
+		access: "xai-access",
+		refresh: "xai-refresh",
+		expires: Date.now() + 60_000,
+	};
+	const mock = createMockPi();
+	usageExtension(mock.pi, {
+		settingsRuntime: settings.runtime,
+		credentialReader: () => credential,
+	});
+	const command = mock.commands.get("usage");
+	assert.ok(command);
+	let menus = 0;
+	const { ctx, statuses } = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		model: xaiModel,
+		select: async () => {
+			menus += 1;
+			return "Close";
+		},
+		modelRegistry: {
+			getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "xai-access" }),
+			getProviderAuth: async () => ({ auth: { apiKey: "xai-access" } }),
+			getAvailable: () => [xaiModel],
+			getAll: () => [xaiModel],
+			getProviderAuthStatus: () => ({ configured: true }),
+			getProviderDisplayName: () => "xAI",
+		},
+	});
+
+	await command.handler("", ctx);
+
+	assert.equal(fetches, 1);
+	assert.equal(menus, 0);
+	assert.equal(statuses.get("usage"), undefined);
+});
+
+test("xAI account changes after identity prevent billing and stale publication", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	let activeAccess = "xai-access-a";
+	let fetches = 0;
+	globalThis.fetch = async () => {
+		fetches += 1;
+		activeAccess = "xai-access-b";
+		return new Response(JSON.stringify({ userId: "fixture-user" }), { status: 200 });
+	};
+	const settings = memorySettingsRuntime(true);
+	const mock = createMockPi();
+	usageExtension(mock.pi, {
+		settingsRuntime: settings.runtime,
+		credentialReader: () => ({
+			type: "oauth",
+			access: activeAccess,
+			refresh: `refresh-${activeAccess}`,
+			expires: Date.now() + 60_000,
+		}),
+	});
+	const command = mock.commands.get("usage");
+	assert.ok(command);
+	let menus = 0;
+	const { ctx, statuses } = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		model: xaiModel,
+		select: async () => {
+			menus += 1;
+			return "Close";
+		},
+		modelRegistry: {
+			getApiKeyAndHeaders: async () => ({ ok: true, apiKey: activeAccess }),
+			getProviderAuth: async () => ({ auth: { apiKey: activeAccess } }),
+			getAvailable: () => [xaiModel],
+			getAll: () => [xaiModel],
+			getProviderAuthStatus: () => ({ configured: true }),
+			getProviderDisplayName: () => "xAI",
+		},
+	});
+
+	await command.handler("", ctx);
+
+	assert.equal(fetches, 1);
+	assert.equal(menus, 0);
+	assert.equal(statuses.get("usage"), undefined);
+});
+
+test("xAI account changes after the final adapter guard prevent configured publication", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	let activeAccess = "xai-access-a";
+	let credentialReads = 0;
+	const requests: string[] = [];
+	globalThis.fetch = async (input) => {
+		const url = String(input);
+		requests.push(url);
+		if (url.endsWith("/api/v1/key")) return usageFetch(input);
+		if (url.includes("/user?")) {
+			return new Response(JSON.stringify({ userId: "fixture-user" }), { status: 200 });
+		}
+		return new Response(JSON.stringify({ config: { creditUsagePercent: 10 } }), {
+			status: 200,
+		});
+	};
+	const settings = memorySettingsRuntime(true);
+	const choices = ["View another configured provider…", "xAI"];
+	const titles: string[] = [];
+	const mock = createMockPi();
+	usageExtension(mock.pi, {
+		settingsRuntime: settings.runtime,
+		credentialReader: (provider) => {
+			if (provider !== "xai") return undefined;
+			credentialReads += 1;
+			const access = activeAccess;
+			if (credentialReads === 5) {
+				queueMicrotask(() => {
+					activeAccess = "xai-access-b";
+				});
+			}
+			return {
+				type: "oauth",
+				access,
+				refresh: `refresh-${access}`,
+				expires: Date.now() + 60_000,
+			};
+		},
+	});
+	const command = mock.commands.get("usage");
+	assert.ok(command);
+	const { ctx, statuses } = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		model: openRouterModel,
+		select: async (title: string) => {
+			titles.push(title);
+			return choices.shift();
+		},
+		modelRegistry: {
+			getProviderAuth: async (provider: string) => ({
+				auth: { apiKey: provider === "xai" ? activeAccess : "openrouter-key" },
+			}),
+			getAvailable: () => [openRouterModel, xaiModel],
+			getAll: () => [openRouterModel, xaiModel],
+			getProviderAuthStatus: () => ({ configured: true }),
+			getProviderDisplayName: (provider: string) => provider,
+		},
+	});
+
+	await command.handler("", ctx);
+
+	assert.equal(credentialReads, 6);
+	assert.equal(requests.filter((url) => url.includes("cli-chat-proxy")).length, 2);
+	assert.equal(
+		titles.some((title) => /xAI Usage · Configured/u.test(title)),
+		false,
+	);
+	assert.equal(statuses.get("usage"), "openrouter $75.00 left");
+});
+
+test("enabled xAI appears as a configured provider without changing current status", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	const requests: string[] = [];
+	globalThis.fetch = async (input) => {
+		const url = String(input);
+		requests.push(url);
+		if (url.endsWith("/api/v1/key")) return usageFetch(input);
+		if (url.includes("/user?")) {
+			return new Response(JSON.stringify({ userId: "fixture-user" }), { status: 200 });
+		}
+		return new Response(JSON.stringify({ config: { creditUsagePercent: 10 } }), {
+			status: 200,
+		});
+	};
+	const settings = memorySettingsRuntime(true);
+	const choices = ["View another configured provider…", "xAI", "Close"];
+	const titles: string[] = [];
+	const mock = createMockPi();
+	usageExtension(mock.pi, {
+		settingsRuntime: settings.runtime,
+		credentialReader: (provider) =>
+			provider === "xai"
+				? {
+						type: "oauth",
+						access: "xai-access",
+						refresh: "xai-refresh",
+						expires: Date.now() + 60_000,
+					}
+				: undefined,
+	});
+	const command = mock.commands.get("usage");
+	assert.ok(command);
+	const { ctx, statuses } = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		model: openRouterModel,
+		select: async (title: string) => {
+			titles.push(title);
+			return choices.shift();
+		},
+		modelRegistry: {
+			getProviderAuth: async (provider: string) => ({
+				auth: { apiKey: provider === "xai" ? "xai-access" : "openrouter-key" },
+			}),
+			getAvailable: () => [openRouterModel, xaiModel],
+			getAll: () => [openRouterModel, xaiModel],
+			getProviderAuthStatus: () => ({ configured: true }),
+			getProviderDisplayName: (provider: string) => provider,
+		},
+	});
+
+	await command.handler("", ctx);
+
+	assert.match(titles.at(-1) ?? "", /xAI Usage · Configured/);
+	assert.match(titles.at(-1) ?? "", /Included allowance:\s+10% used · 90% left/);
+	assert.equal(statuses.get("usage"), "openrouter $75.00 left");
+	assert.equal(requests.filter((url) => url.includes("cli-chat-proxy")).length, 2);
+});
+
+test("the Settings menu action gives RPC mode the active manual settings path", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	globalThis.fetch = usageFetch;
+	const settings = memorySettingsRuntime();
+	const choices = ["Settings", "Close"];
+	const mock = createMockPi();
+	usageExtension(mock.pi, { settingsRuntime: settings.runtime });
+	const command = mock.commands.get("usage");
+	assert.ok(command);
+	const { ctx, notifications } = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		model: openRouterModel,
+		select: async () => choices.shift(),
+		modelRegistry: {
+			getProviderAuth: async () => ({ auth: { apiKey: "openrouter-key" } }),
+			getAvailable: () => [openRouterModel],
+			getAll: () => [openRouterModel],
+			getProviderAuthStatus: () => ({ configured: true }),
+			getProviderDisplayName: (provider: string) => provider,
+		},
+	});
+
+	await command.handler("", ctx);
+
+	assert.match(notifications[0]?.message ?? "", /Edit settings manually: \/tmp\/pi-usage\.json/);
+});
+
+test("the TUI SettingsList describes and applies xAI changes immediately", async (t) => {
+	const settings = memorySettingsRuntime(false);
+	const rendered: string[][] = [];
+	let applied = 0;
+	const controller = new AbortController();
+	const previousKeybindings = getKeybindings();
+	const remappedKeybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+		"tui.select.down": "j",
+		"tui.select.confirm": "x",
+		"tui.select.cancel": "q",
+	});
+	setKeybindings(remappedKeybindings);
+	t.onTestFinished(() => setKeybindings(previousKeybindings));
+	const { ctx } = createMockContext({
+		hasUI: true,
+		mode: "tui",
+		custom: async (factory: unknown) =>
+			new Promise<boolean>((resolve) => {
+				let component: {
+					dispose?(): void;
+					handleInput(data: string): void;
+					render(width: number): string[];
+				};
+				const done = (value: boolean) => {
+					component.dispose?.();
+					resolve(value);
+				};
+				component = (
+					factory as (
+						tui: { requestRender(): void },
+						theme: {
+							bold(text: string): string;
+							fg(_color: string, text: string): string;
+						},
+						keybindings: object,
+						done: (value: boolean) => void,
+					) => typeof component
+				)(
+					{ requestRender: () => rendered.push(component.render(100)) },
+					{ bold: (text) => text, fg: (_color, text) => text },
+					remappedKeybindings,
+					done,
+				);
+				rendered.push(component.render(100));
+				component.handleInput("j");
+				component.handleInput("x");
+				setImmediate(() => component.handleInput("q"));
+			}),
+	});
+
+	const changed = await showUsageSettings(
+		ctx,
+		settings.runtime,
+		controller.signal,
+		() => true,
+		(id) => {
+			if (id === "xaiUsage") applied += 1;
+		},
+	);
+
+	assert.equal(changed, true);
+	assert.equal(settings.state().settings.xaiUsage, true);
+	assert.equal(applied, 1);
+	const renderedSettings = rendered.map((lines) => lines.join("\n"));
+	assert.ok(
+		renderedSettings.some((frame) => /OAuth subscription allowance and credits/.test(frame)),
+	);
+	assert.doesNotMatch(renderedSettings.join("\n"), /warning|undocumented|experimental/iu);
+});
+
+test("Ctrl+C hard-cancels Settings before conflicting configurable actions", async (t) => {
+	const settings = memorySettingsRuntime(false);
+	let applied = 0;
+	const previousKeybindings = getKeybindings();
+	const conflictingKeybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+		"tui.select.confirm": "ctrl+c",
+		"tui.select.cancel": "q",
+	});
+	setKeybindings(conflictingKeybindings);
+	t.onTestFinished(() => setKeybindings(previousKeybindings));
+	const { ctx } = createMockContext({
+		hasUI: true,
+		mode: "tui",
+		custom: async (factory: unknown) =>
+			new Promise<boolean>((resolve) => {
+				let component: {
+					dispose?(): void;
+					handleInput(data: string): void;
+					render(width: number): string[];
+				};
+				const done = (value: boolean) => {
+					component.dispose?.();
+					resolve(value);
+				};
+				component = (
+					factory as (
+						tui: { requestRender(): void },
+						theme: {
+							bold(text: string): string;
+							fg(_color: string, text: string): string;
+						},
+						keybindings: object,
+						done: (value: boolean) => void,
+					) => typeof component
+				)(
+					{ requestRender() {} },
+					{ bold: (text) => text, fg: (_color, text) => text },
+					conflictingKeybindings,
+					done,
+				);
+				component.handleInput("\u0003");
+				component.handleInput("q");
+			}),
+	});
+
+	const changed = await showUsageSettings(
+		ctx,
+		settings.runtime,
+		new AbortController().signal,
+		() => true,
+		() => {
+			applied += 1;
+		},
+	);
+
+	assert.equal(changed, false);
+	assert.deepEqual(settings.state().settings, {
+		codexFastMode: false,
+		xaiUsage: false,
+	});
+	assert.equal(applied, 0);
+});
+
+test("settings cancellation aborts a stalled save and closes without awaiting it", async (t) => {
+	const previousKeybindings = getKeybindings();
+	const remappedKeybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+		"tui.select.cancel": "q",
+	});
+	setKeybindings(remappedKeybindings);
+	t.onTestFinished(() => setKeybindings(previousKeybindings));
+
+	for (const cancellation of ["ctrl+c", "configured cancel", "parent abort"] as const) {
+		const settings = memorySettingsRuntime(false);
+		let markStarted: () => void = () => undefined;
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		let markAborted: () => void = () => undefined;
+		const aborted = new Promise<void>((resolve) => {
+			markAborted = resolve;
+		});
+		settings.runtime.update = async (_patch, signal) => {
+			markStarted();
+			if (signal?.aborted) markAborted();
+			else signal?.addEventListener("abort", markAborted, { once: true });
+			return new Promise<UsageSettingsState>(() => undefined);
+		};
+		const parentController = new AbortController();
+		let markReady: (component: {
+			handleInput(data: string): void;
+			render(width: number): string[];
+		}) => void = () => undefined;
+		const ready = new Promise<{
+			handleInput(data: string): void;
+			render(width: number): string[];
+		}>((resolve) => {
+			markReady = resolve;
+		});
+		const { ctx } = createMockContext({
+			hasUI: true,
+			mode: "tui",
+			custom: async (factory: unknown) =>
+				new Promise<boolean>((resolve) => {
+					let component: {
+						dispose?(): void;
+						handleInput(data: string): void;
+						render(width: number): string[];
+					};
+					const done = (value: boolean) => {
+						component.dispose?.();
+						resolve(value);
+					};
+					component = (
+						factory as (
+							tui: { requestRender(): void },
+							theme: {
+								bold(text: string): string;
+								fg(_color: string, text: string): string;
+							},
+							keybindings: object,
+							done: (value: boolean) => void,
+						) => typeof component
+					)(
+						{ requestRender() {} },
+						{ bold: (text) => text, fg: (_color, text) => text },
+						remappedKeybindings,
+						done,
+					);
+					markReady(component);
+				}),
+		});
+
+		const pending = showUsageSettings(
+			ctx,
+			settings.runtime,
+			parentController.signal,
+			() => true,
+			() => assert.fail("an aborted save must not apply"),
+		);
+		const component = await ready;
+		component.handleInput("\u001b[B");
+		component.handleInput("\r");
+		await started;
+		if (cancellation === "ctrl+c") component.handleInput("\u0003");
+		else if (cancellation === "configured cancel") component.handleInput("q");
+		else parentController.abort();
+
+		assert.equal(await pending, false, cancellation);
+		await aborted;
+		assert.equal(settings.state().settings.xaiUsage, false, cancellation);
+	}
+});
+
+test("a durable settings save still applies lifecycle cleanup when disposal wins the await", async () => {
+	const settings = memorySettingsRuntime(false);
+	const controller = new AbortController();
+	const update = settings.runtime.update;
+	settings.runtime.update = async (patch, signal) => {
+		const state = await update(patch, signal);
+		controller.abort();
+		return state;
+	};
+	let applied = 0;
+	const { ctx } = createMockContext({
+		hasUI: true,
+		mode: "tui",
+		custom: async (factory: unknown) =>
+			new Promise<boolean>((resolve) => {
+				let component: {
+					dispose?(): void;
+					handleInput(data: string): void;
+					render(width: number): string[];
+				};
+				const done = (value: boolean) => {
+					component.dispose?.();
+					resolve(value);
+				};
+				component = (
+					factory as (
+						tui: { requestRender(): void },
+						theme: {
+							bold(text: string): string;
+							fg(_color: string, text: string): string;
+						},
+						keybindings: object,
+						done: (value: boolean) => void,
+					) => typeof component
+				)(
+					{ requestRender() {} },
+					{ bold: (text) => text, fg: (_color, text) => text },
+					{ matches: () => false },
+					done,
+				);
+				component.handleInput("\u001b[B");
+				component.handleInput("\r");
+			}),
+	});
+
+	await showUsageSettings(
+		ctx,
+		settings.runtime,
+		controller.signal,
+		() => true,
+		(id) => {
+			if (id === "xaiUsage") applied += 1;
+		},
+	);
+
+	assert.equal(settings.state().settings.xaiUsage, true);
+	assert.equal(applied, 1);
+});
+
+test("the TUI SettingsList rolls back its displayed and effective value after save failure", async () => {
+	const settings = memorySettingsRuntime(false, true);
+	let latest: string[] = [];
+	const { ctx, notifications } = createMockContext({
+		hasUI: true,
+		mode: "tui",
+		custom: async (factory: unknown) =>
+			new Promise<boolean>((resolve) => {
+				let component: {
+					dispose?(): void;
+					handleInput(data: string): void;
+					render(width: number): string[];
+				};
+				const done = (value: boolean) => {
+					latest = component.render(100);
+					component.dispose?.();
+					resolve(value);
+				};
+				component = (
+					factory as (
+						tui: { requestRender(): void },
+						theme: {
+							bold(text: string): string;
+							fg(_color: string, text: string): string;
+						},
+						keybindings: object,
+						done: (value: boolean) => void,
+					) => typeof component
+				)(
+					{ requestRender: () => (latest = component.render(100)) },
+					{ bold: (text) => text, fg: (_color, text) => text },
+					{ matches: () => false },
+					done,
+				);
+				component.handleInput("\u001b[B");
+				component.handleInput("\r");
+				setImmediate(() => component.handleInput("\u0003"));
+			}),
+	});
+
+	const changed = await showUsageSettings(
+		ctx,
+		settings.runtime,
+		new AbortController().signal,
+		() => true,
+		() => assert.fail("failed writes must not apply"),
+	);
+
+	assert.equal(changed, false);
+	assert.equal(settings.state().settings.xaiUsage, false);
+	assert.match(notifications[0]?.message ?? "", /disk full/);
+	assert.match(latest.join("\n"), /xAI usage.*Off/su);
+});
+
+test("shutdown cancels an explicit xAI identity body before billing or status publication", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	let fetches = 0;
+	let identityStarted: () => void = () => undefined;
+	const started = new Promise<void>((resolve) => {
+		identityStarted = resolve;
+	});
+	globalThis.fetch = async () => {
+		fetches += 1;
+		identityStarted();
+		return new Response(new ReadableStream({ start() {} }), { status: 200 });
+	};
+	const settings = memorySettingsRuntime(true);
+	const credential = {
+		type: "oauth",
+		access: "xai-access",
+		refresh: "xai-refresh",
+		expires: Date.now() + 60_000,
+	};
+	const mock = createMockPi();
+	usageExtension(mock.pi, {
+		settingsRuntime: settings.runtime,
+		credentialReader: () => credential,
+	});
+	const command = mock.commands.get("usage");
+	assert.ok(command);
+	const { ctx, statuses } = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		model: xaiModel,
+		select: async () => "Close",
+		modelRegistry: {
+			getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "xai-access" }),
+			getProviderAuth: async () => ({ auth: { apiKey: "xai-access" } }),
+			getAvailable: () => [xaiModel],
+			getAll: () => [xaiModel],
+			getProviderAuthStatus: () => ({ configured: true }),
+			getProviderDisplayName: () => "xAI",
+		},
+	});
+
+	mock.events.get("session_start")?.[0]?.({}, ctx);
+	const pending = command.handler("", ctx);
+	await started;
+	mock.events.get("session_shutdown")?.[0]?.({}, ctx);
+	await pending;
+
+	assert.equal(fetches, 1);
+	assert.equal(statuses.get("usage"), undefined);
 });

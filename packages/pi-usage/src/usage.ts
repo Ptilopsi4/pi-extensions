@@ -1,3 +1,5 @@
+// This orchestrator intentionally remains over 1,000 lines because its menu, query generations,
+// account cache, cancellation, and session lifecycle share one consistency boundary.
 import { randomUUID } from "node:crypto";
 import type {
 	ExtensionAPI,
@@ -20,7 +22,13 @@ import {
 	resetOptionExpiration,
 	resolveCodexResetAuth,
 } from "./codex-resets.js";
-import { awaitWithDeadline, errorMessage, runWithConcurrency, UsageCache } from "./core.js";
+import {
+	abortError,
+	awaitWithDeadline,
+	errorMessage,
+	runWithConcurrency,
+	UsageCache,
+} from "./core.js";
 import { formatProviderStates, formatUsageStatusline } from "./format.js";
 import { createOAuthCredentialCandidateReader } from "./oauth-credential-source.js";
 import {
@@ -45,6 +53,7 @@ import {
 	providerDisplayName,
 	setBoundedMap,
 } from "./usage-helpers.js";
+import { showUsageSettings } from "./usage-settings-ui.js";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -57,6 +66,7 @@ const REFRESH_CURRENT = "Refresh current usage";
 const VIEW_ANOTHER = "View another configured provider…";
 const VIEW_ALL = "View all configured providers…";
 const CLOSE = "Close";
+const SETTINGS = "Settings";
 const REDEEM_CODEX_RESET = "Redeem usage limit reset…";
 
 type UsageExtensionDependencies = {
@@ -92,9 +102,18 @@ export default function usageExtension(
 	let activeCurrentIdentity: string | undefined;
 	let sessionActive = false;
 	let statusGeneration = 0;
+	let sessionGeneration = 0;
+	let xaiSettingsGeneration = 0;
 	let statusRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 	let statusController: AbortController | undefined;
 	let fastRuntime: ReturnType<typeof registerCodexFastMode>;
+
+	const xaiUsageEnabled = () => {
+		const state = settingsRuntime.get();
+		return state.kind !== "invalid" && state.settings.xaiUsage;
+	};
+	const activeAdapterForProvider = (providerId: string | undefined) =>
+		adapterForProvider(providerId, xaiUsageEnabled());
 
 	const clearStatusTimer = () => {
 		if (statusRefreshTimer) clearTimeout(statusRefreshTimer);
@@ -136,7 +155,7 @@ export default function usageExtension(
 		model: PiModel,
 		shouldSchedule: boolean,
 	) => {
-		if (adapterForProvider(model.provider)?.publishesStatusline === false) {
+		if (activeAdapterForProvider(model.provider)?.publishesStatusline === false) {
 			clearStatusTimer();
 			safeSetStatus(ctx, undefined);
 			return;
@@ -193,6 +212,10 @@ export default function usageExtension(
 		signal: AbortSignal,
 	): Promise<QueryOutcome> => {
 		const startedAt = Date.now();
+		const expectedSessionGeneration = sessionGeneration;
+		const expectedXaiSettingsGeneration = xaiSettingsGeneration;
+		const expectedSessionId = ctx.sessionManager.getSessionId();
+		const expectedModelIdentity = modelIdentity(ctx.model);
 		let auth: ResolvedUsageAuth | undefined;
 		try {
 			auth = await awaitWithDeadline(
@@ -215,6 +238,16 @@ export default function usageExtension(
 					message: errorMessage(error),
 				},
 			};
+		}
+		if (
+			adapter.id === "xai" &&
+			(expectedSessionGeneration !== sessionGeneration ||
+				expectedXaiSettingsGeneration !== xaiSettingsGeneration ||
+				!xaiUsageEnabled() ||
+				ctx.sessionManager.getSessionId() !== expectedSessionId ||
+				modelIdentity(ctx.model) !== expectedModelIdentity)
+		) {
+			throw abortError();
 		}
 		if (!auth) {
 			if (displayState === "current") {
@@ -270,7 +303,40 @@ export default function usageExtension(
 
 		try {
 			const remainingMs = Math.max(1, DEFAULT_TIMEOUT_MS - (Date.now() - startedAt));
-			const report = await queryProviderUsage(adapter, auth, signal, remainingMs);
+			const guard =
+				adapter.id === "xai"
+					? async () => {
+							if (
+								signal.aborted ||
+								expectedSessionGeneration !== sessionGeneration ||
+								expectedXaiSettingsGeneration !== xaiSettingsGeneration ||
+								!xaiUsageEnabled() ||
+								ctx.sessionManager.getSessionId() !== expectedSessionId ||
+								modelIdentity(ctx.model) !== expectedModelIdentity
+							) {
+								throw abortError();
+							}
+							const revalidated = await awaitWithDeadline(
+								resolveUsageAuth(ctx, adapter, undefined, credentialReader, credentialCandidates),
+								signal,
+								Math.max(1, DEFAULT_TIMEOUT_MS - (Date.now() - startedAt)),
+								"revalidating xAI runtime auth",
+							);
+							if (
+								signal.aborted ||
+								expectedSessionGeneration !== sessionGeneration ||
+								expectedXaiSettingsGeneration !== xaiSettingsGeneration ||
+								!xaiUsageEnabled() ||
+								ctx.sessionManager.getSessionId() !== expectedSessionId ||
+								modelIdentity(ctx.model) !== expectedModelIdentity ||
+								revalidated?.fingerprint !== auth.fingerprint
+							) {
+								throw abortError();
+							}
+						}
+					: undefined;
+			const report = await queryProviderUsage(adapter, auth, signal, remainingMs, guard);
+			if (guard) await guard();
 			if (latestQueries.get(failureKey) === queryId) {
 				cache.set(adapter.id, auth.fingerprint, report);
 				failureBackoff.delete(failureKey);
@@ -319,7 +385,7 @@ export default function usageExtension(
 		force: boolean,
 		signal: AbortSignal,
 	): Promise<QueryOutcome> => {
-		const adapter = adapterForProvider(model?.provider);
+		const adapter = activeAdapterForProvider(model?.provider);
 		if (!adapter) {
 			const providerId = model?.provider ?? "none";
 			transitionCurrentIdentity(`unsupported:${providerId}`, providerId);
@@ -329,9 +395,12 @@ export default function usageExtension(
 					providerName: providerDisplayName(ctx, providerId),
 					displayState: "current",
 					status: "unsupported",
-					message: model
-						? `Usage reporting is not supported for ${providerDisplayName(ctx, providerId)}.`
-						: "No model is selected.",
+					message:
+						providerId === "xai" && !xaiUsageEnabled()
+							? "xAI usage is disabled. Open Settings to enable it."
+							: model
+								? `Usage reporting is not supported for ${providerDisplayName(ctx, providerId)}.`
+								: "No model is selected.",
 				},
 			};
 		}
@@ -343,7 +412,7 @@ export default function usageExtension(
 		model: PiModel | undefined,
 		force: boolean,
 	) => {
-		const adapter = adapterForProvider(model?.provider);
+		const adapter = activeAdapterForProvider(model?.provider);
 		if (!adapter || !model) {
 			const providerId = model?.provider ?? "none";
 			transitionCurrentIdentity(`unsupported:${providerId}`, providerId);
@@ -425,7 +494,7 @@ export default function usageExtension(
 		if (generation !== statusGeneration || modelIdentity(ctx.model) !== modelIdentity(model)) {
 			return false;
 		}
-		const adapter = adapterForProvider(model?.provider);
+		const adapter = activeAdapterForProvider(model?.provider);
 		if (outcome.authState === "unavailable") {
 			if (!adapter) return false;
 			try {
@@ -533,6 +602,7 @@ export default function usageExtension(
 				| "reset-error";
 			type Action =
 				| "refresh"
+				| "settings"
 				| "toggle-fast"
 				| "another"
 				| "all"
@@ -560,6 +630,7 @@ export default function usageExtension(
 							lines: [...formatProviderStates(visibleStates).split("\n"), ...fastLines],
 							items: [
 								{ id: "refresh", label: REFRESH_CURRENT, action: "refresh" },
+								{ id: "settings", label: SETTINGS, action: "settings" },
 								...(fastAvailability.kind === "available"
 									? [
 											{
@@ -597,7 +668,7 @@ export default function usageExtension(
 					providers: () => ({
 						kind: "actions",
 						title: "Select a configured provider",
-						items: configuredAdapters(ctx)
+						items: configuredAdapters(ctx, xaiUsageEnabled())
 							.filter((adapter) => adapter.id !== ctx.model?.provider)
 							.map((adapter) => ({
 								id: adapter.id,
@@ -665,6 +736,37 @@ export default function usageExtension(
 					}),
 				},
 				actions: {
+					settings: async () => {
+						await showUsageSettings(
+							ctx,
+							settingsRuntime,
+							controller.signal,
+							() => statusGeneration === menuGeneration && !controller.signal.aborted,
+							(id, _previous, next) => {
+								if (id !== "xaiUsage") return;
+								xaiSettingsGeneration += 1;
+								invalidateProviderState("xai");
+								if (!next) {
+									for (const active of activeControllers) {
+										if (active !== controller) active.abort();
+									}
+								}
+							},
+						);
+						fastState = settingsRuntime.get();
+						const revalidated = await queryStableCurrent(
+							ctx,
+							false,
+							controller,
+							"Applying usage settings…",
+						);
+						if (!revalidated) return { kind: "stay" };
+						stableCurrent = revalidated;
+						current = revalidated.outcome;
+						visibleStates = [current.state];
+						publishStableCurrent(ctx, revalidated);
+						return { kind: "stay" };
+					},
 					"toggle-fast": async () => {
 						const availability = fastRuntime.availability(ctx.model);
 						if (availability.kind !== "available" || fastState.kind === "invalid") {
@@ -844,7 +946,7 @@ export default function usageExtension(
 						return { kind: "stay" };
 					},
 					another: async () => {
-						const others = configuredAdapters(ctx).filter(
+						const others = configuredAdapters(ctx, xaiUsageEnabled()).filter(
 							(adapter) => adapter.id !== ctx.model?.provider,
 						);
 						if (others.length === 0) {
@@ -854,7 +956,7 @@ export default function usageExtension(
 						return { kind: "to", screen: "providers" };
 					},
 					provider: async ({ itemId }) => {
-						const adapter = configuredAdapters(ctx).find(
+						const adapter = configuredAdapters(ctx, xaiUsageEnabled()).find(
 							(candidate) => candidate.id === itemId && candidate.id !== ctx.model?.provider,
 						);
 						if (!adapter) return { kind: "back" };
@@ -882,7 +984,7 @@ export default function usageExtension(
 						return { kind: "back" };
 					},
 					all: async () => {
-						const adapters = configuredAdapters(ctx);
+						const adapters = configuredAdapters(ctx, xaiUsageEnabled());
 						const currentProviderId = ctx.model?.provider;
 						const settled = await runMenuOperation(
 							ctx,
@@ -964,6 +1066,8 @@ export default function usageExtension(
 		},
 	});
 	pi.on("session_start", (_event, ctx) => {
+		sessionGeneration += 1;
+		xaiSettingsGeneration += 1;
 		statusGeneration += 1;
 		clearStatusTimer();
 		for (const controller of activeControllers) controller.abort();
@@ -983,6 +1087,8 @@ export default function usageExtension(
 	});
 	pi.on("session_shutdown", (_event, ctx) => {
 		sessionActive = false;
+		sessionGeneration += 1;
+		xaiSettingsGeneration += 1;
 		statusGeneration += 1;
 		clearStatusTimer();
 		for (const controller of activeControllers) controller.abort();
