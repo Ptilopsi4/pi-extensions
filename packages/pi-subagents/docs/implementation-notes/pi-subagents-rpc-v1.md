@@ -137,17 +137,3 @@ The built-in `explorer` defaults to `low` thinking for bounded read-only explora
 The built-in `worker` inherits model and thinking unless a caller, frontmatter, or per-agent setting selects a value.
 
 Execution defaults do not change tools, transport, completion delivery, parent context, or explicit tool-call limits.
-
-## Measurement
-
-Run `just benchmark-subagents` for serial offline startup and retained state-command measurements.
-
-The benchmark makes no provider request and therefore measures transport overhead rather than model quality or latency.
-
-A provider-backed smoke is optional and must stop after one clear external quota, credential, or entitlement failure.
-
-A seven-sample isolated-agent run on 2026-08-09 recorded 27.728 ms median deterministic fresh subprocess turn overhead with 0.782 ms MAD, 0.073 ms first retained RPC turn with 0.006 ms MAD, 0.037 ms retained RPC follow-up with 0.004 ms MAD, 445.631 ms real Pi RPC readiness with 9.765 ms MAD, 0.893 ms retained real Pi RPC `get_state` with 0.036 ms MAD, 3.759 ms in-process session creation with 0.198 ms MAD, and 0.001 ms retained in-process state access with 0.000 ms MAD.
-
-The deterministic turn measurements use a fake Pi while the readiness and SDK measurements use an isolated real Pi installation without credentials.
-
-The measurement supports retained transports as startup-overhead improvements without claiming provider-turn latency or quality.

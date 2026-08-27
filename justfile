@@ -83,21 +83,9 @@ showcase-tui-kit:
 smoke-chat-network:
     npm run smoke:chat-network
 
-# Measure offline pi-subagents transport startup and retained-command overhead
-benchmark-subagents samples="7":
-    node scripts/benchmark-pi-subagents-transports.mjs --samples {{ quote(samples) }}
-
 # Preview or explicitly run the pi-codex-compact live-provider benchmark
 benchmark-codex-compact *args:
     node packages/pi-codex-compact/benchmark/run.mjs {{ args }}
-
-# Preview or explicitly run the paired synchronous/asynchronous subagent benchmark
-benchmark-async-subagents *args:
-    node scripts/benchmark-async-subagents.ts {{ args }}
-
-# Preview or run the four-arm parent, v1 sync, v1 async, and versioned bounded-job benchmark
-benchmark-subagent-capabilities *args:
-    node scripts/benchmark-subagent-capabilities.ts {{ args }}
 
 # Install dependencies, build local package artifacts, and start every local extension package
 # pi-statusline and pi-tui-kit are intentionally excluded from Pi extension loading

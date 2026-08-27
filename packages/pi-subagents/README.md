@@ -1189,38 +1189,6 @@ Truncated text includes a `truncated by pi-subagents` marker and details expose 
 Inspection and consultation model-facing content also stops at 2,000 lines, whichever limit is reached first.
 `PI_SUBAGENT_MAX_DEPTH` controls nested delegation depth and defaults to 1; child processes receive `PI_SUBAGENT_DEPTH` automatically.
 
-## 📡 Runtime status
-
-Run the offline transport benchmark from the repository root when comparing startup overhead:
-
-```bash
-just benchmark-subagents
-```
-
-It reports serial median and median absolute deviation for deterministic fake fresh-subprocess and retained-RPC turns plus isolated real Pi RPC readiness, retained commands, in-process session creation, and retained in-process state access without making a provider request.
-Queue time starts when the registry accepts work, transport startup starts when execution begins, RPC readiness comes from `get_state`, RPC acceptance comes from the correlated `prompt` response, first activity comes from a bounded lifecycle event, settlement comes from `agent_settled`, and delivery is recorded after the parent accepts the completion message.
-Subprocess and in-process timing fields use the nearest public lifecycle boundary and may be coarser than RPC.
-Timing and progress are current-session diagnostics and are not persisted.
-The benchmark measures transport overhead rather than model latency or output quality.
-
-Preview the paired quality benchmark without making provider requests:
-
-```bash
-just benchmark-async-subagents --model provider/model
-```
-
-Run three paired trials with isolated sync-only and async-only tool surfaces, fixed model and thinking settings, redacted raw records, and a hard per-trial deadline:
-
-```bash
-just benchmark-async-subagents --run --mode quick --model provider/model --output /tmp/subagent-quick.json
-```
-
-Use `--mode extended` for ten paired trials before any further sync deprecation decision.
-The runner alternates arm order, starts work deadlines only after RPC readiness, runs at most three pairs concurrently, and reports completion coverage, evidence score, premature finals, terminal outcomes, median and P95 latency, and cost when available.
-Quick mode targets completion within five minutes under normal provider capacity but reports external timeouts and entitlement failures rather than silently reducing the sample.
-Live results remain provider- and model-dependent evidence rather than deterministic CI or proof of causality.
-The synchronous `subagent` tool remains available whenever a quality gate fails or detached chain, fan-in, panel, or workflow compatibility is unmatched.
-
 While the `subagent` tool is running, `pi-subagents` publishes compact activity status with `ctx.ui.setStatus("subagents", "...")`.
 Any statusline extension that reads Pi's generic extension status API can display it; no package-to-package dependency is required.
 
@@ -1311,7 +1279,6 @@ packages/pi-subagents/
 │   ├── verification-harness.ts   # Disposable deterministic check execution
 │   ├── verification-receipt.ts   # Strict executor-owned managed receipts
 │   ├── verified-execution-benchmark.ts # Matched offline acceptance/cost fixture
-│   ├── async-subagent-benchmark.ts # Paired live-quality planning, scoring, and summaries
 │   ├── workflow-tree-identity.ts # Bounded exact Git-visible tree identities
 │   ├── integration-controller.ts # Fail-closed canonical integration admission
 │   ├── adaptive-scheduler.ts     # Dependency, capacity, budget, and conflict scheduling
