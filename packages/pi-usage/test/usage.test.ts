@@ -1560,7 +1560,7 @@ test("the TUI SettingsList describes and applies xAI changes immediately", async
 				rendered.push(component.render(100));
 				component.handleInput("j");
 				component.handleInput("x");
-				component.handleInput("q");
+				setImmediate(() => component.handleInput("q"));
 			}),
 	});
 
@@ -1645,6 +1645,96 @@ test("Ctrl+C hard-cancels Settings before conflicting configurable actions", asy
 		xaiUsage: false,
 	});
 	assert.equal(applied, 0);
+});
+
+test("settings cancellation aborts a stalled save and closes without awaiting it", async (t) => {
+	const previousKeybindings = getKeybindings();
+	const remappedKeybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+		"tui.select.cancel": "q",
+	});
+	setKeybindings(remappedKeybindings);
+	t.onTestFinished(() => setKeybindings(previousKeybindings));
+
+	for (const cancellation of ["ctrl+c", "configured cancel", "parent abort"] as const) {
+		const settings = memorySettingsRuntime(false);
+		let markStarted: () => void = () => undefined;
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		let markAborted: () => void = () => undefined;
+		const aborted = new Promise<void>((resolve) => {
+			markAborted = resolve;
+		});
+		settings.runtime.update = async (_patch, signal) => {
+			markStarted();
+			if (signal?.aborted) markAborted();
+			else signal?.addEventListener("abort", markAborted, { once: true });
+			return new Promise<UsageSettingsState>(() => undefined);
+		};
+		const parentController = new AbortController();
+		let markReady: (component: {
+			handleInput(data: string): void;
+			render(width: number): string[];
+		}) => void = () => undefined;
+		const ready = new Promise<{
+			handleInput(data: string): void;
+			render(width: number): string[];
+		}>((resolve) => {
+			markReady = resolve;
+		});
+		const { ctx } = createMockContext({
+			hasUI: true,
+			mode: "tui",
+			custom: async (factory: unknown) =>
+				new Promise<boolean>((resolve) => {
+					let component: {
+						dispose?(): void;
+						handleInput(data: string): void;
+						render(width: number): string[];
+					};
+					const done = (value: boolean) => {
+						component.dispose?.();
+						resolve(value);
+					};
+					component = (
+						factory as (
+							tui: { requestRender(): void },
+							theme: {
+								bold(text: string): string;
+								fg(_color: string, text: string): string;
+							},
+							keybindings: object,
+							done: (value: boolean) => void,
+						) => typeof component
+					)(
+						{ requestRender() {} },
+						{ bold: (text) => text, fg: (_color, text) => text },
+						remappedKeybindings,
+						done,
+					);
+					markReady(component);
+				}),
+		});
+
+		const pending = showUsageSettings(
+			ctx,
+			settings.runtime,
+			parentController.signal,
+			() => true,
+			() => assert.fail("an aborted save must not apply"),
+		);
+		const component = await ready;
+		component.handleInput("\u001b[B");
+		component.handleInput("\r");
+		await started;
+		if (cancellation === "ctrl+c") component.handleInput("\u0003");
+		else if (cancellation === "configured cancel") component.handleInput("q");
+		else parentController.abort();
+
+		assert.equal(await pending, false, cancellation);
+		await aborted;
+		assert.equal(settings.state().settings.xaiUsage, false, cancellation);
+	}
 });
 
 test("a durable settings save still applies lifecycle cleanup when disposal wins the await", async () => {
@@ -1742,7 +1832,7 @@ test("the TUI SettingsList rolls back its displayed and effective value after sa
 				);
 				component.handleInput("\u001b[B");
 				component.handleInput("\r");
-				component.handleInput("\u0003");
+				setImmediate(() => component.handleInput("\u0003"));
 			}),
 	});
 

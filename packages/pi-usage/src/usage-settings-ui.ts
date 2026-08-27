@@ -58,10 +58,11 @@ export async function showUsageSettings(
 		container.addChild(new Text(theme.fg("accent", theme.bold("pi-usage Settings")), 1, 1));
 
 		let settingsList: SettingsList;
-		const finish = () => {
+		const cancel = () => {
 			if (closing) return;
 			closing = true;
-			void saveQueue.finally(() => done(changed));
+			localController.abort();
+			done(changed);
 		};
 		settingsList = new SettingsList(
 			items,
@@ -85,11 +86,10 @@ export async function showUsageSettings(
 					try {
 						await settingsRuntime.update({ [settingId]: requested }, signal);
 					} catch (error) {
+						if (signal.aborted || !isCurrent()) return;
 						settingsList.updateValue(id, displayValue(settingId, previous));
-						if (!signal.aborted && isCurrent()) {
-							ctx.ui.notify(`Could not save pi-usage.json: ${errorMessage(error)}`, "error");
-							tui.requestRender();
-						}
+						ctx.ui.notify(`Could not save pi-usage.json: ${errorMessage(error)}`, "error");
+						tui.requestRender();
 						return;
 					}
 					if (previous !== requested) {
@@ -101,27 +101,23 @@ export async function showUsageSettings(
 					tui.requestRender();
 				});
 			},
-			finish,
+			cancel,
 		);
 		container.addChild(settingsList);
 
-		const abort = () => {
-			localController.abort();
-			finish();
-		};
-		parentSignal.addEventListener("abort", abort, { once: true });
+		parentSignal.addEventListener("abort", cancel, { once: true });
 		return {
 			render: (width: number) => container.render(width),
 			invalidate: () => container.invalidate(),
 			handleInput(data: string) {
 				if (closing) return;
-				if (matchesKey(data, Key.ctrl("c"))) finish();
+				if (matchesKey(data, Key.ctrl("c"))) cancel();
 				else settingsList.handleInput(data);
 				tui.requestRender();
 			},
 			dispose() {
 				localController.abort();
-				parentSignal.removeEventListener("abort", abort);
+				parentSignal.removeEventListener("abort", cancel);
 			},
 		};
 	});
