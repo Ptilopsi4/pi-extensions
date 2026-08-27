@@ -154,6 +154,20 @@ OpenRouter documents the distinction between credit and rate limits in its [API 
 
 The fixed endpoint is queried only when the candidate OpenCode Go model and the resolved provider-auth base URL, when present, use the official `https://opencode.ai` origin; other origins fail before sending the credential.
 
+### Z.AI (GLM Coding Plan)
+
+- Provider ID: `zai` and `zai-coding-cn`
+- Semantics: GLM Coding Plan quota windows—the rolling 5-hour and weekly plan-usage windows plus the monthly MCP allowance
+- Source: Z.AI's undocumented `GET {origin}/api/monitor/usage/quota/limit` endpoint, also used by its official coding plugin, with the origin derived from the model base URL (`https://api.z.ai` or `https://open.bigmodel.cn`)
+- Displayed data: explicit used and remaining values, reset times, provider-reported per-tool MCP details, and the reported plan level. Windows that report only a percentage remain percent-based
+- Statusline: not published; Z.AI is queried only through `/usage` actions
+
+The monitor endpoint is not a published API contract and may return legacy `TOKENS_LIMIT` or newer `CREDIT_LIMIT` window names.
+The extension classifies both forms by the provider's window unit and does not label provider-reported counts as tokens or calls.
+The quota monitor expects the raw API key without a `Bearer` prefix, so the extension strips a `Bearer` prefix from the resolved authorization before sending it to the monitor endpoint.
+Fingerprinting and redaction keep using the original resolved credential.
+Only the official `api.z.ai` and `open.bigmodel.cn` origins are queried; other origins fail before sending the credential.
+
 ## 🧭 Current and configured accounts
 
 `Current` means the provider and credential used by Pi's selected model.
@@ -168,8 +182,8 @@ After the active runtime credential changes, the next command, turn, or schedule
 
 ## 📊 Statusline behavior
 
-The `usage` status item is active only for the selected model provider.
-It refreshes every five minutes while the session remains on a supported provider and is cleared when the model changes to an unsupported provider.
+The `usage` status item is active only for selected providers that publish statusline usage.
+It refreshes every five minutes while the session remains on such a provider and is cleared when the model changes to an unsupported or menu-only provider.
 
 Manual another-provider and all-provider queries never publish to the statusline.
 `@narumitw/pi-statusline` supplies the default `📊` icon; `pi-usage` publishes text-only values.
@@ -205,7 +219,7 @@ Protocol v1 interoperability is characterized for the repository's supported Pi 
 ## 🚧 Limitations
 
 - Only providers with a meaningful usage source and verifiable Pi runtime auth are supported.
-- GitHub Copilot quota and OpenAI Codex reset redemption use undocumented provider endpoints that may change without notice.
+- GitHub Copilot quota, Z.AI quota, and OpenAI Codex reset redemption use undocumented provider endpoints that may change without notice.
 - Codex reset redemption requires a current ChatGPT OAuth credential from Pi's login or a compatible credential source; Codex API keys cannot redeem earned subscription resets.
 - Credentials resolved for custom provider base URLs are never forwarded to the providers' official usage endpoints; effective auth origin validation requires Pi 0.81.0 or newer.
 - Provider reports are snapshots and may themselves be delayed by the provider.
@@ -235,7 +249,7 @@ packages/pi-usage/
 │   ├── codex-resets.ts # Codex reset auth, API contracts, and normalization
 │   ├── format.ts      # Provider-aware notifications and statusline text
 │   ├── core.ts        # Cache, concurrency, fingerprint, and redaction helpers
-│   ├── providers/     # Codex, GitHub Copilot, and OpenRouter normalization adapters
+│   ├── providers/     # Provider-specific usage normalization adapters
 │   └── types.ts       # Common presentation and adapter contracts
 ├── test/
 ├── README.md

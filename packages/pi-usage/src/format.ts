@@ -19,7 +19,9 @@ export function formatUsageReport(report: UsageReport, displayState: UsageDispla
 	else if (report.providerId === "github-copilot") formatGitHubCopilotReport(lines, report);
 	else if (report.providerId === "openrouter") formatOpenRouterReport(lines, report);
 	else if (report.providerId === "opencode-go") formatOpenCodeZenReport(lines, report);
-	else formatGenericReport(lines, report);
+	else if (report.providerId === "zai" || report.providerId === "zai-coding-cn") {
+		formatZaiReport(lines, report);
+	} else formatGenericReport(lines, report);
 
 	if (report.notes) {
 		for (const note of report.notes) lines.push(note);
@@ -158,6 +160,30 @@ function formatOpenCodeZenStatusline(report: UsageReport): string | undefined {
 		parts.push(`${clampPercent(bucket.used).toFixed(0)}% ${compact}`);
 	}
 	return parts.length > 1 ? parts.join(" ") : undefined;
+}
+
+function formatZaiReport(lines: string[], report: UsageReport): void {
+	for (const bucket of report.buckets) {
+		const reset = bucket.resetsAt ? ` (resets ${formatReset(bucket.resetsAt)})` : "";
+		let value = "unavailable";
+		if (bucket.unit === "percent" && bucket.used !== undefined) {
+			value = `${bucket.used}% used`;
+			if (bucket.remaining !== undefined) value += ` · ${bucket.remaining}% left`;
+		} else if (bucket.used !== undefined && bucket.limit !== undefined) {
+			value = `${bucket.used} of ${bucket.limit} used`;
+			if (bucket.remaining !== undefined) value += ` · ${bucket.remaining} left`;
+		} else if (bucket.used !== undefined) {
+			value = `${bucket.used} used`;
+		} else if (bucket.remaining !== undefined) {
+			value = `${bucket.remaining} left`;
+		}
+		lines.push(`${`${bucket.label}:`.padEnd(VALUE_COLUMN)}${value}${reset}`);
+	}
+	for (const metric of report.metrics) {
+		lines.push(
+			`${`${metric.label}:`.padEnd(VALUE_COLUMN)}${formatMetricValue(metric.value, metric.unit)}`,
+		);
+	}
 }
 
 function formatGenericReport(lines: string[], report: UsageReport): void {

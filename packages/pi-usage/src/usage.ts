@@ -136,6 +136,11 @@ export default function usageExtension(
 		model: PiModel,
 		shouldSchedule: boolean,
 	) => {
+		if (adapterForProvider(model.provider)?.publishesStatusline === false) {
+			clearStatusTimer();
+			safeSetStatus(ctx, undefined);
+			return;
+		}
 		if (outcome.state.status === "unsupported") {
 			clearStatusTimer();
 			safeSetStatus(ctx, undefined);
@@ -342,6 +347,10 @@ export default function usageExtension(
 		if (!adapter || !model) {
 			const providerId = model?.provider ?? "none";
 			transitionCurrentIdentity(`unsupported:${providerId}`, providerId);
+			clearStatus(ctx);
+			return;
+		}
+		if (adapter.publishesStatusline === false) {
 			clearStatus(ctx);
 			return;
 		}

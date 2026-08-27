@@ -58,6 +58,7 @@ export interface UsageProviderAdapter {
 	id: string;
 	displayName: string;
 	semantics: UsageSemantics;
+	publishesStatusline?: boolean;
 	query(auth: ResolvedUsageAuth, signal: AbortSignal, timeoutMs: number): Promise<UsageReport>;
 }
 
@@ -95,6 +96,10 @@ export type OpenRouterKeyPayload = {
 
 export type OpenCodeZenPayload = {
 	usage?: unknown;
+};
+
+export type ZaiQuotaPayload = {
+	data?: unknown;
 };
 
 export type CodexBackendPayload = {
