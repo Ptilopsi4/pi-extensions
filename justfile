@@ -83,10 +83,6 @@ showcase-tui-kit:
 smoke-chat-network:
     npm run smoke:chat-network
 
-# Measure offline pi-subagents transport startup and retained-command overhead
-benchmark-subagents samples="7":
-    node scripts/benchmark-pi-subagents-transports.mjs --samples {{ quote(samples) }}
-
 # Preview or explicitly run the pi-codex-compact live-provider benchmark
 benchmark-codex-compact *args:
     node packages/pi-codex-compact/benchmark/run.mjs {{ args }}

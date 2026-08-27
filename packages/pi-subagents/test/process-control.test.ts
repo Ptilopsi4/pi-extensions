@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { test } from "vitest";
-import { terminateProcess } from "../src/runner.js";
+import { terminateProcess } from "../src/process-control.js";
 
 test("terminateProcess escalates when a child ignores SIGTERM", {
 	skip: process.platform === "win32",

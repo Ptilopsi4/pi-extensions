@@ -12,8 +12,9 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { test } from "vitest";
+import { runChild } from "../src/job-process.js";
+import type { ChildRequest } from "../src/job-types.js";
 import { type PiInvocationRuntime, resolvePiInvocation } from "../src/pi-invocation.js";
-import { runSingleAgent } from "../src/runner.js";
 
 const CORE_PACKAGE = "@earendil-works/pi-coding-agent";
 
@@ -93,29 +94,18 @@ test("subagent launch does not re-execute a pi-web-like host entrypoint", async 
 	process.argv[1] = hostPath;
 	process.env.PI_PACKAGE_DIR = root;
 	try {
-		const result = await runSingleAgent(
-			root,
-			[
-				{
-					name: "test",
-					description: "test",
-					systemPrompt: "",
-					source: "built-in",
-					filePath: "built-in:test",
-				},
-			],
-			"test",
-			"inspect",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			1_000,
-			undefined,
-			(results) => ({ mode: "single", agentScope: "user", projectAgentsDir: null, results }),
-		);
-		assert.equal(result.exitCode, 0);
-		assert.match(result.finalOutput ?? "", /"--mode","json","-p","--no-session"/);
+		const request: ChildRequest = {
+			task: "inspect",
+			tools: ["read"],
+			model: "test/model",
+			thinkingLevel: "low",
+			cwd: root,
+			projectTrusted: false,
+			signal: new AbortController().signal,
+		};
+		const result = await runChild(request);
+		assert.equal(result.state, "completed");
+		assert.match(result.result ?? "", /"--mode","json","-p","--no-session"/);
 		assert.equal(existsSync(marker), false);
 	} finally {
 		process.argv[1] = previousEntry;

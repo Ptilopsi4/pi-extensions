@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
-import { afterAll, test } from "vitest";
+import { test } from "vitest";
 import { createMockPi } from "../../../test/support.js";
-import subagents from "../src/subagents.js";
-import { installSubagentsTestEnvironment } from "./subagents-test-helpers.js";
-
-const restoreTestEnvironment = installSubagentsTestEnvironment();
-afterAll(restoreTestEnvironment);
+import subagents from "../src/subagents-extension.js";
 
 const LLAMA_CPP_MAX_REPETITION_THRESHOLD = 2_000;
 

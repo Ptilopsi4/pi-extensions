@@ -17,7 +17,6 @@ const SETTINGS_PUBLICATION_SOURCES = [
 	"packages/pi-plan-mode/src/settings.ts",
 	"packages/pi-starship/src/config.ts",
 	"packages/pi-statusline/src/settings.ts",
-	"packages/pi-subagents/src/settings.ts",
 	"packages/pi-sync/src/config-file.ts",
 ] as const;
 

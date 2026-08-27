@@ -1,6 +1,4 @@
-import * as os from "node:os";
-import * as path from "node:path";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
 
 export const DEFAULT_MAX_OUTPUT_LINES = DEFAULT_MAX_LINES;
 export const TRUNCATION_MARKER = "\n… [truncated by pi-subagents]";
@@ -40,10 +38,6 @@ export function boundText(
 			: safe;
 	const bounded = truncateUtf8(lineBounded, maxBytes);
 	return { text: bounded.text, truncated: lines.length > maxLines || bounded.truncated };
-}
-
-export function boundedPrivateText(value: string, maxBytes: number): string {
-	return boundText(redactPrivateText(value), maxBytes).text;
 }
 
 export function truncateUtf8(text: string, maxBytes: number): BoundedText {
@@ -95,28 +89,10 @@ export function truncateUtf8Tail(text: string, maxBytes: number): BoundedText {
 	};
 }
 
-export function safeDisplayPath(value: string, workspace: string): string {
-	if (value.startsWith("built-in:")) return safeTerminalLine(value);
-	const resolved = path.resolve(value);
-	const agentDir = path.resolve(getAgentDir());
-	const relativeAgent = path.relative(agentDir, resolved);
-	if (isWithin(relativeAgent)) return relativeAgent ? `~/${safeTerminalLine(relativeAgent)}` : "~";
-	const relativeWorkspace = path.relative(path.resolve(workspace), resolved);
-	if (isWithin(relativeWorkspace))
-		return relativeWorkspace ? safeTerminalLine(relativeWorkspace) : ".";
-	const relativeHome = path.relative(path.resolve(os.homedir()), resolved);
-	if (isWithin(relativeHome)) return relativeHome ? `~/${safeTerminalLine(relativeHome)}` : "~";
-	return safeTerminalLine(resolved);
-}
-
 function normalizeByteLimit(maxBytes: number): number {
 	if (maxBytes === Number.POSITIVE_INFINITY) return Number.MAX_SAFE_INTEGER;
 	if (!Number.isFinite(maxBytes)) return 0;
 	return Math.max(0, Math.floor(maxBytes));
-}
-
-function isWithin(relative: string): boolean {
-	return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function redactPrivateText(text: string): string {

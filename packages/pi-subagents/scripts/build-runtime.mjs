@@ -13,35 +13,18 @@ const GENERATED_BANNER = [
 	"// @ts-nocheck -- generated JavaScript uses a .ts extension for Pi's Jiti loader.",
 ].join("\n");
 
-const FORBIDDEN_RUNTIME_INPUTS = [
-	"src/agents/",
-	"src/auto-transport.ts",
-	"src/capability-grant.ts",
-	"src/child-peer-bridge.ts",
-	"src/child-peer-tools.ts",
-	"src/completion-delivery.ts",
-	"src/completion-requirement.ts",
-	"src/config-registration.ts",
-	"src/config-status.ts",
-	"src/config-ui.ts",
-	"src/create-stateful-transport.ts",
-	"src/cwd-policy.ts",
-	"src/delegation-contract.ts",
-	"src/in-process-transport.ts",
-	"src/inspect-registration.ts",
-	"src/inspect.ts",
-	"src/peer-communication.ts",
-	"src/persistence.ts",
-	"src/registry.ts",
-	"src/retained-semantic-state.ts",
-	"src/rpc-transport.ts",
-	"src/semantic-snapshot.ts",
-	"src/settings-reader.ts",
-	"src/settings/",
-	"src/stateful",
-	"src/subprocess-transport.ts",
-	"src/usage-recording",
-	"src/workspace.ts",
+const EXPECTED_RUNTIME_INPUTS = [
+	"/src/bounded-subagents.ts",
+	"/src/index.ts",
+	"/src/job-process.ts",
+	"/src/job-runtime.ts",
+	"/src/job-tools.ts",
+	"/src/job-types.ts",
+	"/src/job-widget.ts",
+	"/src/pi-invocation.ts",
+	"/src/process-control.ts",
+	"/src/safe-text.ts",
+	"/src/subagents-extension.ts",
 ];
 
 export async function buildRuntime({
@@ -102,10 +85,11 @@ export function validateEagerGraph(metadata) {
 			eagerInputs.add(normalized);
 		}
 	}
-	for (const forbidden of FORBIDDEN_RUNTIME_INPUTS) {
-		if ([...eagerInputs].some((input) => input.includes(`/${forbidden}`))) {
-			throw new Error(`Retained implementation is reachable: ${forbidden}`);
-		}
+	const actualInputs = [...eagerInputs].sort();
+	if (JSON.stringify(actualInputs) !== JSON.stringify(EXPECTED_RUNTIME_INPUTS)) {
+		throw new Error(
+			`Generated runtime input graph changed:\n${actualInputs.map((input) => `- ${input}`).join("\n")}`,
+		);
 	}
 	return { eagerInputs, eagerOutputs };
 }
@@ -118,9 +102,6 @@ export async function validateGeneratedFiles(outputDirectory) {
 		const source = await readFile(join(outputDirectory, runtimePath), "utf8");
 		if (!source.startsWith(GENERATED_BANNER)) {
 			throw new Error(`Generated marker is missing from ${runtimePath}`);
-		}
-		if (/child-peer-bridge/u.test(source)) {
-			throw new Error(`Generated runtime retains a child peer bridge in ${runtimePath}`);
 		}
 		if (/(["'])\.\.?\/[^"']+\.js\1/u.test(source)) {
 			throw new Error(`Generated runtime retains a .js import specifier in ${runtimePath}`);
