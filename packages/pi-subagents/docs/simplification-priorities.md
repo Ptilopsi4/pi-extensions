@@ -2,11 +2,11 @@
 
 ## Status
 
-This document is a proposal for the next simplification of `@narumitw/pi-subagents`.
+This prioritization was adopted for the bounded-runtime cutover of `@narumitw/pi-subagents`.
 
-It does not describe the currently implemented retained-agent runtime.
+The active contract is documented in [`tools.md`](./tools.md) and [`implementation-notes/pi-subagents-current-direction.md`](./implementation-notes/pi-subagents-current-direction.md).
 
-The current behavior remains documented in [`tools.md`](./tools.md) and [`implementation-notes/pi-subagents-current-direction.md`](./implementation-notes/pi-subagents-current-direction.md).
+Items marked for later work remain proposals until a separate objective approves them.
 
 ## Summary
 

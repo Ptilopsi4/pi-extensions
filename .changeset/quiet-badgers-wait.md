@@ -2,8 +2,10 @@
 "@narumitw/pi-subagents": major
 ---
 
-Remove the blocking `subagent` and synchronous `subagent_consult` tools so the package exposes retained background delegation only.
+Replace retained background agents with four current-session bounded-job tools: `subagent_spawn`, `subagent_await`, `subagent_cancel`, and `subagent_inspect`.
 
-Keep `subagent_await` as the intentional join whenever retained agents are enabled.
+Run each accepted job in one fresh isolated Pi subprocess with a closed core-tool allowlist, no parent transcript, no unrelated extensions or prompt resources, and bounded non-waking completion delivery.
 
-Remove blocking workflow inspection, settings, orchestration, and consultation behavior while preserving ignored legacy JSON fields for rollback with the previous package major.
+Remove retained follow-ups, mailboxes, hierarchy, persistence, custom agents, worktree management, multiple transports, settings, completion requirements, structured contracts, peer tools, and the `/subagents settings` route.
+
+Leave legacy settings and retained-state files untouched for downgrade recovery.

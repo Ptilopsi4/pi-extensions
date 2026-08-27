@@ -1,197 +1,118 @@
 # Pi Subagents tools
 
-`pi-subagents` exposes six retained-agent tools when delegation is enabled.
+`pi-subagents` exposes four fixed current-session bounded-job tools.
 
-When `stateful.enabled` is `false`, only `subagent_inspect` is registered after reload.
+All timeout values use seconds and accept finite values greater than zero through `2,147,483.647`.
 
-Model-facing tool content is bounded to 50 KiB or 2,000 lines.
+A job can remain active without a timeout when `timeout` is omitted.
 
 ## `subagent_spawn`
 
-Starts reusable background work and returns an opaque `agentId` plus canonical `taskPath` immediately.
+Starts one fresh Pi subprocess and returns an opaque current-session job ID immediately.
 
 | Parameter | Type | Required | Constraint / default |
 | --- | --- | --- | --- |
-| `agent` | `string` | Yes | Agent name from the active catalog. |
-| `task` | `string` | Yes | Self-contained task, 1 through 50 KiB. |
-| `taskName` | `string` | No | Canonical path segment, 1 through 128 lowercase letters, digits, or underscores. |
-| `thinkingLevel` | `string` | No | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; retained for follow-ups. |
-| `timeoutMs` | `integer` | No | Work deadline in milliseconds; 1 through 2,147,483,647; retained for follow-ups. |
-| `idleTimeoutMs` | `integer` | No | Idle deadline in milliseconds; 1 through 2,147,483,647; retained for follow-ups. |
-| `maxTurns` | `integer` | No | Maximum unfinished assistant turns; 1 through 1,000,000; retained for follow-ups. |
-| `maxToolCalls` | `integer` | No | Maximum tool calls; 1 through 1,000,000; retained for follow-ups. |
-| `cwd` | `string` | No | Launch directory, subject to the configured delegation cwd policy. |
-| `agentScope` | `string` | No | `user`, `project`, or `both`; defaults to `user` and is retained. |
-| `confirmProjectAgents` | `boolean` | No | Prompt before running project-local agents; defaults to `true`. |
-| `context` | `string \| number` | No | `none`, `all`, `summary`, or a positive recent-user-turn count; defaults to `none`. |
-| `contextEntryIds` | `string[]` | No | Exact session entry IDs; supplying IDs without `context` implies `all`. |
-| `parentId` | `string` | No | Parent agent ID or canonical task path for nested ownership. |
-| `workspaceMode` | `string` | No | `shared` or `worktree`; defaults to `shared`. |
-| `idempotencyKey` | `string` | No | 1 through 256 characters; an exact accepted retry returns the existing retained agent. |
-| `resultFormat` | `string` | No | `text`, `structured-v1`, or `structured-v2`; defaults to `text`. |
-| `completionRequirement` | `string` | No | `background` or `required`; defaults to `background`. |
-| `contract` | `object` | No | Advanced `pi-subagents:delegation:v2` contract; omit for ordinary delegation. |
-| `allowConcurrentWrites` | `boolean` | No | Deprecated compatibility no-op; shared-workspace concurrency is already allowed. |
+| `task` | `string` | Yes | Self-contained task between 1 byte and 50 KiB of UTF-8 text; NUL is rejected. |
+| `tools` | `string[]` | No | Defaults to `read`, `grep`, `find`, and `ls`; an empty list gives the child no tools. |
+| `thinkingLevel` | `string` | No | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; defaults to the main agent's effective level. |
+| `timeout` | `number` | No | Execution deadline in seconds; no default. |
 
-An omitted `taskName` receives a deterministic privacy-safe path segment.
+The accepted tool names are `read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, and `ls`.
 
-The reserved segment `root` is rejected, as are dots, slashes, empty values, and names longer than 128 characters.
+Duplicate tools collapse in first-seen order.
 
-Project-local agents require explicit `agentScope: "project"` or `"both"`, a trusted project, and confirmation by default.
+Unknown names, extension tool names, unknown fields, nested delegation, unavailable model inheritance, invalid timeouts, and capacity exhaustion reject before child launch.
 
-A worktree spawn requires a clean Git repository and cannot use a project-local agent definition.
+The task is passed without parent conversation history.
 
-`completionRequirement: "required"` tracks the exact run until completion becomes visible or terminal, but it is not a hard pre-display final-answer barrier.
+The child disables session persistence, unrelated extensions, skills, and prompt templates.
 
-Completion delivery follows the configured `next-turn` or `auto-resume` policy.
+A non-empty selection uses Pi's `--tools` allowlist.
 
-Do not poll after spawning; continue useful non-overlapping parent work and consume the delivered completion.
+An explicit empty selection uses `--no-builtin-tools` and never relies on empty comma-list behavior.
 
-Throws before acceptance for invalid policy, capacity, trust, agent, contract, idempotency, or workspace requests.
-
-## `subagent_send`
-
-Starts a new background follow-up turn on one retained agent.
-
-| Parameter | Type | Required | Constraint / default |
-| --- | --- | --- | --- |
-| `agentId` | `string` | Yes | Retained agent ID or canonical task path. |
-| `task` | `string` | Yes | Follow-up task, 1 through 50 KiB. |
-| `timeoutMs` | `integer` | No | One-turn work deadline; 1 through 2,147,483,647; otherwise uses the retained default. |
-| `idleTimeoutMs` | `integer` | No | One-turn idle deadline; 1 through 2,147,483,647; otherwise uses the retained default. |
-| `maxTurns` | `integer` | No | One-turn assistant-turn limit; 1 through 1,000,000; otherwise uses the retained default. |
-| `maxToolCalls` | `integer` | No | One-turn tool-call limit; 1 through 1,000,000; otherwise uses the retained default. |
-| `completionRequirement` | `string` | No | `background` or `required`; defaults to `background` for this turn. |
-| `revalidate` | `boolean` | No | Set to `true` after reviewing reported semantic resource changes. |
-| `allowConcurrentWrites` | `boolean` | No | Deprecated compatibility no-op. |
-
-This tool cannot change the retained thinking level or result format.
-
-Use `subagent_mailbox` when a message must not start a turn.
-
-Throws when the retained record is unavailable, busy, closed, stale without revalidation, or no longer allowed by current policy.
+The result contains `jobId`, initial state `queued`, and the optional execution timeout.
 
 ## `subagent_await`
 
-Intentionally joins one retained turn.
+Waits for one current-session job to become terminal.
 
 | Parameter | Type | Required | Constraint / default |
 | --- | --- | --- | --- |
-| `agentId` | `string` | Yes | Retained agent ID or canonical task path. |
-| `timeoutMs` | `integer` | No | Wait deadline in milliseconds; 1 through 2,147,483,647; defaults to 30,000. |
+| `jobId` | `string` | Yes | Opaque ID returned by `subagent_spawn`. |
+| `timeout` | `number` | No | Maximum wait in seconds; no default. |
 
-Blocks the main Pi agent until the retained turn settles or the wait deadline expires.
+A terminal job returns immediately.
 
-A timeout or caller cancellation stops only the wait and never interrupts or closes the child.
+A wait timeout returns `timedOut: true` with the job's current state.
 
-Automatic at-least-once completion delivery remains active, so the same completion may arrive later.
+A wait timeout or caller cancellation releases only the waiter and never cancels the job.
 
-Use this tool only when the result is required before the next action and useful overlapping parent work is complete.
+A terminal result returns `timedOut: false` plus bounded `result`, `error`, and `limitations` fields when present.
 
-## `subagent_manage`
+Unknown and pruned IDs reject.
 
-| Parameter | Type | Required | Constraint / default |
-| --- | --- | --- | --- |
-| `action` | `string` | Yes | `interrupt` or `close`. |
-| `agentId` | `string` | Yes | Retained agent ID or canonical task path. |
-| `subtree` | `boolean` | No | Apply child-first to the target and all descendants; defaults to `false`. |
+## `subagent_cancel`
 
-`interrupt` aborts active work but keeps the agent reusable.
-
-`close` releases the retained record and its owned resources, including a disposable worktree when present.
-
-Use `subagent_inspect` for list and detail operations.
-
-## `subagent_mailbox`
-
-### Send
+Idempotently cancels one current-session job.
 
 | Parameter | Type | Required | Constraint / default |
 | --- | --- | --- | --- |
-| `action` | `string` | Yes | `send`. |
-| `agentId` | `string` | Yes | Recipient agent ID or canonical task path. |
-| `message` | `string` | Yes | Non-empty queue-only message, up to 16,384 characters. |
-| `senderId` | `string` | No | Sender agent ID or canonical task path. |
-| `deduplicationKey` | `string` | No | Idempotency key, up to 256 characters. |
+| `jobId` | `string` | Yes | Opaque ID returned by `subagent_spawn`. |
 
-Sending queues a durable message and never starts an idle agent turn.
+Cancellation commits `cancelled` only when no terminal outcome has already won.
 
-### Read
+It aborts queued or running work and waits for owned child cleanup.
 
-| Parameter | Type | Required | Constraint / default |
-| --- | --- | --- | --- |
-| `action` | `string` | Yes | `read`. |
-| `agentId` | `string` | Yes | Mailbox owner agent ID or canonical task path. |
-| `acknowledge` | `boolean` | No | Mark returned messages as acknowledged; defaults to `true`. |
-| `limit` | `number` | No | Maximum returned messages, 1 through 20; defaults to 20. |
+Repeated cancellation returns the same terminal state.
 
-The action-specific schema rejects fields belonging to the other action.
+Cancelling an already terminal job does not replace its result.
 
-Use `subagent_inspect` for metadata-only unread counts that do not acknowledge messages.
+Unknown and pruned IDs reject.
 
 ## `subagent_inspect`
 
-Always registered, including when retained delegation is disabled.
+Returns one privacy-bounded current-session snapshot and accepts no parameters.
 
-| Action | Parameters | Result |
-| --- | --- | --- |
-| `list_agents` | Optional `agentScope` and `limit` | Bounded agent metadata and omission counts. |
-| `get_agent` | Required `agent`; optional `agentScope` | One resolved definition, source, capabilities, and tools without its system prompt. |
-| `list_runs` | Optional `includeClosed` and `limit` | Metadata-only retained-run summaries. |
-| `get_run` | Required `agentId` | Bounded retained-run policy, lifecycle, context, result, timing, usage, and mailbox metadata. |
-| `list_models` | Optional `limit` | Session-scoped or already-loaded available model metadata. |
-| `preview_context` | Optional `context` and `contextEntryIds` | Context mode, selected user turns, source count, UTF-8 bytes, and truncation without context text. |
-| `status` | No additional fields | Effective runtime, limits, delivery, recording, target policy, and setting sources. |
-| `diagnose` | No additional fields | Structured `pass`, `warning`, and `fail` checks. |
+Each summary can contain only:
 
-`agentScope` accepts `user`, `project`, or `both` and defaults to `user`.
+- `jobId`;
+- `state`;
+- `createdAt`;
+- optional `startedAt`;
+- optional `finishedAt`; and
+- optional execution `timeout`.
 
-Project scopes require an already trusted project.
+The result also reports how many older terminal summaries were omitted.
 
-`list_agents` defaults to 32 items.
+Inspection never exposes task text, child output, prompts, selected tools, credentials, environment variables, or legacy persisted content.
 
-`list_runs` and `list_models` default to 50 items.
+Inspection never launches, waits for, cancels, or otherwise changes a job.
 
-Every list limit must be an integer from 1 through 100.
+## States and retention
 
-`includeClosed` defaults to `false`.
+The legal states are `queued`, `running`, `completed`, `partial`, `failed`, `timed_out`, and `cancelled`.
 
-`preview_context.context` accepts `none`, `all`, `summary`, or a positive recent-user-turn count and defaults to `none`.
+Only `queued` and `running` are non-terminal.
 
-Supplying `contextEntryIds` without `context` implies `all`.
+Terminalization is first-writer-wins.
 
-The flat action schema rejects parameters that do not belong to the selected action.
+The runtime admits at most eight non-terminal jobs.
 
-Inspection never launches children, changes lifecycle state, sends or acknowledges messages, changes settings, or modifies files.
+It retains the thirty-two newest terminal summaries until session replacement, reload, or shutdown.
 
-Diagnostic failures are returned as report data rather than tool errors.
+Pruned and prior-session IDs are invalid.
 
-## Retained-child tools
+## Completion delivery
 
-Retained child sessions receive two package-owned peer tools in addition to their selected work tools.
+Each terminal job attempts completion delivery at most once after committing its terminal state.
 
-### `subagent_peer_send`
+The custom message type is `pi-subagent-completion`.
 
-| Parameter | Type | Required | Constraint / default |
-| --- | --- | --- | --- |
-| `target` | `string` | Yes | `/root`, an absolute canonical task path, or a relative peer path; 1 through 2,048 characters. |
-| `message` | `string` | Yes | Queue-only message, 1 through 16,384 characters. |
-| `deduplicationKey` | `string` | No | Idempotency key, 1 through 256 characters. |
+Model-visible content is bounded and sanitized before delivery.
 
-The runtime binds the authenticated sender identity, so the child cannot provide a sender field.
+Delivery uses `{ deliverAs: "steer", triggerTurn: false }`.
 
-Sending never starts an idle recipient turn.
+A delivery failure does not erase the terminal result or prevent later `subagent_await` access.
 
-### `subagent_peer_list`
-
-No parameters.
-
-Returns bounded identity and lifecycle metadata for `/root` and retained peers in the current session.
-
-## Removed synchronous routes
-
-The former blocking execution and synchronous consultation tools are not registered.
-
-Use one retained spawn per independent task and keep orchestration in the main agent.
-
-Use `explorer` for read-only configured tools, but do not treat that as the former consultation route's stricter resource-loading contract.
+Cancellation and stale-session cleanup cannot replace a prior terminal result or cause duplicate delivery.

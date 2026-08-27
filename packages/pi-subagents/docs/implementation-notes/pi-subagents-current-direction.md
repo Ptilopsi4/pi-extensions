@@ -4,76 +4,70 @@ This note is the entry point for current `@narumitw/pi-subagents` planning.
 
 ## Current product shape
 
-`pi-subagents` is a retained background-agent runtime, not an automatic planner or workflow engine.
+`pi-subagents` is a thin bounded-job adapter, not a retained-agent runtime, automatic planner, or workflow engine.
 
-The main agent decides whether to delegate, starts one agent per independent task, coordinates dependencies, integrates results, runs deterministic checks, and owns the final answer.
+The main agent decides whether to delegate, provides a self-contained task, coordinates independent work, integrates results, runs deterministic checks, and owns the final answer.
 
-The built-in catalog remains intentionally small:
-
-| Built-in | Purpose | Default tools |
-| --- | --- | --- |
-| `explorer` | Bounded read-only repository exploration with cited paths and evidence. | `read`, `grep`, `find`, `ls` |
-| `worker` | Write-capable implementation, command execution, and fixes with clear ownership. | Pi default tools |
+Each accepted job starts one fresh Pi subprocess and exists only in the current session.
 
 ## Delegation rules
 
 Use no subagent for simple, latency-sensitive, conversational, tightly coupled, or immediate critical-path work.
 
-Use `explorer` when bounded evidence can run beside useful main-agent work or save parent context.
+Use a default read-only job when bounded evidence can run beside useful main-agent work or save parent context.
 
-Use `worker` only for a disjoint implementation slice with explicit ownership and a supported integration path.
+Select write-capable tools only for a disjoint implementation slice with explicit workspace ownership and a supported integration path.
 
-Start multiple agents only for independent tasks whose parallel progress justifies coordination.
+Start multiple jobs only for independent tasks whose parallel progress justifies coordination.
 
 Keep ordinary planning, sequencing, fan-in, review, verification, and final synthesis in the main agent.
 
 ## Tool surface
 
-Enabled retained delegation exposes exactly:
+The extension exposes exactly:
 
 - `subagent_spawn`;
-- `subagent_send`;
 - `subagent_await`;
-- `subagent_manage`;
-- `subagent_mailbox`; and
+- `subagent_cancel`; and
 - `subagent_inspect`.
 
-Disabled retained delegation exposes `subagent_inspect` only.
+`subagent_await` is the intentional join after useful overlapping parent work is complete.
 
-`subagent_await` is the supported intentional join after useful overlapping parent work is complete.
+Its timeout and caller cancellation never cancel the child.
 
-Its wait timeout and caller cancellation never interrupt or close the child.
+The runtime exposes no follow-up, mailbox, hierarchy, settings, or management surface beyond cancellation.
 
-The former blocking execution and synchronous consultation routes were removed in a breaking migration.
+## Runtime boundary
 
-Read-only evidence now uses `explorer`, but its configured read-only tools do not reproduce the removed consultation route's stricter resource-loading contract.
+The job map is in-memory and scoped to one session manager.
 
-Parallelism uses several independent spawns, and the main agent owns fan-in.
+The runtime supports one fresh-subprocess transport.
 
-## Retained boundary
+The child disables session persistence, unrelated extensions, skills, and prompt templates.
 
-Retained agents keep identity, bounded logical history, follow-up generations, hierarchy, mailbox state, semantic snapshots, completion requirements, and target policy.
+The child receives no parent conversation or communication channel.
 
-Restored agents remain inert until an explicit follow-up.
+The extension keeps no custom agent catalog and accepts only an explicit self-contained task plus a closed core-tool allowlist.
 
-Subprocess, in-process, RPC, and automatic transports remain maintained.
+Completion delivery is non-waking and attempted at most once after terminal state commits.
 
-`next-turn` remains the default non-waking completion delivery, while `auto-resume` is opt-in.
+## Deferred decisions
 
-Shared-workspace writers require disjoint ownership, and disposable worktrees remain available for repository-write isolation.
+Child ask/reply remains deferred until demonstrated bounded-job use requires a clarification channel.
 
-## Active follow-ups
+If added, it should use one bounded per-child IPC channel and must not restore retained conversations, mailboxes, or a generic transport layer.
 
-Evaluate retained features individually against demonstrated use before adding new orchestration layers.
+Durability, lanes, forks, recovery, queues, tool replay, and long-lived conversation ownership belong in Pi's future public Harness surface rather than this extension.
 
-Do not reintroduce chains, panels, workflow DAGs, managed verification, or synchronous child execution without a separately approved product decision and evidence that main-agent coordination is insufficient.
+Source-entrypoint migration and removal of the build-backed runtime remain separate performance work.
 
-A future bounded-job simplification may remove retained conversations, mailboxes, or multiple transports, but this migration does not make that decision.
+Disconnected retained source, tests, benchmarks, dependencies, and build assumptions require a dedicated deletion pass before release.
 
-## Current reference notes
+## References
 
-- [`pi-subagents-capability-matrix.md`](pi-subagents-capability-matrix.md) records maintained retained capability and ownership boundaries.
-- [`pi-subagents-rpc-v1.md`](pi-subagents-rpc-v1.md) records the persistent RPC transport contract.
-- [`../async-runtime-protocol.md`](../async-runtime-protocol.md) records completion delivery and unavailable hard-barrier guarantees.
+- [`../tools.md`](../tools.md) defines the active public schemas.
+- [`../async-runtime-protocol.md`](../async-runtime-protocol.md) defines lifecycle and completion ownership.
+- [`../bounded-runtime-migration.md`](../bounded-runtime-migration.md) defines the breaking migration.
+- [`../simplification-priorities.md`](../simplification-priorities.md) records the adopted prioritization decision.
 
-Historical benchmark analyses and result files remain evidence for their recorded package surfaces and are not active workflow commands.
+Historical benchmark analyses remain evidence for the package surfaces they measured and are not active workflow guidance.

@@ -1,55 +1,44 @@
 # pi-subagents capability matrix
 
-This matrix records the maintained capability boundaries of `@narumitw/pi-subagents`.
+This matrix records the active bounded-job boundaries of `@narumitw/pi-subagents`.
 
-The package README owns public schemas and usage, while source and focused tests are the executable authority.
+The README owns public usage, while source and focused tests are the executable authority.
 
 | Capability | Status and boundary | Evidence |
 | --- | --- | --- |
-| Retained background spawn | `subagent_spawn` returns an opaque ID and canonical task path without waiting for completion. | `src/stateful-registration.ts`, registration and registry tests |
-| Follow-up conversation | `subagent_send` starts another generation with bounded retained history after semantic and target revalidation. | stateful registration, semantic snapshot, and persistence tests |
-| Intentional join | `subagent_await` waits for one retained turn; timeout and caller cancellation stop only the wait. | `test/stateful-await.test.ts` |
-| Lifecycle management | `subagent_manage` interrupts reusable work or closes retained trees child-first. | stateful tool and registry lifecycle tests |
-| Queue-only mailbox | `subagent_mailbox` sends without starting a turn and reads with optional acknowledgement. | stateful tool, mailbox, and hierarchy tests |
-| Metadata-only inspection | `subagent_inspect` reads agents, retained runs, models, context previews, status, and diagnostics without mutation or mailbox acknowledgement. | `src/inspect.ts`, `test/inspect.test.ts` |
-| Fixed tool surface | Enabled sessions register six retained tools in stable order; disabled sessions register inspection only. | registration, startup-import, settings, and cache-contract tests |
-| Transport selection | Retained execution supports subprocess, in-process, RPC, and deterministic automatic selection without post-acceptance fallback. | transport tests |
-| Completion delivery | `next-turn` is non-waking by default; opt-in `auto-resume` steers active work or requests one idle synthesis turn. | completion-delivery tests |
-| Required completion tracking | Exact required run and generation state remains pending until visible or explicitly terminal. | completion-requirement and cache-contract tests |
-| Durable retained state | Sanitized records restore inert and never restart interrupted work automatically. | persistence and session lifecycle tests |
-| Semantic revalidation | Changed agent, trust, tool, contract, result, or resource semantics require explicit follow-up revalidation. | semantic snapshot and retained lifecycle tests |
-| Hierarchical ownership | Parent, root, depth, children, and canonical task paths persist, and subtree cleanup runs child-first. | registry hierarchy and lifecycle tests |
-| Shared and isolated workspaces | Shared writers may run concurrently with explicit ownership, while clean-Git disposable worktrees isolate repository writes. | workspace tests |
-| Context selection | Spawn context supports none, all, summary, recent N user turns, and selected entry IDs with bounded sanitized projection. | context protocol and inspect tests |
-| Target trust | Canonical launch targets follow current-session or nearest saved Pi trust and the configured delegation cwd policy. | cwd-policy and stateful trust tests |
-| Bounded output | Model-facing content and safe projections remain bounded to 50 KiB or 2,000 lines. | limits, rendering, and inspection tests |
-| Structured outcomes | Text, structured-v1, and structured-v2 retained results preserve bounded claims, artifacts, verification, limitations, and unresolved dependencies. | result-contract and retained execution tests |
-| Delegation contracts | Optional v2 contracts validate capabilities, tools, authority metadata, evidence, budgets, and supported enforcement. | delegation-contract and execution-plan tests |
-| Local usage recording | Opt-in recording stores only content-free retained lifecycle, outcome, usage, and timing metadata. | usage recording tests |
-| Blocking execution | Removed; the main agent owns sequencing, parallel fan-out, fan-in, and deterministic verification. | registration tests and migration documentation |
-| Synchronous consultation | Removed; read-only evidence uses `explorer` without claiming the former resource-isolation contract. | registration tests and migration documentation |
-| Workflow and panel orchestration | Removed from the runtime. | source reachability audit and package tests |
-| Native transcript switching | Unsupported because Pi exposes no supported child transcript or session switch handle. | public SDK boundary review |
-| Filesystem isolation | Optional worktree only; cwd and trust policy are not OS sandboxes. | workspace tests and README security boundary |
-
-## Read-only boundary
-
-`subagent_inspect` is side-effect-free at the extension capability boundary.
-
-It applies project trust before project discovery and omits prompts, history output, context content, mailbox content, credential-bearing model fields, and unsafe paths.
-
-The built-in `explorer` has read-only configured tools, but those tools can read any accessible path explicitly requested by the model.
-
-This is not a filesystem, network, process, or confidentiality sandbox.
+| Background spawn | `subagent_spawn` returns an opaque current-session job ID without waiting for completion. | `src/job-tools.ts`, registration tests |
+| Intentional join | `subagent_await` waits for one job; timeout and caller cancellation stop only the wait. | `src/job-runtime.ts`, runtime tests |
+| Cancellation | `subagent_cancel` is idempotent, first-writer-wins, and awaits owned child cleanup. | runtime and lifecycle tests |
+| Metadata inspection | `subagent_inspect` exposes privacy-bounded current-session summaries without mutation. | registration privacy tests |
+| Fixed tool surface | Source and generated entrypoints register four tools in stable order. | registration, cache-contract, and loader tests |
+| Child execution | Every accepted job owns at most one fresh Pi subprocess. | process and runtime tests |
+| Tool policy | The child receives only the approved core-tool allowlist, with explicit empty-list behavior. | schema and child-argument tests |
+| Model inheritance | The child inherits the main provider, model, and effective thinking level when child-readable. | registration and child-argument tests |
+| Trust and cwd | The child uses the current working directory and current project-trust decision. | registration and child-argument tests |
+| Completion delivery | Terminal completion is bounded, sanitized, non-waking, and attempted at most once. | completion-delivery tests |
+| Session cleanup | Replacement, reload, and shutdown cancel jobs and release tasks, processes, timers, subscriptions, and widgets. | lifecycle and widget tests |
+| Prompt-cache stability | Ordered provider-visible tool definitions remain fixed across ordinary requests. | cache-contract test |
+| Terminal safety | C0, C1, ANSI introducers, and Unicode bidirectional controls are removed at display boundaries. | safe-text and widget tests |
+| Job durability | Unsupported; jobs and IDs expire with the current session. | lifecycle tests |
+| Retained follow-up | Unsupported; start a new self-contained job. | migration guide |
+| Mailbox and peer communication | Unsupported. | startup graph and migration guide |
+| Child ask/reply | Deferred and unsupported in the active contract. | current-direction note |
+| Multiple transports | Unsupported; the runtime uses one subprocess path. | startup graph and process tests |
+| Custom agents and parent context | Unsupported; specialization belongs in the task. | schema and child-argument tests |
+| Worktree management | Unsupported; prepare isolation outside the extension before spawning. | migration guide |
+| Settings | Unsupported; legacy files are never read or changed. | isolated non-mutation test |
+| Structured result contracts | Unsupported; the child returns bounded text and limitations. | tool reference |
+| Workflow orchestration | Unsupported; the main agent owns sequencing and fan-in. | README |
+| Operating-system isolation | Unsupported; Pi and child tools run with the user's process permissions. | README security boundary |
 
 ## Runtime ownership boundary
 
-The logical registry owns IDs, hierarchy, capacity, retained history, mailboxes, completion delivery, persistence, semantic revalidation, and workspace cleanup.
+The in-memory runtime owns IDs, capacity, legal transitions, waiters, cancellation, summaries, and completion attempts.
 
-Each active turn owns one transport session or process according to its fixed effective transport.
+Each active job owns one abort controller, terminal promise, and child task.
 
-Close, expiry, replacement, reload, and shutdown abort work and release transport and disposable-workspace ownership.
+The process runner owns child arguments, JSON event decoding, output bounds, timeout, and process-group termination.
 
-Pi core owns provider execution, message ordering, retries, compaction, global scheduling, and model interaction.
+Pi core owns provider execution, parent message ordering, retries, compaction, global scheduling, and model interaction.
 
-The extension does not claim inherited approval or sandbox policy, provider-header hooks, extension state, or a core-owned child-session tree.
+The extension does not claim inherited extension state, provider hooks, durable child sessions, or a core-owned agent tree.

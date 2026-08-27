@@ -1,84 +1,120 @@
-# Async runtime protocol
+# Bounded runtime protocol
 
-This document defines `pi-subagents:completion-requirement:v1` and the current runtime boundary for final-answer-dependent detached work.
+This document defines the active current-session job and completion boundary for `@narumitw/pi-subagents`.
 
-## Requirement identity
+## Ownership
 
-A caller marks one `subagent_spawn` or `subagent_send` turn with `completionRequirement: "required"`.
-The runtime binds that requirement to the accepted `agentId`, executor-owned `runId`, and monotonically increasing turn generation.
-Agent names and task paths are display and addressing aids and never replace exact run identity.
-Omitting the field or using `background` preserves prior behavior and does not create a final-answer dependency.
+The extension owns one in-memory job map for the active Pi session.
 
-## State ownership
+Each accepted job owns one abort controller, one terminal promise, one optional child task, and one completion-attempt marker.
 
-`AgentRegistry` owns requirement transitions with the child turn and persisted completion outbox.
-Tool-result `details.agent.completionRequirements` provides fork-sensitive branch evidence.
-Session restoration retains exact requirements found on the active branch and treats sessions without visible subagent state as a possible compacted continuation.
-The successful lifecycle tool result and delivered completion message are the ordinary model-visible requirement handoff.
-When a resume changes a pending run to cancelled and interrupted while its stale handoff remains in model context, `before_agent_start` appends one hidden versioned transition after that handoff.
-This append-only transition also applies when leading summaries retain the stale handoff, prevents duplicate publication on later turns, and participates in fork-sensitive branch reconstruction.
-If leading compaction or branch summaries remove the handoff, the `context` hook restores one canonical hidden `pi-subagent-required-completions` fallback immediately after the summaries.
-A branch-local custom session entry records the exact restored boundary so reload and tree navigation reconstruct the correct historical fallback.
-The fallback remains at that fixed boundary for the leading-summary epoch, while a later completion or cancellation transition supersedes it at the conversation tail.
-`CompletionDeliveryBroker` owns exact completion visibility acknowledgement and asks the registry to mark the corresponding requirement visible.
-No timer, waiter, or UI object owns requirement truth.
+The map is never persisted, restored, migrated, or shared across session managers.
 
-## States
+Pi core owns provider execution, parent message ordering, retries, compaction, and the main conversation.
 
-A newly accepted exact run enters `pending`.
-A durably persisted terminal completion moves the exact run to `available` and records its completion ID and terminal child state.
-Observation of that exact completion ID in the intended parent context moves the run to `visible`.
-Interruption, close, restore of a non-running owner, or shutdown moves an unfinished requirement to `cancelled` with an explicit terminal state.
-Duplicate completion delivery and acknowledgement are idempotent.
-A follow-up receives a new run ID and generation and creates a requirement only when that follow-up explicitly requests one.
-The runtime bounds retained requirement records per agent and rejects a sixty-fifth unresolved required run before acceptance so every unresolved exact identity fits in the canonical parent context.
+The main agent owns decomposition, fan-out, fan-in, workspace coordination, verification, and the final answer.
 
-## Parent behavior
+## Admission
 
-Pending and available requirements remain final-answer dependencies.
-A newly established canonical fallback omits requirements already visible at that boundary.
-A fallback retained from an earlier request remains historical prefix context after visibility changes, and the later completion message supplies the superseding state.
-Cancelled requirements are terminal and must be reported rather than silently treated as successful evidence.
-A failed, partial, interrupted, stale, or cancelled child never satisfies mutating acceptance or independent-verification requirements merely because its turn settled.
+A spawn validates its complete closed schema, task byte size, timeout, tool allowlist, nesting depth, model inheritance, session ownership, and active-job capacity before admission.
+
+Admission creates one opaque job ID in `queued` state and schedules at most one child launch.
+
+The runtime admits no more than eight `queued` or `running` jobs.
+
+## Child boundary
+
+A job starts one fresh Pi subprocess in the current working directory.
+
+The child receives only its self-contained task, selected model, effective thinking level, trust decision, selected built-in tools, and inherited process environment.
+
+The child receives no parent transcript, retained state, custom agent, extension, skill, prompt template, mailbox, broker, or communication tool.
+
+`PI_SUBAGENT_DEPTH` is incremented for defense in depth even though unrelated extensions are disabled.
+
+An explicit empty tool set uses `--no-builtin-tools`.
+
+## State machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued
+    queued --> running: child launch begins
+    queued --> cancelled: cancellation or shutdown wins
+    running --> completed: normal terminal assistant result
+    running --> partial: bounded evidence plus incomplete or failed outcome
+    running --> failed: no usable result
+    running --> timed_out: execution deadline wins
+    running --> cancelled: cancellation or shutdown wins
+    completed --> [*]
+    partial --> [*]
+    failed --> [*]
+    timed_out --> [*]
+    cancelled --> [*]
+```
+
+A single terminalization operation enforces first-writer-wins behavior.
+
+Late child output cannot rewrite cancellation, timeout, failure, or a prior completion.
+
+Terminal summaries are pruned oldest-first after the thirty-second retained terminal job.
+
+## Await and cancellation
+
+`subagent_await` races the terminal promise against an optional caller deadline and optional caller abort signal.
+
+Every path removes its timer and abort listener.
+
+A caller deadline or abort affects only that await operation.
+
+`subagent_cancel` commits cancellation only for non-terminal work, aborts the owned child, and waits for child cleanup.
+
+Repeated cancellation is idempotent.
+
+Unknown, pruned, and prior-session IDs reject.
+
+## Completion delivery
+
+Terminal state commits before delivery begins.
+
+The runtime marks delivery attempted before calling `pi.sendMessage`.
+
+Delivery uses the stable `pi-subagent-completion` custom type and `{ deliverAs: "steer", triggerTurn: false }`.
+
+Model-visible completion content strips terminal and bidirectional controls and remains byte bounded.
+
+A thrown delivery remains an attempted delivery and never causes result loss or a retry from await.
+
+## Session lifecycle
+
+Factory load registers static tools, commands, and event handlers without reading settings, querying the thinking level, or starting a child, timer, or widget.
+
+`session_start` shuts down the previous runtime before publishing the replacement owner.
+
+`session_shutdown` acts only on the matching session manager.
+
+Every continuation after an await revalidates current session ownership and runtime generation before mutating state, publishing UI, or delivering completion.
+
+Replacement and shutdown abort all active jobs, await owned cleanup, remove subscriptions and timers, clear the widget, and clear the job map.
+
+A stale shutdown from an older session cannot close the replacement session.
 
 ## Prompt-cache boundary
 
-Provider-visible subagent tool definitions and prompt metadata remain stable within one configured tool-surface epoch.
-A versioned hidden session-guidance message carries the bounded agent catalog, completion delivery, capacity, and cwd policy without placing mutable values in leading tool metadata.
-The initial guidance contract is persisted once before the first agent turn when no equivalent retained contract exists.
-A successfully applied live policy change appends a superseding guidance contract without triggering a model turn.
-Compaction restores missing guidance and required-completion fallbacks in deterministic order after leading summaries.
-These rules preserve normalized cache-eligible prefixes across ordinary turns but do not guarantee a provider-reported cache hit.
+The four tool names, order, descriptions, schemas, snippets, guidelines, and constrained enum values are fixed at factory registration.
 
-## Budget termination
+No mutable setting, catalog, status, job count, or session value enters leading tool metadata.
 
-Omitted limits use runtime or agent policy and are recorded as runtime-sourced telemetry.
-Explicit timeout, idle, turn, and tool-call limits remain compatible and are recorded as explicit sources.
-A limit stop with non-empty successful bounded finalization becomes a typed `partial` outcome with the exact termination reason.
-Empty finalization, failed finalization, malformed required structured output, and transport failures remain failed or contract-invalid.
-Partial evidence is available to the parent but is not successful verification or mutating acceptance.
+The extension adds no context hook or mutable system-guidance block.
 
-## Pi core boundary
+Ordinary turns therefore preserve the extension-owned provider-visible tool-definition prefix, without claiming a provider cache hit.
 
-The inspected supported Pi runtime emits provider `message_update` events before the TUI, RPC, JSON, and SDK surfaces display them.
-An extension `message_end` handler can replace the finalized same-role message but cannot retract previously displayed deltas.
-Steering is queued after the extension `input` event, direct RPC steering bypasses that event, and tool abort signals do not observe every accepted steer.
-Therefore an extension cannot provide a hard pre-display final-answer barrier or a reliably steer-interruptible join across all supported modes.
-`subagent_await` remains the bounded non-polling retained-agent join and accurately states that queued steering is blocked until the tool settles.
+## Privacy boundary
 
-A future core implementation would need replay-safe post-enqueue input activity, exact session-owned blocker handles, pre-display buffering or suppression, bounded timeout, and abort, replacement, reload, shutdown, and headless-mode semantics.
-This repository does not modify or publish Pi core packages for this work.
+Inspection and command status expose job IDs, states, timestamps, timeout metadata, and omission counts only.
 
-## Codex reference
+They omit tasks, full child output, selected tools, prompts, credentials, environment variables, and legacy files.
 
-Codex `wait_agent` uses replay-safe pending activity plus an event-driven watch receiver for mailbox and steering activity.
-Codex completion context uses a typed `FINAL_ANSWER` envelope with explicit task, sender, and payload fields.
-Codex rollout budgets use shared runtime-owned accounting and acknowledge reminders only after context insertion.
-These patterns inform waiting, completion identity, and budget ownership, but Codex also does not provide an absolute pre-display final-answer barrier.
+The TUI widget may show active selected tool names because it is an explicit local active-job display.
 
-## Compatibility fallback
-
-Older persisted agents without requirement metadata behave as background work.
-Current Pi versions continue using bounded persisted at-least-once completion delivery and optional idle-root auto-resume.
-The package must not claim that prompt guidance, context injection, automatic delivery, or finalized-message replacement is a hard barrier.
-The main agent owns sequencing, fan-out, fan-in, review, and verification after the synchronous execution routes were removed.
+Display text is sanitized before splitting, truncation, or terminal layout.

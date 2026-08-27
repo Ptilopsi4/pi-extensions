@@ -1,24 +1,22 @@
-# 🧑‍🤝‍🧑 pi-subagents — Retained Background Agents for Pi
+# 🧑‍🤝‍🧑 pi-subagents — Bounded Background Jobs for Pi
 
 [![npm](https://img.shields.io/npm/v/@narumitw/pi-subagents)](https://www.npmjs.com/package/@narumitw/pi-subagents) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-Delegate bounded work to retained background agents while the main Pi agent continues useful work and owns integration, verification, and the final answer.
+Delegate self-contained work to fresh background Pi subprocesses while the main agent keeps ownership of planning, coordination, verification, and the final answer.
 
-Use the built-in `explorer` for read-only repository evidence and `worker` for a clearly owned implementation slice.
+Each job exists only in the current session and has no retained conversation, mailbox, or access to the parent transcript.
 
 ## ✨ Features
 
-- Starts retained background agents and returns immediately with an opaque `agentId` and canonical `taskPath`.
-- Delivers bounded completion messages automatically and provides an intentional `subagent_await` join.
-- Keeps completed agents available for follow-up turns through `subagent_send`.
-- Supports queue-only mailbox messages, parent-child ownership, subtree interruption, and explicit close.
-- Includes metadata-only inspection for agents, retained runs, models, context previews, runtime status, and diagnostics.
-- Supports subprocess, in-process, RPC, and deterministic automatic transport selection.
-- Applies trust-aware launch directories, optional disposable Git worktrees, bounded context, deadlines, turn limits, and tool-call limits.
-- Persists sanitized retained state without automatically restarting interrupted work after reload.
-- Detects changed semantic resources before a follow-up and requires explicit revalidation when needed.
-- Optionally records content-free local lifecycle and timing events.
-- Loads a generated split runtime while keeping transport, manager, and inspection implementations lazy.
+- Starts one isolated Pi subprocess per accepted job and returns an opaque current-session `jobId` immediately.
+- Registers four fixed tools for spawn, await, cancellation, and privacy-bounded inspection.
+- Defaults children to the read-only `read`, `grep`, `find`, and `ls` tools.
+- Supports explicit write-capable tool selection or an explicit empty tool set.
+- Inherits the main session's model, provider, thinking level, working directory, and project-trust decision.
+- Bounds active jobs to eight and retained terminal summaries to thirty-two.
+- Delivers each terminal completion at most once without waking an idle main agent.
+- Cancels owned jobs and releases UI resources on session replacement, reload, and shutdown.
+- Reads and writes no `pi-subagents` settings or retained-state files.
 
 ## 📦 Install
 
@@ -26,11 +24,13 @@ Use the built-in `explorer` for read-only repository evidence and `worker` for a
 pi install npm:@narumitw/pi-subagents
 ```
 
-Try without installing permanently:
+Try the extension without installing it permanently:
 
 ```bash
 pi -e npm:@narumitw/pi-subagents
 ```
+
+Extensions run with the same operating-system permissions as Pi, and selected child tools can read or modify anything those permissions allow.
 
 Build and try this package locally from the repository root:
 
@@ -43,322 +43,146 @@ The published package declares `dist/index.ts`, so an unbuilt local checkout mus
 
 ## 🚀 Quick start
 
-Start one read-only background agent:
+Start one read-only background job with `subagent_spawn`:
 
 ```json
 {
-  "agent": "explorer",
-  "taskName": "auth_inventory",
   "task": "Inspect the authentication implementation and tests. Do not edit files. Return concise findings with exact paths and open questions."
 }
 ```
 
-`subagent_spawn` returns immediately.
+Continue useful non-overlapping main-agent work instead of polling or duplicating the delegated task.
 
-Continue concrete non-overlapping main-agent work instead of polling or duplicating the delegated task.
-
-When the result is required and useful overlapping work is complete, join it intentionally:
+Join the job when its result becomes necessary:
 
 ```json
 {
-  "agentId": "/root/auth_inventory",
-  "timeoutMs": 30000
+  "jobId": "job_01234567-89ab-cdef-0123-456789abcdef"
 }
 ```
 
-Use `subagent_send` for a later follow-up on the same retained conversation:
+Use a finite wait without cancelling the child:
 
 ```json
 {
-  "agentId": "/root/auth_inventory",
-  "task": "Recheck the updated implementation and report remaining risks."
+  "jobId": "job_01234567-89ab-cdef-0123-456789abcdef",
+  "timeout": 30
 }
 ```
 
 ## 🛠️ Tools
 
-Enabled retained delegation registers exactly six tools:
+The extension registers exactly these tools in this order:
 
 | Tool | Purpose |
 | --- | --- |
-| `subagent_spawn` | Start one retained background agent and return immediately. |
-| `subagent_send` | Start a follow-up turn on one retained agent. |
-| `subagent_await` | Intentionally wait for one retained turn without cancelling it on wait timeout. |
-| `subagent_manage` | Interrupt active work or close retained agents and release resources. |
-| `subagent_mailbox` | Queue a message without starting a turn, or read unread messages. |
-| `subagent_inspect` | Read bounded metadata, context previews, status, and diagnostics without changing state. |
+| `subagent_spawn` | Start one fresh bounded job and return immediately. |
+| `subagent_await` | Wait for one job without cancelling it on caller timeout. |
+| `subagent_cancel` | Idempotently cancel one active job and await process cleanup. |
+| `subagent_inspect` | Read privacy-bounded current-session metadata. |
 
-When retained delegation is disabled, only `subagent_inspect` is registered.
+See [`docs/tools.md`](./docs/tools.md) for exact schemas, states, and result behavior.
 
-See [`docs/tools.md`](./docs/tools.md) for the complete schema reference.
+### Tool selection
 
-### Choose the lifecycle
+Omitting `tools` selects `read`, `grep`, `find`, and `ls`.
 
-| Need | Use |
-| --- | --- |
-| Simple, tightly coupled, or immediate critical-path work | Keep it in the main agent. |
-| Bounded evidence that can run beside useful parent work | Spawn `explorer`. |
-| Bounded implementation with disjoint ownership | Spawn `worker`. |
-| Several independent tasks | Issue one spawn per task and keep coordination in the main agent. |
-| A retained result is now required | Use `subagent_await` after useful overlap is complete. |
-| Continue one agent's prior work | Use `subagent_send`. |
-| Queue information without starting a turn | Use `subagent_mailbox`. |
-| Stop current work but keep the agent reusable | Use `subagent_manage` with `interrupt`. |
-| Release an agent and its owned resources | Use `subagent_manage` with `close`. |
-| Inspect state without side effects | Use `subagent_inspect`. |
+An explicit empty array starts Pi with `--no-builtin-tools`.
 
-The main agent owns planning, fan-out, fan-in, sequencing, review, deterministic checks, integration, and the final answer.
+An explicit non-empty array may contain `read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, and `ls`.
 
-### Completion delivery
+Duplicates are removed in first-seen order.
 
-`stateful.completionDelivery` controls terminal completion delivery.
+Extension tools and unknown tool names are rejected before job admission.
 
-- `next-turn` is the default and queues completion for the next parent turn without waking an idle root.
-- `auto-resume` steers completion into active parent work or requests one synthesis turn when the root is idle and has no pending input.
+### Job lifecycle
 
-Set `completionRequirement: "required"` on a spawn or follow-up whose exact result is needed for the final answer.
+A job starts as `queued` or `running` and reaches exactly one terminal state: `completed`, `partial`, `failed`, `timed_out`, or `cancelled`.
 
-Required state is tracked until that exact completion becomes visible or reaches an explicit terminal state.
+The first terminal outcome wins when completion, timeout, cancellation, or shutdown race.
 
-Current Pi versions do not provide an extension-owned hard barrier that can retract already displayed output.
+A `subagent_await` timeout or caller cancellation ends only that await operation.
 
-`subagent_await` remains the explicit blocking join when the next action must not proceed without the retained result.
+The same active job can be awaited again later.
 
-Its `timeoutMs` defaults to 30 seconds and limits only the wait.
+Job IDs and all summaries expire on session replacement, reload, or shutdown.
 
-A wait timeout or caller cancellation never interrupts or closes the child.
+### Child boundary
 
-### Retained conversations
+Every job receives a self-contained task and no parent conversation history.
 
-A retained agent keeps one logical identity, selected agent definition, cwd, thinking level, default budgets, bounded history, and follow-up generation state.
+The child disables session persistence, unrelated extensions, skills, and prompt templates.
 
-The default subprocess transport may start a fresh child process for each turn and seed it with bounded sanitized history.
+The child runs in the main session's current working directory with its current trust decision.
 
-In-process and RPC transports can retain a native child session while the runtime remains active.
+The child inherits the selected provider, model, and effective thinking level.
 
-Restored records are inert and never restart interrupted work automatically.
+Providers registered only by a parent extension and process-local runtime API keys cannot be inherited by a child that disables extensions.
 
-A follow-up rechecks the current agent definition, target trust, selected resources, contract, and execution plan.
-
-If those semantics changed, `subagent_send` rejects until the caller reviews the differences and retries with `revalidate: true`.
-
-### Context selection
-
-`subagent_spawn.context` accepts:
-
-- `none` for no parent conversation, which is the default.
-- `all` for bounded user and assistant text from the active branch.
-- `summary` for an earlier checkpoint plus recent messages.
-- A positive number for the most recent N user turns and related assistant text.
-
-`contextEntryIds` selects exact session entries.
-
-Supplying IDs without `context` implies `all`, while explicit `context: "none"` still disables parent context.
-
-Reasoning, tool results, transport messages, and non-text parts are excluded.
-
-Use `subagent_inspect` with `action: "preview_context"` to inspect counts and truncation without returning context text.
-
-### Result formats and advanced contracts
-
-`resultFormat` accepts `text`, `structured-v1`, or `structured-v2`.
-
-Use text for ordinary work.
-
-Use structured formats only when a caller needs typed claims, artifacts, changes, verification, limitations, or unresolved dependencies.
-
-The optional `pi-subagents:delegation:v2` contract remains available for retained work that requires explicit acceptance, authority, evidence, or admission metadata.
-
-Omit the contract for ordinary delegation.
-
-Capability and tool requests can be validated and narrowed.
-
-Enforced path, network, and secret guarantees are unsupported and reject before launch.
+Nested delegation is rejected, and the child environment increments `PI_SUBAGENT_DEPTH` defensively.
 
 ## 💬 Commands
 
-- `/subagents` opens the current-session manager in TUI mode and reports bounded status in RPC mode.
-- `/subagents settings` opens the grouped settings hub.
-- `/subagents status` shows current-session and configured diagnostics with their sources.
-- `/subagents help` explains retained delegation, settings behavior, commands, and safety limits.
+- `/subagents` reports bounded current-session status in TUI and RPC modes.
+- `/subagents status` reports the same privacy-bounded status.
+- `/subagents help` summarizes the four tools and isolation boundary.
 
-Print and JSON modes do not emit ad hoc command output.
+The removed `/subagents settings` route is not accepted.
 
-## ⚙️ Settings
-
-Settings are stored in `~/.pi/agent/pi-subagents.json`.
-
-A missing file keeps defaults and creates nothing until an explicit save.
-
-Use `/subagents settings` for **Folders and trust**, **Completion and privacy**, **Agent defaults**, and **Advanced runtime settings**.
-
-Representative settings:
-
-```json
-{
-  "stateful": {
-    "enabled": true,
-    "transport": "auto",
-    "completionDelivery": "auto-resume",
-    "maxAgents": 16,
-    "maxActiveTurns": 4,
-    "maxDepth": 3,
-    "maxChildrenPerAgent": 8,
-    "maxStoredAgents": 50
-  },
-  "cwdPolicy": {
-    "delegation": "trusted-targets"
-  },
-  "usageRecording": {
-    "enabled": false
-  }
-}
-```
-
-`stateful.enabled` defaults to `true`.
-
-Set it to `false` and reload to expose inspection only.
-
-The default transport is `subprocess`.
-
-`auto` selects in-process for read-only built-in tools, RPC for write-capable built-in tools, and subprocess for extension or custom tools.
-
-Transport changes require `/reload` or a Pi process restart.
-
-Capacity changes apply on the next Pi session start or after `/reload`.
-
-Completion, cwd policy, agent defaults, and usage recording apply to subsequent work as documented by their settings screens.
-
-Settings saves preserve unknown fields and ignored legacy fields.
-
-Malformed or invalid settings block writes instead of being overwritten.
-
-Supported writers serialize updates and publish through a same-directory temporary file plus rename.
-
-## 🔐 Working-directory trust policy
-
-`cwdPolicy.delegation` accepts:
-
-| Value | Behavior |
-| --- | --- |
-| `trusted-targets` | Allow the current workspace or an external folder covered by a saved trusted decision. |
-| `current-workspace` | Reject canonical targets outside the current workspace. |
-| `anywhere` | Allow any existing directory Pi can access. |
-
-Paths resolve relative to the current workspace and are canonicalized before containment and trust checks.
-
-The nearest saved Pi trust decision wins for an external target.
-
-Use Pi `/trust` in the target folder, then restart Pi before expecting retained-runtime trust behavior to change.
-
-These controls govern launch directories and protected project resources.
-
-They are not filesystem, process, network, credential, or operating-system sandboxes.
-
-### Workspace modes
-
-`workspaceMode: "shared"` is the default.
-
-Shared-workspace writers may run concurrently, so assign disjoint file or responsibility ownership.
-
-`workspaceMode: "worktree"` creates a disposable Git worktree from a clean repository and removes it when the agent closes or the session shuts down.
-
-Worktrees isolate repository writes but not processes, network access, secrets, credentials, absolute paths, or the rest of the filesystem.
-
-## 🤖 Built-in and custom agents
-
-The built-in catalog contains:
-
-| Agent | Purpose | Default tools |
-| --- | --- | --- |
-| `explorer` | Read-only repository exploration with concise path evidence. | `read`, `grep`, `find`, `ls` |
-| `worker` | Bounded implementation and command execution with clear ownership. | Pi default tools |
-
-User agents load from `~/.pi/agent/agents`.
-
-Trusted project agents load from `<workspace>/.pi/agents` only when the caller explicitly selects `agentScope: "project"` or `"both"`.
-
-Project-local agents require project trust and confirmation by default.
-
-Per-agent settings can override tools, model, thinking level, and timeout without replacing unrelated fields.
-
-## 📊 Local usage recording
-
-Local usage recording is disabled by default and creates no usage storage until explicitly enabled.
-
-Records are private per-runtime JSONL files below `<pi-agent-directory>/pi-subagents-usage/`.
-
-The recorder stores content-free lifecycle, surface, outcome, usage, and monotonic timing metadata.
-
-It does not store prompts, tasks, responses, thinking, tool arguments or results, code, paths, commands, mailbox content, raw errors, provider identity, credentials, or Pi session identifiers.
-
-Validated writer files older than the retention window are removed after recording starts.
-
-Disabling recording stops new events immediately and leaves existing files to expire or be removed manually while Pi is stopped.
-
-## 🔄 Migration from synchronous tools
-
-The blocking `subagent` and synchronous `subagent_consult` routes were removed in this breaking release.
-
-Use `subagent_spawn` with `explorer` for read-only evidence and call `subagent_await` only when that result is required before the next action.
-
-An explorer spawn has read-only configured tools but does not reproduce the removed consultation route's stricter resource-loading contract.
-
-Express parallel work as multiple independent spawns.
-
-Keep sequencing and fan-in synthesis in the main agent.
-
-Use main-agent review skills and deterministic checks instead of extension-owned panels or managed verification workflows.
-
-Start a fresh conversation when a resumed transcript repeatedly requests a removed tool name.
-
-Pin the previous package major when an established integration still requires a removed route.
-
-Legacy `blocking`, `consult`, and `cwdPolicy.consultation` fields are ignored but preserved by unrelated settings writes for rollback compatibility.
-
-Historical persisted blocking-workflow files are left untouched and are no longer exposed through `subagent_inspect`.
+Commands produce no extension-owned output in print or JSON mode.
 
 ## 🔒 Security and privacy
 
-Subagents run with the Pi process user's permissions.
+The extension is a coordination boundary, not an operating-system sandbox.
 
-Read-only tool selection is a capability restriction, not a filesystem or confidentiality sandbox.
+A task prompt cannot reduce permissions granted by the selected tools or the Pi process.
 
-Shell, PowerShell, edit, write, custom, and extension tools may mutate files or access the network according to their own behavior.
+Inspection and status omit task text, full output, prompts, selected tools, credentials, environment variables, and legacy persisted content.
 
-Project and user agent definitions are trusted code or instructions and should be reviewed before use.
+Widget labels and model-visible completion content strip terminal control and Unicode bidirectional formatting characters before layout.
 
-Model IDs, paths, tasks, results, and mailbox text are treated as untrusted terminal input and sanitized at display boundaries.
+Raw bounded child output remains available in `subagent_await` result details for programmatic use.
 
-Private-tagged text is removed before bounded context, history, or mailbox persistence.
+Completion delivery uses `deliverAs: "steer"` with `triggerTurn: false`, so it does not request a new main-agent turn.
 
-For real isolation, run Pi in a container, VM, micro-VM, or OS sandbox with only required paths and credentials mounted.
+Legacy `pi-subagents.json` and retained-state files are left untouched for downgrade recovery.
+
+## 🚧 Limitations
+
+- Jobs cannot ask the main agent questions before completion.
+- Jobs cannot be continued after completion.
+- Jobs do not retain history, identities, hierarchy, mailboxes, or state across sessions.
+- Jobs cannot receive parent context, custom agent catalogs, extension tools, external working directories, or package-managed worktrees.
+- The runtime has one subprocess transport and no automatic transport selection.
+- The main agent must decompose work, avoid conflicting writers, perform fan-in, run deterministic checks, and decide what evidence is sufficient.
+- Disconnected retained-runtime source remains temporarily in the package for a separate deletion pass and is unreachable from the registered entrypoint.
+
+See [`docs/bounded-runtime-migration.md`](./docs/bounded-runtime-migration.md) for the breaking migration from retained agents.
 
 ## 🗂️ Package layout
 
 ```text
 packages/pi-subagents/
-├── docs/                    # Tool, protocol, diagram, and implementation references
-├── scripts/                 # Generated split-runtime build
+├── dist/                         # Generated build-backed Pi entrypoint
+├── docs/                         # Contract, migration, diagrams, and direction notes
+├── scripts/build-runtime.mjs     # Validated atomic runtime builder
 ├── src/
-│   ├── agents/              # Built-in definitions, discovery, catalog, and settings types
-│   ├── execution/           # Retained runtime admission and depth policy
-│   ├── settings/            # Validation and effective setting snapshots
-│   ├── stateful-*.ts        # Retained tool registration, guidance, limits, and rendering
-│   ├── registry*.ts         # Retained identity, history, mailbox, and lifecycle state
-│   ├── *-transport.ts       # Subprocess, in-process, RPC, and automatic transports
-│   ├── completion-*.ts      # Delivery, requirement tracking, routing, and rendering
-│   ├── config-*.ts          # `/subagents` manager, settings, status, and help
-│   ├── inspect*.ts          # Side-effect-free metadata inspection
-│   └── index.ts             # Thin extension entrypoint
-├── test/                    # Active retained-runtime and package tests
-├── package.json             # Package metadata and generated entrypoint
-└── README.md                # User guide and safety boundaries
+│   ├── bounded-subagents.ts      # Active extension composition and lifecycle
+│   ├── job-process.ts            # Isolated Pi subprocess runner
+│   ├── job-runtime.ts            # Current-session bounded job state
+│   ├── job-tools.ts              # Four fixed model-facing tools
+│   ├── job-types.ts              # Closed contract types and limits
+│   ├── job-widget.ts             # TUI-only active-job widget
+│   ├── pi-invocation.ts          # Validated Pi executable resolution
+│   ├── process-control.ts        # Process-group termination
+│   ├── safe-text.ts              # Display sanitization and bounds
+│   └── index.ts                  # Thin extension entrypoint
+└── test/                         # Active Vitest coverage
 ```
 
 ## 🔎 Keywords
 
-Pi, subagents, retained agents, background jobs, delegation, asynchronous execution, agent tools, automation.
+Pi extension, bounded subagents, background jobs, isolated subprocesses, parallel repository work, model tools.
 
 ## 📄 License
 
