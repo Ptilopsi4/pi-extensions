@@ -542,7 +542,7 @@ export default function planMode(pi: ExtensionAPI, dependencies: PlanModeDepende
 		}
 	});
 
-	pi.on("tool_call", async (event) => {
+	pi.on("tool_call", async (event, ctx) => {
 		const requiredHelper =
 			event.toolName === PLAN_MODE_QUESTION_TOOL_NAME ||
 			event.toolName === PLAN_MODE_COMPLETE_TOOL_NAME;
@@ -570,22 +570,45 @@ export default function planMode(pi: ExtensionAPI, dependencies: PlanModeDepende
 		}
 		if (requiredHelper) return;
 
+		const calledTool = toolByName(event.toolName);
+		const activeToolNames = new Set(safeGetActiveTools());
+		if (!calledTool) {
+			return {
+				block: true,
+				reason: activeToolNames.has(event.toolName)
+					? `Plan mode blocks tool '${event.toolName}' because its safe policy metadata is unavailable.`
+					: `Plan mode blocks tool '${event.toolName}' because it is not registered or active. Register and activate it before starting the next Plan workflow.`,
+			};
+		}
+		if (classifyPlanModeTool(calledTool) === "blocked") {
+			return {
+				block: true,
+				reason: `Plan mode blocks tool '${event.toolName}' because its built-in policy is blocked and settings cannot enable it.`,
+			};
+		}
 		const allowedToolNames = new Set(planModePolicyToolNames());
+		if (!activeToolNames.has(event.toolName)) {
+			return {
+				block: true,
+				reason: allowedToolNames.has(event.toolName)
+					? `Plan mode blocks tool '${event.toolName}' because it was admitted to the active Plan workflow but is currently inactive. Reactivate it to continue without restarting.`
+					: `Plan mode blocks tool '${event.toolName}' because it is registered but inactive. Activate it before starting the next Plan workflow.`,
+			};
+		}
 		if (!allowedToolNames.has(event.toolName)) {
 			return {
 				block: true,
-				reason: `Plan mode blocks tool '${event.toolName}' because it is unavailable or not selected by the Plan policy.`,
-			};
-		}
-		const calledTool = toolByName(event.toolName);
-		if (!calledTool || classifyPlanModeTool(calledTool) === "blocked") {
-			return {
-				block: true,
-				reason: `Plan mode blocks tool '${event.toolName}' because its safe policy metadata is unavailable.`,
+				reason: workflowDesiredToolNames().has(event.toolName)
+					? `Plan mode blocks tool '${event.toolName}' because it was not available when the active Plan workflow froze its tool policy. Exit Plan mode, then start again after the tool is active.`
+					: `Plan mode blocks tool '${event.toolName}' because it is not selected by the Plan policy. Exit Plan mode, then enable it with /plan tools or defaultPlanTools before starting again.`,
 			};
 		}
 		if (event.toolName === "bash") {
-			const blocked = findBlockedCommandSegment(readCommand(event.input), settings.safeSubcommands);
+			const blocked = findBlockedCommandSegment(
+				readCommand(event.input),
+				settings.safeSubcommands,
+				ctx.cwd,
+			);
 			if (blocked !== undefined) {
 				return {
 					block: true,
@@ -597,6 +620,7 @@ export default function planMode(pi: ExtensionAPI, dependencies: PlanModeDepende
 			const blocked = findBlockedPowerShellCommandSegment(
 				readCommand(event.input),
 				settings.safeSubcommands,
+				ctx.cwd,
 			);
 			if (blocked !== undefined) {
 				return {
@@ -1282,6 +1306,14 @@ export default function planMode(pi: ExtensionAPI, dependencies: PlanModeDepende
 	function planModePolicyToolNames() {
 		if (state.enabled) return workflowAllowedToolNames ?? [];
 		return computePlanModePolicyToolNames();
+	}
+
+	function workflowDesiredToolNames() {
+		const policy = state.workflowToolPolicy;
+		if (!state.enabled || !policy) return new Set<string>();
+		return new Set(
+			policy.kind === "automatic" ? automaticPlanModeToolNames() : (policy.desiredNames ?? []),
+		);
 	}
 
 	function beginWorkflowToolPolicy() {

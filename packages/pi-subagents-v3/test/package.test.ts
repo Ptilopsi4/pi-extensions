@@ -34,7 +34,7 @@ test("package declares one source extension and one bundled operating skill", ()
 
 test("bundled skill documents every minimal-runtime operating responsibility", () => {
 	const skill = readFileSync(
-		path.join(packageDirectory, "skills", "subagents-v3", "SKILL.md"),
+		path.join(packageDirectory, "skills", "subagents", "SKILL.md"),
 		"utf8",
 	);
 	for (const evidence of [

@@ -8,16 +8,21 @@ import {
 	BROWSER_SHUTDOWN_WAIT_MS,
 	type BrowserCandidate,
 	type BrowserCandidateDefinition,
+	type BrowserLaunchAttempt,
 	DEFAULT_ENDPOINT_RETRY_MS,
 	DEFAULT_ENDPOINT_WAIT_MS,
 	DEFAULT_HTTP_TIMEOUT_MS,
 	DEVTOOLS_ACTIVE_PORT_FILE,
 	type DevToolsPage,
+	invalidateWebMcpOperations,
 	MANAGED_BROWSER_PROFILE_PREFIX,
 	type ManagedBrowser,
 	state,
 } from "./runtime.js";
+import type { EffectiveBrowserSettings } from "./settings.js";
 
+// Endpoint attachment, managed launch, dynamic-port publication, and shutdown intentionally remain
+// together because they form one ownership state machine behind the testable operations boundary.
 interface BrowserSpawnOptions {
 	shell: false;
 	stdio: "ignore";
@@ -49,6 +54,129 @@ const DEFAULT_BROWSER_MANAGER_OPERATIONS: BrowserManagerOperations = {
 
 let browserManagerOperations = DEFAULT_BROWSER_MANAGER_OPERATIONS;
 
+interface ManagedBrowserScope {
+	browser: EffectiveBrowserSettings;
+	controller: AbortController;
+	generation: number;
+	launchPromise?: Promise<void>;
+	managedBrowser?: ManagedBrowser;
+	port: number;
+	lastLaunchAttempt?: BrowserLaunchAttempt;
+}
+
+const managedBrowserScopes = new WeakMap<object, ManagedBrowserScope>();
+
+function cloneBrowserSettings(browser: EffectiveBrowserSettings): EffectiveBrowserSettings {
+	return { ...browser, extensionPaths: [...browser.extensionPaths] };
+}
+
+function runtimeBrowserSettings(): EffectiveBrowserSettings {
+	return {
+		endpoint: `http://${formatHostForUrl(state.host)}:${state.configuredPort}`,
+		host: state.host,
+		port: state.configuredPort,
+		hostConfigured: state.hostConfigured,
+		portConfigured: state.portConfigured,
+		autoLaunchEnabled: state.autoLaunchEnabled,
+		...(state.browserExecutable ? { executablePath: state.browserExecutable } : {}),
+		extensionPaths: [...state.extensionPaths],
+		endpointSource: state.endpointSource,
+		autoLaunchSource: state.autoLaunchSource,
+		executablePathSource: state.browserExecutableSource,
+		extensionPathsSource: state.extensionPathsSource,
+	};
+}
+
+function managedBrowserScope(owner: object) {
+	const existing = managedBrowserScopes.get(owner);
+	if (existing) return existing;
+	const browser = runtimeBrowserSettings();
+	const created: ManagedBrowserScope = {
+		browser,
+		controller: new AbortController(),
+		generation: 0,
+		port: browser.port,
+	};
+	managedBrowserScopes.set(owner, created);
+	return created;
+}
+
+export function startManagedBrowserSession(owner: object) {
+	const scope = managedBrowserScope(owner);
+	scope.controller.abort(new DOMException("Chrome DevTools session replaced", "AbortError"));
+	scope.controller = new AbortController();
+	scope.generation += 1;
+	scope.lastLaunchAttempt = undefined;
+}
+
+export function syncManagedBrowserSettings(owner: object, browser: EffectiveBrowserSettings) {
+	const scope = managedBrowserScope(owner);
+	scope.browser = cloneBrowserSettings(browser);
+	scope.port = browser.port;
+}
+
+export function browserSettingsForOwner(owner?: object) {
+	return owner ? managedBrowserScope(owner).browser : runtimeBrowserSettings();
+}
+
+export function managedBrowserExtensionPaths(owner?: object) {
+	return browserSettingsForOwner(owner).extensionPaths;
+}
+
+export function managedBrowserExtensionPathsSource(owner?: object) {
+	return browserSettingsForOwner(owner).extensionPathsSource;
+}
+
+export function managedBrowserForOwner(owner?: object) {
+	if (!owner) return state.managedBrowser;
+	const scopedBrowser = managedBrowserScope(owner).managedBrowser;
+	if (scopedBrowser) return scopedBrowser;
+	return state.managedBrowser?.sessionOwner === owner ? state.managedBrowser : undefined;
+}
+
+function setManagedBrowser(owner: object | undefined, browser: ManagedBrowser | undefined) {
+	if (owner) managedBrowserScope(owner).managedBrowser = browser;
+	else state.managedBrowser = browser;
+}
+
+function launchPromiseForOwner(owner?: object) {
+	return owner ? managedBrowserScope(owner).launchPromise : state.launchPromise;
+}
+
+function setLaunchPromise(owner: object | undefined, launchPromise: Promise<void> | undefined) {
+	if (owner) managedBrowserScope(owner).launchPromise = launchPromise;
+	else state.launchPromise = launchPromise;
+}
+
+function managedBrowserPort(owner?: object) {
+	return owner ? managedBrowserScope(owner).port : state.port;
+}
+
+function managedBrowserConfiguredPort(owner?: object) {
+	return browserSettingsForOwner(owner).port;
+}
+
+function managedBrowserPortConfigured(owner?: object) {
+	return browserSettingsForOwner(owner).portConfigured;
+}
+
+function setManagedBrowserPort(owner: object | undefined, port: number) {
+	if (owner) managedBrowserScope(owner).port = port;
+	else state.port = port;
+}
+
+function lastLaunchAttempt(owner?: object) {
+	return owner ? managedBrowserScope(owner).lastLaunchAttempt : state.lastLaunchAttempt;
+}
+
+function setLastLaunchAttempt(
+	owner: object | undefined,
+	attempt: BrowserLaunchAttempt | undefined,
+) {
+	if (owner) managedBrowserScope(owner).lastLaunchAttempt = attempt;
+	else state.lastLaunchAttempt = attempt;
+}
+
 export function setBrowserManagerOperationsForTests(overrides: Partial<BrowserManagerOperations>) {
 	const previous = browserManagerOperations;
 	browserManagerOperations = { ...DEFAULT_BROWSER_MANAGER_OPERATIONS, ...overrides };
@@ -69,19 +197,28 @@ function normalizePathForComparison(value: string) {
 	return process.platform === "win32" ? value.toLowerCase() : value;
 }
 
-export async function ensureDevToolsEndpoint(waitMs = DEFAULT_ENDPOINT_WAIT_MS) {
-	if (extensionsConfigured()) {
-		validateExtensionLaunchMode();
-		await ensureManagedBrowserLaunched(waitMs);
+export async function ensureDevToolsEndpoint(
+	waitMs = DEFAULT_ENDPOINT_WAIT_MS,
+	callerSignal?: AbortSignal,
+	owner?: object,
+) {
+	callerSignal?.throwIfAborted();
+	if (extensionsConfigured(owner)) {
+		validateExtensionLaunchMode(owner);
+		await ensureManagedBrowserLaunched(waitMs, callerSignal, owner);
 		return;
 	}
-	if (canAutoLaunchBrowser()) {
+	if (canAutoLaunchBrowser(owner)) {
 		try {
-			await withEndpointRetry(() => fetchDevToolsJson<unknown>("/json/version"), waitMs);
+			await withEndpointRetry(
+				() => fetchDevToolsJson<unknown>("/json/version", { signal: callerSignal }, owner),
+				waitMs,
+				callerSignal,
+			);
 			return;
 		} catch (error) {
-			if (shouldAutoLaunchAfterEndpointError(error)) {
-				await ensureManagedBrowserLaunched(waitMs);
+			if (shouldAutoLaunchAfterEndpointError(error, owner)) {
+				await ensureManagedBrowserLaunched(waitMs, callerSignal, owner);
 				return;
 			}
 			throw error;
@@ -89,120 +226,175 @@ export async function ensureDevToolsEndpoint(waitMs = DEFAULT_ENDPOINT_WAIT_MS) 
 	}
 
 	try {
-		await fetchDevToolsJson<unknown>("/json/version");
+		await fetchDevToolsJson<unknown>("/json/version", { signal: callerSignal }, owner);
 	} catch (error) {
 		if (isRetryableEndpointError(error)) return;
 		throw error;
 	}
 }
 
-function validateExtensionLaunchMode() {
-	if (!isLocalDevToolsHost(state.host)) {
+function validateExtensionLaunchMode(owner?: object) {
+	const browser = browserSettingsForOwner(owner);
+	if (!isLocalDevToolsHost(browser.host)) {
 		throw new DevToolsEndpointError(
 			"Unpacked extensions require a local extension-owned managed browser; remote CDP endpoints cannot be modified.",
 		);
 	}
-	if (!state.autoLaunchEnabled) {
+	if (!browser.autoLaunchEnabled) {
 		throw new DevToolsEndpointError(
 			"Auto-launch is required for unpacked extensions so Pi can create an isolated managed browser.",
 		);
 	}
-	if (!state.browserExecutable) {
+	if (!browser.executablePath) {
 		throw new DevToolsEndpointError(
 			"Unpacked extensions require browser.executablePath for Chrome for Testing or Chromium in pi-chrome-devtools.json.",
 		);
 	}
 }
 
-async function ensureManagedBrowserLaunched(waitMs: number) {
-	if (state.launchPromise) return state.launchPromise;
-	if (state.managedBrowser && !state.managedBrowser.exited && state.managedBrowser.ready) return;
-	const generation = state.sessionGeneration;
-	const signal = state.sessionController.signal;
-	throwIfBrowserLaunchCancelled(generation, signal);
+async function ensureManagedBrowserLaunched(
+	waitMs: number,
+	callerSignal?: AbortSignal,
+	owner?: object,
+) {
+	const existingLaunch = launchPromiseForOwner(owner);
+	if (existingLaunch) {
+		await waitForCaller(existingLaunch, callerSignal);
+		return;
+	}
+	const existingBrowser = managedBrowserForOwner(owner);
+	if (existingBrowser && !existingBrowser.exited && existingBrowser.ready) return;
+	const generation = owner ? managedBrowserScope(owner).generation : state.sessionGeneration;
+	const signal = owner
+		? managedBrowserScope(owner).controller.signal
+		: state.sessionController.signal;
+	throwIfBrowserLaunchCancelled(generation, signal, owner);
 
-	const launchPromise = prepareManagedBrowserLaunch(waitMs, generation, signal);
+	const launchPromise = prepareManagedBrowserLaunch(waitMs, generation, signal, owner);
 	const wrappedPromise = launchPromise.finally(() => {
-		if (state.launchPromise === wrappedPromise) state.launchPromise = undefined;
+		if (launchPromiseForOwner(owner) === wrappedPromise) setLaunchPromise(owner, undefined);
 	});
-	state.launchPromise = wrappedPromise;
-	return wrappedPromise;
+	setLaunchPromise(owner, wrappedPromise);
+	await waitForCaller(wrappedPromise, callerSignal);
+}
+
+function waitForCaller<T>(operation: Promise<T>, signal?: AbortSignal) {
+	if (!signal) return operation;
+	signal.throwIfAborted();
+	return new Promise<T>((resolve, reject) => {
+		let settled = false;
+		const onAbort = () => settle(() => reject(signal.reason));
+		const settle = (callback: () => void) => {
+			if (settled) return;
+			settled = true;
+			signal.removeEventListener("abort", onAbort);
+			callback();
+		};
+		signal.addEventListener("abort", onAbort, { once: true });
+		operation.then(
+			(value) => settle(() => resolve(value)),
+			(error) => settle(() => reject(error)),
+		);
+	});
 }
 
 async function prepareManagedBrowserLaunch(
 	waitMs: number,
 	generation: number,
 	signal: AbortSignal,
+	owner?: object,
 ) {
-	if (state.managedBrowser) {
-		await shutdownManagedBrowser(state.managedBrowser, { awaitLaunch: false });
-		throwIfBrowserLaunchCancelled(generation, signal);
+	const existingBrowser = managedBrowserForOwner(owner);
+	if (existingBrowser) {
+		await shutdownManagedBrowser(existingBrowser, { awaitLaunch: false, owner });
+		throwIfBrowserLaunchCancelled(generation, signal, owner);
 	}
-	if (state.portConfigured) {
-		const available = await browserManagerOperations.isPortAvailable(state.host, state.port);
-		throwIfBrowserLaunchCancelled(generation, signal);
+	if (managedBrowserPortConfigured(owner)) {
+		const available = await browserManagerOperations.isPortAvailable(
+			browserSettingsForOwner(owner).host,
+			managedBrowserPort(owner),
+		);
+		throwIfBrowserLaunchCancelled(generation, signal, owner);
 		if (!available) {
 			throw new DevToolsEndpointError(
-				`Cannot launch the extension-owned browser because explicit port ${state.port} is already in use. Choose a free browser.endpoint port or reset the endpoint to use a dynamic managed port.`,
+				`Cannot launch the extension-owned browser because explicit port ${managedBrowserPort(owner)} is already in use. Choose a free browser.endpoint port or reset the endpoint to use a dynamic managed port.`,
 			);
 		}
 	}
-	return launchManagedBrowser(waitMs, generation, signal);
+	return launchManagedBrowser(waitMs, generation, signal, owner);
 }
 
-async function launchManagedBrowser(waitMs: number, generation: number, signal: AbortSignal) {
-	throwIfBrowserLaunchCancelled(generation, signal);
-	const candidateDefinitions = browserCandidateDefinitions();
-	const candidates = await resolveBrowserCandidates(candidateDefinitions, generation, signal);
-	throwIfBrowserLaunchCancelled(generation, signal);
-	state.lastLaunchAttempt = {
+async function launchManagedBrowser(
+	waitMs: number,
+	generation: number,
+	signal: AbortSignal,
+	owner?: object,
+) {
+	throwIfBrowserLaunchCancelled(generation, signal, owner);
+	const candidateDefinitions = browserCandidateDefinitions(owner);
+	const candidates = await resolveBrowserCandidates(
+		candidateDefinitions,
+		generation,
+		signal,
+		owner,
+	);
+	throwIfBrowserLaunchCancelled(generation, signal, owner);
+	setLastLaunchAttempt(owner, {
 		candidateLabels: candidateDefinitions.map(formatBrowserCandidateDefinition),
-		mode: state.portConfigured ? "explicit-port" : "dynamic-port",
-	};
+		mode: managedBrowserPortConfigured(owner) ? "explicit-port" : "dynamic-port",
+	});
 
 	if (candidates.length === 0) {
-		throw new DevToolsEndpointError(noBrowserCandidateMessage(candidateDefinitions));
+		throw new DevToolsEndpointError(noBrowserCandidateMessage(candidateDefinitions, owner));
 	}
 
 	let lastError: unknown;
 	for (const candidate of candidates) {
-		throwIfBrowserLaunchCancelled(generation, signal);
+		throwIfBrowserLaunchCancelled(generation, signal, owner);
 		try {
-			if (extensionsConfigured())
-				await requireSupportedExtensionBrowser(candidate, generation, signal);
-			await launchBrowserCandidate(candidate, waitMs, generation, signal);
-			throwIfBrowserLaunchCancelled(generation, signal);
-			state.lastLaunchAttempt = {
-				...state.lastLaunchAttempt,
+			if (extensionsConfigured(owner))
+				await requireSupportedExtensionBrowser(candidate, generation, signal, owner);
+			await launchBrowserCandidate(candidate, waitMs, generation, signal, owner);
+			throwIfBrowserLaunchCancelled(generation, signal, owner);
+			setLastLaunchAttempt(owner, {
+				...lastLaunchAttempt(owner),
+				candidateLabels: candidateDefinitions.map(formatBrowserCandidateDefinition),
+				mode: managedBrowserPortConfigured(owner) ? "explicit-port" : "dynamic-port",
 				selectedCandidate: formatBrowserCandidate(candidate),
-				userDataDir: state.managedBrowser?.userDataDir,
-			};
+				userDataDir: managedBrowserForOwner(owner)?.userDataDir,
+			});
 			return;
 		} catch (error) {
 			try {
-				throwIfBrowserLaunchCancelled(generation, signal);
+				throwIfBrowserLaunchCancelled(generation, signal, owner);
 			} catch (cancellation) {
-				state.lastLaunchAttempt = {
-					...state.lastLaunchAttempt,
+				setLastLaunchAttempt(owner, {
+					...(lastLaunchAttempt(owner) ?? {
+						candidateLabels: candidateDefinitions.map(formatBrowserCandidateDefinition),
+						mode: managedBrowserPortConfigured(owner) ? "explicit-port" : "dynamic-port",
+					}),
 					lastError: formatError(cancellation),
-				};
+				});
 				throw cancellation;
 			}
 			lastError = error;
-			state.lastLaunchAttempt = {
-				...state.lastLaunchAttempt,
+			setLastLaunchAttempt(owner, {
+				...(lastLaunchAttempt(owner) ?? {
+					candidateLabels: candidateDefinitions.map(formatBrowserCandidateDefinition),
+					mode: managedBrowserPortConfigured(owner) ? "explicit-port" : "dynamic-port",
+				}),
 				lastError: formatError(error),
-			};
+			});
 		}
 	}
 
-	if (lastError instanceof DevToolsEndpointError && extensionsConfigured()) throw lastError;
+	if (lastError instanceof DevToolsEndpointError && extensionsConfigured(owner)) throw lastError;
 	throw new DevToolsEndpointError(
 		[
 			"Unable to auto-launch a Chromium-family browser for Chrome DevTools.",
 			`Tried: ${candidates.map(formatBrowserCandidate).join(", ")}`,
 			lastError ? `Last error: ${formatError(lastError)}` : undefined,
-			launchHint(),
+			launchHint(owner),
 			endpointConfigHint(),
 		]
 			.filter(Boolean)
@@ -214,6 +406,7 @@ async function requireSupportedExtensionBrowser(
 	candidate: BrowserCandidate,
 	generation: number,
 	signal: AbortSignal,
+	owner?: object,
 ) {
 	let version: string;
 	try {
@@ -221,12 +414,12 @@ async function requireSupportedExtensionBrowser(
 			await browserManagerOperations.inspectBrowserVersion(candidate.resolvedExecutable, signal)
 		).trim();
 	} catch (error) {
-		throwIfBrowserLaunchCancelled(generation, signal);
+		throwIfBrowserLaunchCancelled(generation, signal, owner);
 		throw new DevToolsEndpointError(
 			`Unable to identify the configured extension browser ${candidate.resolvedExecutable}: ${formatError(error)}. Configure Chrome for Testing or Chromium.`,
 		);
 	}
-	throwIfBrowserLaunchCancelled(generation, signal);
+	throwIfBrowserLaunchCancelled(generation, signal, owner);
 	const classification = classifyExtensionBrowserVersion(version);
 	if (!classification.supported) {
 		throw new DevToolsEndpointError(
@@ -252,19 +445,22 @@ async function launchBrowserCandidate(
 	waitMs: number,
 	generation: number,
 	signal: AbortSignal,
+	owner?: object,
 ) {
-	throwIfBrowserLaunchCancelled(generation, signal);
+	throwIfBrowserLaunchCancelled(generation, signal, owner);
 	const userDataDir = await browserManagerOperations.mkdtemp(
 		join(tmpdir(), MANAGED_BROWSER_PROFILE_PREFIX),
 	);
 	let managedBrowser: ManagedBrowser | undefined;
 	try {
-		throwIfBrowserLaunchCancelled(generation, signal);
-		const portArgument = state.portConfigured ? String(state.port) : "0";
+		throwIfBrowserLaunchCancelled(generation, signal, owner);
+		const portArgument = managedBrowserPortConfigured(owner)
+			? String(managedBrowserPort(owner))
+			: "0";
 		const args = buildManagedBrowserLaunchArguments(
 			userDataDir,
 			portArgument,
-			state.extensionPaths,
+			managedBrowserExtensionPaths(owner),
 		);
 		const child = browserManagerOperations.spawn(candidate.resolvedExecutable, args, {
 			shell: false,
@@ -276,22 +472,29 @@ async function launchBrowserCandidate(
 			exited: false,
 			ready: false,
 			ownerGeneration: generation,
+			...(owner ? { sessionOwner: owner } : {}),
 		};
 		managedBrowser = launchedBrowser;
-		state.managedBrowser = launchedBrowser;
+		setManagedBrowser(owner, launchedBrowser);
 
 		child.once("exit", () => {
+			if (managedBrowserForOwner(owner) === launchedBrowser && owner) {
+				invalidateWebMcpOperations(owner, "Chrome DevTools managed browser exited");
+			}
 			launchedBrowser.exited = true;
 			launchedBrowser.ready = false;
-			if (!state.portConfigured && launchedBrowser.port === state.port) {
-				state.port = state.configuredPort;
+			if (
+				!managedBrowserPortConfigured(owner) &&
+				launchedBrowser.port === managedBrowserPort(owner)
+			) {
+				setManagedBrowserPort(owner, managedBrowserConfiguredPort(owner));
 			}
 		});
 
 		await waitForBrowserSpawn(child);
-		throwIfBrowserLaunchCancelled(generation, signal);
-		if (state.portConfigured) {
-			launchedBrowser.port = state.port;
+		throwIfBrowserLaunchCancelled(generation, signal, owner);
+		if (managedBrowserPortConfigured(owner)) {
+			launchedBrowser.port = managedBrowserPort(owner);
 		} else {
 			launchedBrowser.port = await readManagedBrowserPort(
 				userDataDir,
@@ -299,15 +502,16 @@ async function launchBrowserCandidate(
 				waitMs,
 				generation,
 				signal,
+				owner,
 			);
-			throwIfBrowserLaunchCancelled(generation, signal);
-			state.port = launchedBrowser.port;
+			throwIfBrowserLaunchCancelled(generation, signal, owner);
+			setManagedBrowserPort(owner, launchedBrowser.port);
 		}
-		await waitForDevToolsEndpoint(waitMs, launchedBrowser, generation, signal);
-		throwIfBrowserLaunchCancelled(generation, signal);
+		await waitForDevToolsEndpoint(waitMs, launchedBrowser, generation, signal, owner);
+		throwIfBrowserLaunchCancelled(generation, signal, owner);
 		launchedBrowser.ready = true;
 	} catch (error) {
-		if (managedBrowser) await shutdownManagedBrowser(managedBrowser, { awaitLaunch: false });
+		if (managedBrowser) await shutdownManagedBrowser(managedBrowser, { awaitLaunch: false, owner });
 		else {
 			await browserManagerOperations
 				.rm(userDataDir, { recursive: true, force: true })
@@ -362,6 +566,7 @@ async function readManagedBrowserPort(
 	waitMs: number,
 	generation: number,
 	signal: AbortSignal,
+	owner?: object,
 ) {
 	const activePortFile = join(userDataDir, DEVTOOLS_ACTIVE_PORT_FILE);
 	const deadline = Date.now() + waitMs;
@@ -373,7 +578,7 @@ async function readManagedBrowserPort(
 				if (isNodeError(error) && error.code === "ENOENT") return undefined;
 				throw error;
 			});
-		throwIfBrowserLaunchCancelled(generation, signal);
+		throwIfBrowserLaunchCancelled(generation, signal, owner);
 		const portText = text?.split(/\r?\n/, 1)[0]?.trim();
 		const port = Number(portText);
 		if (Number.isInteger(port) && port > 0) return port;
@@ -384,7 +589,7 @@ async function readManagedBrowserPort(
 				[
 					"Timed out waiting for auto-launched browser DevToolsActivePort.",
 					`Expected file: ${activePortFile}`,
-					launchHint(),
+					launchHint(owner),
 				].join("\n"),
 			);
 		}
@@ -397,25 +602,26 @@ async function waitForDevToolsEndpoint(
 	managedBrowser: ManagedBrowser,
 	generation: number,
 	signal: AbortSignal,
+	owner?: object,
 ) {
 	const deadline = Date.now() + waitMs;
 	while (true) {
 		throwIfManagedBrowserExited(managedBrowser);
 		try {
-			await fetchDevToolsJson<unknown>("/json/version", { signal });
-			throwIfBrowserLaunchCancelled(generation, signal);
+			await fetchDevToolsJson<unknown>("/json/version", { signal }, owner);
+			throwIfBrowserLaunchCancelled(generation, signal, owner);
 			return;
 		} catch (error) {
 			if (!isRetryableEndpointError(error)) throw error;
 		}
 
-		throwIfBrowserLaunchCancelled(generation, signal);
+		throwIfBrowserLaunchCancelled(generation, signal, owner);
 		const remainingMs = deadline - Date.now();
 		if (remainingMs <= 0) {
 			throw new DevToolsEndpointError(
 				[
-					`Timed out waiting for auto-launched browser at ${devToolsEndpoint()}.`,
-					launchHint(),
+					`Timed out waiting for auto-launched browser at ${devToolsEndpoint(owner)}.`,
+					launchHint(owner),
 				].join("\n"),
 			);
 		}
@@ -428,36 +634,52 @@ function throwIfManagedBrowserExited(managedBrowser: ManagedBrowser) {
 	throw new DevToolsEndpointError("Auto-launched browser exited before DevTools became available.");
 }
 
-function throwIfBrowserLaunchCancelled(generation: number, signal: AbortSignal) {
-	if (!state.shuttingDown && generation === state.sessionGeneration && !signal.aborted) {
-		return;
-	}
+function throwIfBrowserLaunchCancelled(generation: number, signal: AbortSignal, owner?: object) {
+	const currentGeneration = owner ? managedBrowserScope(owner).generation : state.sessionGeneration;
+	const shuttingDown = owner ? signal.aborted : state.shuttingDown;
+	if (!shuttingDown && generation === currentGeneration && !signal.aborted) return;
 	throw new DevToolsEndpointError(
-		generation === state.sessionGeneration
+		generation === currentGeneration
 			? "Chrome DevTools browser launch cancelled during shutdown."
 			: "Chrome DevTools browser launch cancelled because the session was replaced.",
 	);
 }
 
 export async function shutdownManagedBrowser(
-	managedBrowser = state.managedBrowser,
-	options: { awaitLaunch?: boolean; cancelLaunch?: boolean } = {},
+	managedBrowser?: ManagedBrowser,
+	options: { awaitLaunch?: boolean; cancelLaunch?: boolean; owner?: object } = {},
 ) {
-	if (options.cancelLaunch) state.shuttingDown = true;
+	const owner = options.owner ?? managedBrowser?.sessionOwner;
+	if (options.cancelLaunch) {
+		if (owner) {
+			const scope = managedBrowserScope(owner);
+			scope.controller.abort(
+				new DOMException("Chrome DevTools browser launch cancelled during shutdown", "AbortError"),
+			);
+			scope.generation += 1;
+		} else {
+			state.shuttingDown = true;
+		}
+	}
+	managedBrowser ??= managedBrowserForOwner(owner);
 	if (options.awaitLaunch !== false) {
-		await state.launchPromise?.catch(() => undefined);
-		managedBrowser = managedBrowser ?? state.managedBrowser;
+		await launchPromiseForOwner(owner)?.catch(() => undefined);
+		managedBrowser ??= managedBrowserForOwner(owner);
 	}
 	if (!managedBrowser) return;
 	if (managedBrowser.cleanupPromise) return managedBrowser.cleanupPromise;
 
-	const cleanup = cleanupManagedBrowser(managedBrowser);
+	const cleanup = cleanupManagedBrowser(managedBrowser, owner);
 	managedBrowser.cleanupPromise = cleanup;
 	return cleanup;
 }
 
-async function cleanupManagedBrowser(managedBrowser: ManagedBrowser) {
-	if (state.managedBrowser === managedBrowser) state.managedBrowser = undefined;
+async function cleanupManagedBrowser(managedBrowser: ManagedBrowser, owner?: object) {
+	if (managedBrowserForOwner(owner) === managedBrowser) {
+		if (owner) invalidateWebMcpOperations(owner, "Chrome DevTools managed browser closed");
+		if (state.managedBrowser === managedBrowser) state.managedBrowser = undefined;
+		else setManagedBrowser(owner, undefined);
+	}
 	if (!managedBrowser.exited) {
 		killManagedBrowserProcess(managedBrowser);
 		await waitForManagedBrowserExit(managedBrowser, BROWSER_SHUTDOWN_WAIT_MS).catch(async () => {
@@ -470,8 +692,8 @@ async function cleanupManagedBrowser(managedBrowser: ManagedBrowser) {
 	await browserManagerOperations
 		.rm(managedBrowser.userDataDir, { recursive: true, force: true })
 		.catch(() => undefined);
-	if (!state.portConfigured && managedBrowser.port === state.port) {
-		state.port = state.configuredPort;
+	if (!managedBrowserPortConfigured(owner) && managedBrowser.port === managedBrowserPort(owner)) {
+		setManagedBrowserPort(owner, managedBrowserConfiguredPort(owner));
 	}
 }
 
@@ -505,8 +727,8 @@ function waitForManagedBrowserExit(managedBrowser: ManagedBrowser, waitMs: numbe
 	});
 }
 
-export async function fetchDevToolsJson<T>(path: string, init?: RequestInit) {
-	const url = `${devToolsEndpoint()}${path}`;
+export async function fetchDevToolsJson<T>(path: string, init?: RequestInit, owner?: object) {
+	const url = `${devToolsEndpoint(owner)}${path}`;
 	let response: Response;
 	try {
 		const timeoutSignal = AbortSignal.timeout(DEFAULT_HTTP_TIMEOUT_MS);
@@ -515,7 +737,7 @@ export async function fetchDevToolsJson<T>(path: string, init?: RequestInit) {
 			signal: init?.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal,
 		});
 	} catch (error) {
-		throw new DevToolsEndpointError(endpointConnectionErrorMessage(error), {
+		throw new DevToolsEndpointError(endpointConnectionErrorMessage(error, owner), {
 			launchable: true,
 			retryable: true,
 		});
@@ -545,9 +767,14 @@ export async function fetchDevToolsJson<T>(path: string, init?: RequestInit) {
 	}
 }
 
-export async function withEndpointRetry<T>(operation: () => Promise<T>, waitMs: number) {
+export async function withEndpointRetry<T>(
+	operation: () => Promise<T>,
+	waitMs: number,
+	signal?: AbortSignal,
+) {
 	const deadline = Date.now() + waitMs;
 	while (true) {
+		signal?.throwIfAborted();
 		try {
 			return await operation();
 		} catch (error) {
@@ -556,7 +783,10 @@ export async function withEndpointRetry<T>(operation: () => Promise<T>, waitMs: 
 			const remainingMs = deadline - Date.now();
 			if (remainingMs <= 0) throw error;
 
-			await browserManagerOperations.sleep(Math.min(DEFAULT_ENDPOINT_RETRY_MS, remainingMs));
+			await browserManagerOperations.sleep(
+				Math.min(DEFAULT_ENDPOINT_RETRY_MS, remainingMs),
+				signal,
+			);
 		}
 	}
 }
@@ -569,28 +799,29 @@ function isLaunchableEndpointError(error: unknown) {
 	return error instanceof DevToolsEndpointError && error.launchable;
 }
 
-function shouldAutoLaunchAfterEndpointError(error: unknown) {
-	if (!canAutoLaunchBrowser()) return false;
+function shouldAutoLaunchAfterEndpointError(error: unknown, owner?: object) {
+	if (!canAutoLaunchBrowser(owner)) return false;
 	if (isLaunchableEndpointError(error)) return true;
 
 	// After the attach-first attempt (including its retry window, when applicable) fails, treat any
 	// DevTools endpoint error on an unpinned port as a conflict we can avoid with a dynamic port.
-	return !state.portConfigured && error instanceof DevToolsEndpointError;
+	return !managedBrowserPortConfigured(owner) && error instanceof DevToolsEndpointError;
 }
 
-function canAutoLaunchBrowser() {
-	return state.autoLaunchEnabled && isLocalDevToolsHost(state.host);
+function canAutoLaunchBrowser(owner?: object) {
+	const browser = browserSettingsForOwner(owner);
+	return browser.autoLaunchEnabled && isLocalDevToolsHost(browser.host);
 }
 
-function extensionsConfigured() {
-	return state.extensionPaths.length > 0;
+function extensionsConfigured(owner?: object) {
+	return managedBrowserExtensionPaths(owner).length > 0;
 }
 
-function endpointConnectionErrorMessage(error: unknown) {
+function endpointConnectionErrorMessage(error: unknown, owner?: object) {
 	const reason = isTimeoutError(error) ? "request timed out" : "connection failed";
 	return [
-		`Cannot connect to Chrome DevTools endpoint at ${devToolsEndpoint()} (${reason}).`,
-		launchHint(),
+		`Cannot connect to Chrome DevTools endpoint at ${devToolsEndpoint(owner)} (${reason}).`,
+		launchHint(owner),
 		endpointConfigHint(),
 	].join("\n");
 }
@@ -599,8 +830,8 @@ function isTimeoutError(error: unknown) {
 	return error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name);
 }
 
-export function devToolsEndpoint() {
-	return `http://${formatHostForUrl(state.host)}:${state.port}`;
+export function devToolsEndpoint(owner?: object) {
+	return `http://${formatHostForUrl(browserSettingsForOwner(owner).host)}:${managedBrowserPort(owner)}`;
 }
 
 export function formatHostForUrl(host: string) {
@@ -608,91 +839,94 @@ export function formatHostForUrl(host: string) {
 	return host.includes(":") ? `[${host}]` : host;
 }
 
-export function endpointSourceLabel() {
-	return state.endpointSource;
+export function endpointSourceLabel(owner?: object) {
+	return browserSettingsForOwner(owner).endpointSource;
 }
 
 export type BrowserLifecycleState = "starting" | "running" | "exited" | "failed" | "unobserved";
 
-export function browserLifecycleState(): BrowserLifecycleState {
-	if (state.launchPromise) return "starting";
-	if (state.managedBrowser?.exited) return "exited";
-	if (state.managedBrowser?.ready) return "running";
-	if (state.lastLaunchAttempt?.lastError) return "failed";
+export function browserLifecycleState(owner?: object): BrowserLifecycleState {
+	if (launchPromiseForOwner(owner)) return "starting";
+	if (managedBrowserForOwner(owner)?.exited) return "exited";
+	if (managedBrowserForOwner(owner)?.ready) return "running";
+	if (lastLaunchAttempt(owner)?.lastError) return "failed";
 	return "unobserved";
 }
 
-export function launchModeLabel() {
-	if (extensionsConfigured()) {
-		if (!isLocalDevToolsHost(state.host)) return "invalid; extensions require a local endpoint";
-		if (!state.autoLaunchEnabled) return "invalid; extensions require auto-launch";
-		if (state.managedBrowser && !state.managedBrowser.exited) {
-			return state.portConfigured
+export function launchModeLabel(owner?: object) {
+	const browser = browserSettingsForOwner(owner);
+	const managedBrowser = managedBrowserForOwner(owner);
+	if (extensionsConfigured(owner)) {
+		if (!isLocalDevToolsHost(browser.host)) return "invalid; extensions require a local endpoint";
+		if (!browser.autoLaunchEnabled) return "invalid; extensions require auto-launch";
+		if (managedBrowser && !managedBrowser.exited) {
+			return managedBrowserPortConfigured(owner)
 				? "extension-owned browser on explicit port"
 				: "extension-owned browser on dynamic port";
 		}
-		return state.portConfigured
+		return managedBrowserPortConfigured(owner)
 			? "force extension-owned launch on explicit port"
 			: "force extension-owned launch on dynamic port";
 	}
-	if (!isLocalDevToolsHost(state.host)) return "manual remote endpoint";
-	if (!state.autoLaunchEnabled) return "manual; auto-launch disabled";
-	if (state.managedBrowser && !state.managedBrowser.exited) {
-		return state.portConfigured
+	if (!isLocalDevToolsHost(browser.host)) return "manual remote endpoint";
+	if (!browser.autoLaunchEnabled) return "manual; auto-launch disabled";
+	if (managedBrowser && !managedBrowser.exited) {
+		return managedBrowserPortConfigured(owner)
 			? "auto-launched on explicit port"
 			: "auto-launched on dynamic port";
 	}
-	return state.portConfigured
+	return managedBrowserPortConfigured(owner)
 		? "attach first; auto-launch explicit port"
 		: "attach first; auto-launch dynamic port";
 }
 
-export function launchAttemptLines() {
-	if (!state.lastLaunchAttempt) return [];
+export function launchAttemptLines(owner?: object) {
+	const attempt = lastLaunchAttempt(owner);
+	if (!attempt) return [];
 
-	const lines = [`Last launch attempt: ${state.lastLaunchAttempt.mode}`];
-	if (state.lastLaunchAttempt.selectedCandidate) {
-		lines.push(`Launched browser: ${state.lastLaunchAttempt.selectedCandidate}`);
+	const lines = [`Last launch attempt: ${attempt.mode}`];
+	if (attempt.selectedCandidate) {
+		lines.push(`Launched browser: ${attempt.selectedCandidate}`);
 	} else {
-		lines.push(`Tried browser candidates: ${state.lastLaunchAttempt.candidateLabels.join(", ")}`);
+		lines.push(`Tried browser candidates: ${attempt.candidateLabels.join(", ")}`);
 	}
-	if (state.lastLaunchAttempt.userDataDir) {
-		lines.push(`Managed browser profile: ${state.lastLaunchAttempt.userDataDir}`);
-	}
-	if (state.lastLaunchAttempt.lastError) {
-		lines.push(`Last launch error: ${state.lastLaunchAttempt.lastError}`);
-	}
+	if (attempt.userDataDir) lines.push(`Managed browser profile: ${attempt.userDataDir}`);
+	if (attempt.lastError) lines.push(`Last launch error: ${attempt.lastError}`);
 	return lines;
 }
 
-export function launchHint() {
-	if (extensionsConfigured()) {
+export function launchHint(owner?: object) {
+	const browser = browserSettingsForOwner(owner);
+	if (extensionsConfigured(owner)) {
 		return "Configured unpacked extensions force an isolated extension-owned launch; existing CDP browsers are never reused, modified, or closed.";
 	}
-	if (!isLocalDevToolsHost(state.host)) {
-		return `Remote/non-local endpoints are not auto-launched. Start a browser with CDP enabled at ${devToolsEndpoint()}.`;
+	if (!isLocalDevToolsHost(browser.host)) {
+		return `Remote/non-local endpoints are not auto-launched. Start a browser with CDP enabled at ${devToolsEndpoint(owner)}.`;
 	}
-	if (!state.autoLaunchEnabled) {
-		return `Auto-launch is disabled. Start a browser manually: ${chromeLaunchCommand()}`;
+	if (!browser.autoLaunchEnabled) {
+		return `Auto-launch is disabled. Start a browser manually: ${chromeLaunchCommand(owner)}`;
 	}
-	const managedMode = state.portConfigured ? `port ${state.port}` : "a dynamic DevTools port";
-	return `If no endpoint is available, Pi will auto-launch a Chromium-family browser with ${managedMode} and an isolated temp profile. Manual command: ${chromeLaunchCommand()}`;
+	const managedMode = managedBrowserPortConfigured(owner)
+		? `port ${managedBrowserPort(owner)}`
+		: "a dynamic DevTools port";
+	return `If no endpoint is available, Pi will auto-launch a Chromium-family browser with ${managedMode} and an isolated temp profile. Manual command: ${chromeLaunchCommand(owner)}`;
 }
 
-export function browserCandidateHint() {
-	if (extensionsConfigured()) {
+export function browserCandidateHint(owner?: object) {
+	if (extensionsConfigured(owner)) {
 		return "Extension browser requirement: configure Chrome for Testing or Chromium with browser.executablePath; branded Chrome is rejected because it may ignore unpacked-extension flags.";
 	}
-	return `Browser candidates: ${browserCandidateDefinitions()
+	return `Browser candidates: ${browserCandidateDefinitions(owner)
 		.map((candidate) => candidate.label)
 		.join(", ")}`;
 }
 
-export function chromeLaunchCommand() {
-	const executable = state.browserExecutable ?? defaultManualBrowserExecutable();
+export function chromeLaunchCommand(owner?: object) {
+	const executable =
+		browserSettingsForOwner(owner).executablePath ?? defaultManualBrowserExecutable();
 	const dataDir =
 		process.platform === "win32" ? "%TEMP%\\pi-chrome-devtools" : "/tmp/pi-chrome-devtools";
-	return `${quoteCommandPart(executable)} --remote-debugging-port=${state.port} --user-data-dir=${dataDir}`;
+	return `${quoteCommandPart(executable)} --remote-debugging-port=${managedBrowserPort(owner)} --user-data-dir=${dataDir}`;
 }
 
 function defaultManualBrowserExecutable() {
@@ -716,22 +950,23 @@ export function isLocalDevToolsHost(host: string) {
 	return ["localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"].includes(normalizedHost);
 }
 
-function browserCandidateDefinitions(): BrowserCandidateDefinition[] {
-	const explicitCandidate = explicitBrowserCandidateDefinition();
+function browserCandidateDefinitions(owner?: object): BrowserCandidateDefinition[] {
+	const explicitCandidate = explicitBrowserCandidateDefinition(owner);
 	if (explicitCandidate.length > 0) return explicitCandidate;
 
 	return uniqueBrowserCandidates(platformBrowserCandidateDefinitions());
 }
 
-function explicitBrowserCandidateDefinition(): BrowserCandidateDefinition[] {
-	if (!state.browserExecutable) return [];
+function explicitBrowserCandidateDefinition(owner?: object): BrowserCandidateDefinition[] {
+	const browser = browserSettingsForOwner(owner);
+	if (!browser.executablePath) return [];
 	return [
 		{
 			label:
-				state.browserExecutableSource === "environment"
+				browser.executablePathSource === "environment"
 					? "PI_CHROME_DEVTOOLS_BROWSER"
 					: "browser.executablePath",
-			executable: state.browserExecutable,
+			executable: browser.executablePath,
 			source: "env",
 		},
 	];
@@ -828,11 +1063,12 @@ async function resolveBrowserCandidates(
 	definitions: BrowserCandidateDefinition[],
 	generation: number,
 	signal: AbortSignal,
+	owner?: object,
 ) {
 	const candidates: BrowserCandidate[] = [];
 	for (const definition of definitions) {
 		const resolvedExecutable = await resolveBrowserExecutable(definition.executable);
-		throwIfBrowserLaunchCancelled(generation, signal);
+		throwIfBrowserLaunchCancelled(generation, signal, owner);
 		if (!resolvedExecutable) continue;
 		candidates.push({ ...definition, resolvedExecutable });
 	}
@@ -897,8 +1133,11 @@ function formatBrowserCandidateDefinition(candidate: BrowserCandidateDefinition)
 	return `${candidate.label} (${candidate.executable})`;
 }
 
-function noBrowserCandidateMessage(candidateDefinitions: BrowserCandidateDefinition[]) {
-	if (extensionsConfigured()) {
+function noBrowserCandidateMessage(
+	candidateDefinitions: BrowserCandidateDefinition[],
+	owner?: object,
+) {
+	if (extensionsConfigured(owner)) {
 		return [
 			"Cannot launch unpacked extensions because the configured browser executable was not found or is not executable.",
 			`Tried: ${candidateDefinitions.map(formatBrowserCandidateDefinition).join(", ")}`,

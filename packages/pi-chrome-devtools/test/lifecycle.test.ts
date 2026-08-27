@@ -6,10 +6,26 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
-import { setBrowserManagerOperationsForTests } from "../src/browser-manager.js";
+import {
+	devToolsEndpoint,
+	managedBrowserExtensionPaths,
+	setBrowserManagerOperationsForTests,
+} from "../src/browser-manager.js";
 import chromeDevtools from "../src/chrome-devtools.js";
-import { state } from "../src/runtime.js";
+import {
+	configureChromeDevtoolsToolExposure,
+	initializeAvailableChromeDevtoolsTools,
+	setChromeDevtoolsSessionOwner,
+} from "../src/lazy-tools.js";
+import {
+	applyRuntimeWebMcpSetting,
+	beginWebMcpOperation,
+	currentWebMcpGeneration,
+	state,
+	webMcpEnabled,
+} from "../src/runtime.js";
 import { projectSettingsFilePath, saveBrowserSettings, settingsFilePath } from "../src/settings.js";
+import { CHROME_DEVTOOLS_TOOL_NAMES, WEBMCP_TOOL_NAMES } from "../src/tool-names.js";
 
 class LifecycleChild extends EventEmitter {
 	killCalls = 0;
@@ -80,6 +96,10 @@ async function withFixture(
 	}
 }
 
+function sessionOwner(ctx: unknown) {
+	return (ctx as { sessionManager: object }).sessionManager;
+}
+
 function writeJson(filePath: string, value: unknown) {
 	mkdirSync(path.dirname(filePath), { recursive: true });
 	writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
@@ -119,6 +139,8 @@ test("session_start applies trusted project browser settings and status reports 
 		assert.deepEqual(state.extensionPaths, [extensionB]);
 		assert.equal(state.browserExecutable, executable);
 		assert.equal(state.extensionPathsSource, "project");
+		assert.equal(devToolsEndpoint(sessionOwner(ctx)), "http://localhost:9333");
+		assert.deepEqual(managedBrowserExtensionPaths(sessionOwner(ctx)), [extensionB]);
 		const status = notifications.at(-1)?.message ?? "";
 		assert.match(status, new RegExp(`Project settings: .*${path.basename(cwdA)}.*trusted`));
 		assert.match(status, /Endpoint source: user/);
@@ -126,6 +148,31 @@ test("session_start applies trusted project browser settings and status reports 
 		assert.match(status, /Unpacked extensions \(project\)/);
 		assert.match(status, /Chrome for Testing or Chromium/);
 		assert.match(status, /manual JSON edits require \/reload or session replacement/);
+	});
+});
+
+test("session start loads the user WebMCP gate and reports its experimental safety contract", async () => {
+	await withFixture(async ({ cwdA }) => {
+		writeJson(settingsFilePath(), {
+			tools: CHROME_DEVTOOLS_TOOL_NAMES,
+			updatedAt: 1,
+			webmcp: { enabled: true },
+		});
+		const mock = createMockPi({ activeTools: ["other_tool", ...CHROME_DEVTOOLS_TOOL_NAMES] });
+		const { ctx, notifications } = createMockContext({
+			cwd: cwdA,
+			hasUI: true,
+			mode: "rpc",
+			model: { api: "openai-completions", provider: "other", id: "eager" },
+		});
+		chromeDevtools(mock.pi);
+		await mock.events.get("session_start")?.[0]?.({}, ctx);
+		await mock.commands.get("chrome-devtools")?.handler("status", ctx);
+
+		assert.equal(webMcpEnabled(sessionOwner(ctx)), true);
+		assert.ok(WEBMCP_TOOL_NAMES.every((name) => mock.rawPi.getActiveTools().includes(name)));
+		assert.ok(notifications.some(({ message }) => /Experimental WebMCP is enabled/u.test(message)));
+		assert.match(notifications.at(-1)?.message ?? "", /WebMCP: enabled · experimental/u);
 	});
 });
 
@@ -172,6 +219,53 @@ test("session replacement discards the stale continuation and applies only the l
 
 		assert.deepEqual(state.extensionPaths, [extensionB]);
 		assert.equal(state.projectSettingsFilePath, projectSettingsFilePath(cwdB));
+	});
+});
+
+test("WebMCP enablement, exposure, and invalidation are scoped to the session manager", () => {
+	const first = sessionOwner(createMockContext().ctx);
+	const second = sessionOwner(createMockContext().ctx);
+	const firstPi = createMockPi({ activeTools: [...CHROME_DEVTOOLS_TOOL_NAMES] });
+	const secondPi = createMockPi({ activeTools: [...CHROME_DEVTOOLS_TOOL_NAMES] });
+	for (const [mock, owner] of [
+		[firstPi, first],
+		[secondPi, second],
+	] as const) {
+		setChromeDevtoolsSessionOwner(mock.pi, owner);
+		initializeAvailableChromeDevtoolsTools(mock.pi);
+		applyRuntimeWebMcpSetting(true, owner);
+		configureChromeDevtoolsToolExposure(mock.pi, CHROME_DEVTOOLS_TOOL_NAMES);
+	}
+	const firstOperation = beginWebMcpOperation(first);
+	const secondOperation = beginWebMcpOperation(second);
+	applyRuntimeWebMcpSetting(false, second);
+	configureChromeDevtoolsToolExposure(secondPi.pi, CHROME_DEVTOOLS_TOOL_NAMES);
+	assert.equal(firstOperation.signal.aborted, false);
+	assert.equal(secondOperation.signal.aborted, true);
+	assert.equal(webMcpEnabled(first), true);
+	assert.equal(webMcpEnabled(second), false);
+	assert.ok(WEBMCP_TOOL_NAMES.every((name) => firstPi.rawPi.getActiveTools().includes(name)));
+	assert.ok(WEBMCP_TOOL_NAMES.every((name) => !secondPi.rawPi.getActiveTools().includes(name)));
+	firstOperation.dispose();
+	secondOperation.dispose();
+});
+
+test("model replacement invalidates every prior WebMCP identity and active operation", async () => {
+	await withFixture(async () => {
+		const mock = createMockPi();
+		const { ctx } = createMockContext();
+		chromeDevtools(mock.pi);
+		await mock.events.get("session_start")?.[0]?.({}, ctx);
+		const owner = sessionOwner(ctx);
+		const operation = beginWebMcpOperation(owner);
+		const generation = currentWebMcpGeneration(owner);
+		await mock.events.get("model_select")?.[0]?.(
+			{ model: { api: "openai-completions", provider: "other", id: "replacement" } },
+			ctx,
+		);
+		assert.equal(operation.signal.aborted, true);
+		assert.ok(currentWebMcpGeneration(owner) > generation);
+		operation.dispose();
 	});
 });
 
@@ -222,16 +316,18 @@ test("session_shutdown clears status and releases an owned browser once", async 
 				removed.push(target);
 			},
 		});
+		const mock = createMockPi();
+		const { ctx, statuses } = createMockContext();
 		state.managedBrowser = {
 			process: child as unknown as ChildProcess,
 			userDataDir: "/tmp/lifecycle-profile",
 			exited: false,
 			ready: true,
 			ownerGeneration: state.sessionGeneration,
+			sessionOwner: sessionOwner(ctx),
 		};
-		const mock = createMockPi();
-		const { ctx, statuses } = createMockContext();
 		chromeDevtools(mock.pi);
+		const webMcpOperation = beginWebMcpOperation(sessionOwner(ctx));
 		try {
 			await Promise.all([
 				mock.events.get("session_shutdown")?.[0]?.({}, ctx),
@@ -241,6 +337,7 @@ test("session_shutdown clears status and releases an owned browser once", async 
 			assert.deepEqual(removed, ["/tmp/lifecycle-profile"]);
 			assert.equal(statuses.get("chrome-devtools"), undefined);
 			assert.equal(state.managedBrowser, undefined);
+			assert.equal(webMcpOperation.signal.aborted, true);
 		} finally {
 			restore();
 		}

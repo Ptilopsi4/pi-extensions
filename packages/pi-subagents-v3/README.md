@@ -8,7 +8,7 @@
 
 Pi Subagents v3 starts bounded background Pi jobs and lets each child ask the main agent necessary questions through an authenticated loopback broker.
 
-A bundled `subagents-v3` skill owns delegation strategy, least-privilege tool selection, parallel-work guidance, timeout selection, question handling, result review, and writer safety.
+A bundled `subagents` skill owns delegation strategy, least-privilege tool selection, parallel-work guidance, timeout selection, question handling, result review, and writer safety.
 
 ## ✨ Features
 
@@ -20,6 +20,7 @@ A bundled `subagents-v3` skill owns delegation strategy, least-privilege tool se
 - Lets the main agent answer a pending child question with `subagent-reply`.
 - Interrupts a parent job wait when a question needs a main-agent response without cancelling the job.
 - Publishes one guarded asynchronous completion and releases child resources at terminal state.
+- Shows each active job's state, elapsed time, timeout, and selected work tools above the editor.
 - Exposes bounded job metadata without leaking task text, output, prompts, selected tools, or broker credentials.
 - Cancels active session-owned work and closes the loopback broker during replacement, reload, or shutdown.
 
@@ -51,7 +52,7 @@ Review the source before installing or invoking the extension.
 
 ## 🚀 Quick start
 
-Ask Pi to use the bundled `subagents-v3` skill when deciding whether to delegate.
+Ask Pi to use the bundled `subagents` skill when deciding whether to delegate.
 
 Start one bounded background job with `subagent-spawn`.
 
@@ -60,6 +61,14 @@ The tool returns a `jobId` immediately.
 Continue useful main-agent work until a completion arrives or the result is required.
 
 If `subagent-wait` reports `reason: "subagent_message"`, answer the visible question with `subagent-reply`, then wait for the job again when needed.
+
+In TUI mode, an above-editor widget shows one compact line for each queued or running job.
+
+Each line includes the job ID, current state, elapsed execution time, configured timeout or `no timeout`, and selected work tools.
+
+The fixed `subagent-ask` and child `subagent-wait` communication tools are omitted from the widget because every child receives them.
+
+The widget disappears when no jobs remain active and is cleared during session replacement, reload, or shutdown.
 
 ## 🛠️ Tools
 
@@ -206,7 +215,7 @@ Jobs, broker requests, and retained results do not survive extension reload, ses
 packages/pi-subagents-v3/
 ├── docs/                        # Concise tools and design references
 ├── src/                         # Extension, broker, child bridge, and subprocess runtime
-├── skills/subagents-v3/        # Delegation and messaging operating manual
+├── skills/subagents/           # Delegation and messaging operating manual
 ├── test/                        # Protocol, lifecycle, process, and policy tests
 ├── package.json                 # Pi extension and skill declarations
 └── README.md                    # User guide and safety boundaries

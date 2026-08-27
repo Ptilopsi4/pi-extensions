@@ -1,5 +1,12 @@
 # @narumitw/pi-worktree
 
+## 0.51.6
+
+### Patch Changes
+
+- Updated dependencies [40182e5]
+  - @narumitw/pi-tui-kit@0.59.0
+
 ## 0.51.5
 
 ### Patch Changes
