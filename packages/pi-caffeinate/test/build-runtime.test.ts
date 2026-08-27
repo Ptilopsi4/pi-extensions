@@ -54,6 +54,7 @@ function validMetadata(): BuildMetadata {
 	const entryImports: Array<{ external?: boolean; kind?: string; path: string }> = [
 		{ path: "@earendil-works/pi-coding-agent", kind: "import-statement", external: true },
 		{ path: "@narumitw/pi-tui-kit", kind: "dynamic-import", external: true },
+		{ path: "dbus-native", kind: "dynamic-import", external: true },
 	];
 	const outputs: NonNullable<BuildMetadata["outputs"]> = {
 		"dist/index.ts": {
@@ -84,16 +85,18 @@ test("eager graph validation preserves first-use boundaries and external package
 		);
 	}
 
-	const eagerDependency = validMetadata();
-	const entry = requireOutput(eagerDependency, "dist/index.ts");
-	entry.imports = [
-		...(entry.imports ?? []),
-		{ path: "@narumitw/pi-tui-kit", kind: "import-statement", external: true },
-	];
-	assert.throws(
-		() => builder.validateEagerGraph(eagerDependency),
-		/Eager external dependency: @narumitw\/pi-tui-kit/u,
-	);
+	for (const dependency of ["@narumitw/pi-tui-kit", "dbus-native"]) {
+		const eagerDependency = validMetadata();
+		const entry = requireOutput(eagerDependency, "dist/index.ts");
+		entry.imports = [
+			...(entry.imports ?? []),
+			{ path: dependency, kind: "import-statement", external: true },
+		];
+		assert.throws(
+			() => builder.validateEagerGraph(eagerDependency),
+			new RegExp(`Eager external dependency: ${dependency.replaceAll("/", "\\/")}`, "u"),
+		);
+	}
 
 	const bundledDependency = validMetadata();
 	requireOutput(bundledDependency, "dist/index.ts").inputs = {
@@ -145,6 +148,9 @@ test("runtime builds are deterministic, mapped, external, and remove stale outpu
 		const files = await listFiles(first);
 		assert.ok(files.includes("index.ts"));
 		assert.ok(files.includes("index.ts.map"));
+		const entrySource = await readFile(join(first, "index.ts"), "utf8");
+		assert.match(entrySource, /await import\("dbus-native"\)/u);
+		assert.doesNotMatch(entrySource, /^import .* from "dbus-native";/mu);
 		assert.equal(
 			files.some((path) => path.startsWith("chunks/") && path.endsWith(".js")),
 			forbiddenEagerInputs.length > 0,

@@ -1,4 +1,4 @@
-import { type Message, type MessageBus, sessionBus } from "dbus-native";
+import type { Message, MessageBus } from "dbus-native";
 
 export const SCREENSAVER_BUS_NAME = "org.freedesktop.ScreenSaver";
 export const SCREENSAVER_INTERFACE = "org.freedesktop.ScreenSaver";
@@ -20,6 +20,7 @@ export interface DbusScreenSaverClient {
 export type DbusScreenSaverFactory = () => Promise<DbusScreenSaverClient>;
 
 export async function defaultDbusScreenSaverFactory(): Promise<DbusScreenSaverClient> {
+	const { sessionBus } = await import("dbus-native");
 	return new NativeScreenSaverClient(sessionBus());
 }
 
