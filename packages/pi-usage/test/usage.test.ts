@@ -1496,6 +1496,66 @@ test("the TUI SettingsList warns before activation and applies xAI changes immed
 	assert.match(rendered[0]?.join("\n") ?? "", /undocumented\s+cli-chat-proxy\.grok\.com/);
 });
 
+test("Ctrl+C hard-cancels Settings before conflicting configurable actions", async () => {
+	const settings = memorySettingsRuntime();
+	let applied = 0;
+	const { ctx } = createMockContext({
+		hasUI: true,
+		mode: "tui",
+		custom: async (factory: unknown) =>
+			new Promise<boolean>((resolve) => {
+				let component: {
+					dispose?(): void;
+					handleInput(data: string): void;
+					render(width: number): string[];
+				};
+				const done = (value: boolean) => {
+					component.dispose?.();
+					resolve(value);
+				};
+				component = (
+					factory as (
+						tui: { requestRender(): void },
+						theme: {
+							bold(text: string): string;
+							fg(_color: string, text: string): string;
+						},
+						keybindings: object,
+						done: (value: boolean) => void,
+					) => typeof component
+				)(
+					{ requestRender() {} },
+					{ bold: (text) => text, fg: (_color, text) => text },
+					{
+						matches: (data: string, id: string) =>
+							(id === "tui.select.confirm" && data === "\u0003") ||
+							(id === "tui.select.cancel" && data === "q"),
+					},
+					done,
+				);
+				component.handleInput("\u0003");
+				component.handleInput("q");
+			}),
+	});
+
+	const changed = await showUsageSettings(
+		ctx,
+		settings.runtime,
+		new AbortController().signal,
+		() => true,
+		() => {
+			applied += 1;
+		},
+	);
+
+	assert.equal(changed, false);
+	assert.deepEqual(settings.state().settings, {
+		codexFastMode: false,
+		experimentalXaiUsage: false,
+	});
+	assert.equal(applied, 0);
+});
+
 test("a durable settings save still applies lifecycle cleanup when disposal wins the await", async () => {
 	const settings = memorySettingsRuntime();
 	const controller = new AbortController();

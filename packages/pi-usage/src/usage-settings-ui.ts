@@ -119,14 +119,14 @@ export async function showUsageSettings(
 			invalidate: () => container.invalidate(),
 			handleInput(data: string) {
 				if (closing) return;
-				if (keybindings.matches(data, "tui.select.cancel")) finish();
+				if (matchesKey(data, Key.ctrl("c"))) finish();
+				else if (keybindings.matches(data, "tui.select.cancel")) finish();
 				else if (keybindings.matches(data, "tui.select.up")) settingsList.handleInput("\u001b[A");
 				else if (keybindings.matches(data, "tui.select.down")) {
 					settingsList.handleInput("\u001b[B");
 				} else if (keybindings.matches(data, "tui.select.confirm")) {
 					settingsList.handleInput("\r");
-				} else if (matchesKey(data, Key.ctrl("c"))) finish();
-				else settingsList.handleInput(data);
+				} else settingsList.handleInput(data);
 				tui.requestRender();
 			},
 			dispose() {
