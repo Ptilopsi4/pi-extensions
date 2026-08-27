@@ -1,5 +1,11 @@
 # @narumitw/pi-chrome-devtools
 
+## 0.53.1
+
+### Patch Changes
+
+- 3430142: Scope effective browser settings to each Pi session so concurrent sessions cannot mix CDP hosts, launch policy, browser executables, or extension paths.
+
 ## 0.53.0
 
 ### Minor Changes
