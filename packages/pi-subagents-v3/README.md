@@ -20,6 +20,7 @@ A bundled `subagents` skill owns delegation strategy, least-privilege tool selec
 - Lets the main agent answer a pending child question with `subagent-reply`.
 - Interrupts a parent job wait when a question needs a main-agent response without cancelling the job.
 - Publishes one guarded asynchronous completion and releases child resources at terminal state.
+- Shows each active job's state, elapsed time, timeout, and selected work tools above the editor.
 - Exposes bounded job metadata without leaking task text, output, prompts, selected tools, or broker credentials.
 - Cancels active session-owned work and closes the loopback broker during replacement, reload, or shutdown.
 
@@ -60,6 +61,14 @@ The tool returns a `jobId` immediately.
 Continue useful main-agent work until a completion arrives or the result is required.
 
 If `subagent-wait` reports `reason: "subagent_message"`, answer the visible question with `subagent-reply`, then wait for the job again when needed.
+
+In TUI mode, an above-editor widget shows one compact line for each queued or running job.
+
+Each line includes the job ID, current state, elapsed execution time, configured timeout or `no timeout`, and selected work tools.
+
+The fixed `subagent-ask` and child `subagent-wait` communication tools are omitted from the widget because every child receives them.
+
+The widget disappears when no jobs remain active and is cleared during session replacement, reload, or shutdown.
 
 ## 🛠️ Tools
 

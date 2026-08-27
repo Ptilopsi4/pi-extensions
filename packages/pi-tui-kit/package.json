@@ -1,6 +1,6 @@
 {
 	"name": "@narumitw/pi-tui-kit",
-	"version": "0.58.2",
+	"version": "0.59.0",
 	"description": "Declarative UI flows and navigation helpers built on Pi TUI.",
 	"type": "module",
 	"license": "MIT",
@@ -24,6 +24,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
+		},
+		"./editor-status-widget": {
+			"types": "./dist/editor-status-widget.d.ts",
+			"import": "./dist/editor-status-widget.js"
 		},
 		"./interaction-hints": {
 			"types": "./dist/interaction-hints.d.ts",

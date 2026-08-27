@@ -99,6 +99,7 @@ export interface SubagentToolsDependencies extends RuntimeDependencies {
 }
 
 export interface RegisteredSubagentTools {
+	runtime: SubagentRuntime;
 	startSession(): Promise<void>;
 	shutdown(): Promise<void>;
 }
@@ -209,6 +210,7 @@ export function registerSubagentTools(
 	};
 
 	return {
+		runtime,
 		startSession: () =>
 			queueLifecycle(async () => {
 				await runtime.shutdown();

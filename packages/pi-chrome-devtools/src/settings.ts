@@ -61,6 +61,7 @@ export interface ResolvedChromeDevToolsSettings {
 	tools?: ChromeDevToolsToolName[];
 	updatedAt?: number;
 	browser: EffectiveBrowserSettings;
+	webmcp: { enabled: boolean };
 }
 
 export interface SettingsLoadOptions {
@@ -74,6 +75,7 @@ export type UserSettingsFileStatus =
 
 interface SettingsLoadBase {
 	effectiveBrowser: EffectiveBrowserSettings;
+	effectiveWebMcpEnabled: boolean;
 	paths: { user: string; project?: string };
 	userFile: UserSettingsFileStatus;
 	warnings: string[];
@@ -94,6 +96,7 @@ interface NormalizedSettingsDocument {
 	tools?: ChromeDevToolsToolName[];
 	updatedAt?: number;
 	browser?: UserBrowserSettings;
+	webmcp?: { enabled: boolean };
 }
 
 interface SettingsDocumentResult {
@@ -165,7 +168,8 @@ export async function loadSettings(options: SettingsLoadOptions = {}): Promise<S
 	const recognized =
 		settings.tools !== undefined ||
 		user.normalized?.browser !== undefined ||
-		project.normalized?.browser !== undefined;
+		project.normalized?.browser !== undefined ||
+		user.normalized?.webmcp !== undefined;
 	const invalidReasons = [user, project]
 		.filter((result) => result.kind === "invalid")
 		.map((result) => result.reason)
@@ -179,6 +183,7 @@ export async function loadSettings(options: SettingsLoadOptions = {}): Promise<S
 			: { kind: user.kind };
 	const base = {
 		effectiveBrowser,
+		effectiveWebMcpEnabled: settings.webmcp.enabled,
 		paths,
 		userFile,
 		warnings,
@@ -200,6 +205,7 @@ function resolveSettings(
 	return {
 		...(user?.tools ? { tools: user.tools, updatedAt: user.updatedAt } : {}),
 		browser,
+		webmcp: { enabled: user?.webmcp?.enabled ?? false },
 	};
 }
 
@@ -293,7 +299,7 @@ async function readSettingsDocument(
 		return { kind: "invalid", reason, warnings: [`Chrome DevTools settings ignored: ${reason}`] };
 	}
 
-	const scopeWarnings = projectMachineSettingsWarnings(parsed, scope, filePath);
+	const scopeWarnings = projectOwnedSettingsWarnings(parsed, scope, filePath);
 	try {
 		const normalized = await normalizeSettingsDocument(parsed, scope, filePath, cwd);
 		return { kind: "valid", document: { ...parsed }, normalized, warnings: scopeWarnings };
@@ -307,19 +313,27 @@ async function readSettingsDocument(
 	}
 }
 
-function projectMachineSettingsWarnings(
+function projectOwnedSettingsWarnings(
 	document: Record<string, unknown>,
 	scope: "project" | "user",
 	filePath: string,
 ) {
-	if (scope !== "project" || !isRecord(document.browser)) return [];
-	const browser = document.browser;
-	return ["endpoint", "autoLaunch", "executablePath"]
-		.filter((field) => browser[field] !== undefined)
-		.map(
-			(field) =>
-				`Chrome DevTools project browser.${field} ignored in ${filePath}; configure this machine-owned setting in ${settingsFilePath()}.`,
+	if (scope !== "project") return [];
+	const browser = isRecord(document.browser) ? document.browser : undefined;
+	const warnings = browser
+		? ["endpoint", "autoLaunch", "executablePath"]
+				.filter((field) => browser[field] !== undefined)
+				.map(
+					(field) =>
+						`Chrome DevTools project browser.${field} ignored in ${filePath}; configure this machine-owned setting in ${settingsFilePath()}.`,
+				)
+		: [];
+	if (document.webmcp !== undefined) {
+		warnings.push(
+			`Chrome DevTools project webmcp settings ignored in ${filePath}; only the user settings file may enable experimental WebMCP.`,
 		);
+	}
+	return warnings;
 }
 
 async function normalizeSettingsDocument(
@@ -344,6 +358,13 @@ async function normalizeSettingsDocument(
 	if (document.browser !== undefined) {
 		if (!isRecord(document.browser)) throw new Error("expected browser to be an object");
 		normalized.browser = await normalizeBrowserSection(document.browser, scope, filePath, cwd);
+	}
+
+	if (scope === "user" && document.webmcp !== undefined) {
+		if (!isRecord(document.webmcp) || typeof document.webmcp.enabled !== "boolean") {
+			throw new Error("expected webmcp.enabled to be a boolean");
+		}
+		normalized.webmcp = { enabled: document.webmcp.enabled };
 	}
 
 	return normalized;
@@ -521,6 +542,22 @@ export function saveSettings(
 			...current,
 			tools: [...settings.tools],
 			updatedAt: settings.updatedAt,
+		}),
+		operations,
+	);
+}
+
+export function saveWebMcpSettings(
+	enabled: boolean,
+	operations: Partial<SettingsFileOperations> = {},
+): Promise<void> {
+	return queueSettingsMutation(
+		(current) => ({
+			...current,
+			webmcp: {
+				...(isRecord(current.webmcp) ? current.webmcp : {}),
+				enabled,
+			},
 		}),
 		operations,
 	);

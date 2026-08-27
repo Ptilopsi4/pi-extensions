@@ -1,14 +1,27 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { shutdownManagedBrowser } from "./browser-manager.js";
+import {
+	shutdownManagedBrowser,
+	startManagedBrowserSession,
+	syncManagedBrowserSettings,
+} from "./browser-manager.js";
+import { setActivePageId } from "./cdp-client.js";
 import {
 	availableChromeDevtoolsTools,
 	configureChromeDevtoolsToolExposure,
 	createChromeDevtoolsLoadTool,
 	initializeAvailableChromeDevtoolsTools,
 	requireEagerChromeDevtoolsToolExposure,
+	setChromeDevtoolsSessionOwner,
 	supportsNativeDeferredToolLoading,
 } from "./lazy-tools.js";
-import { applyRuntimeBrowserSettings, state } from "./runtime.js";
+import {
+	applyRuntimeBrowserSettings,
+	applyRuntimeWebMcpSetting,
+	invalidateWebMcpOperations,
+	setWebMcpSessionOwner,
+	state,
+	webMcpEnabled,
+} from "./runtime.js";
 import { loadSettings, waitForSettingsWrites } from "./settings.js";
 import {
 	allChromeDevtoolsTools,
@@ -25,6 +38,8 @@ import {
 	navigateTool,
 	screenshotTool,
 	selectPageTool,
+	webMcpCallTool,
+	webMcpListToolsTool,
 } from "./tools.js";
 
 type CommandAction =
@@ -57,12 +72,15 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 	pi.registerTool(navigateTool);
 	pi.registerTool(evaluateTool);
 	pi.registerTool(screenshotTool);
+	pi.registerTool(webMcpListToolsTool);
+	pi.registerTool(webMcpCallTool);
 	pi.registerTool(createChromeDevtoolsLoadTool(pi));
 
 	pi.registerCommand("chrome-devtools", {
 		description: "Open Chrome DevTools help and tool controls",
 		getArgumentCompletions: (prefix) => commandCompletions(prefix),
 		handler: async (args, ctx) => {
+			setChromeDevtoolsSessionOwner(pi, ctx.sessionManager);
 			initializeAvailableChromeDevtoolsTools(pi);
 			const generation = state.sessionGeneration;
 			await handleChromeDevtoolsCommand(pi, args, ctx, generation);
@@ -71,22 +89,38 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		const generation = ++state.sessionGeneration;
+		setChromeDevtoolsSessionOwner(pi, ctx.sessionManager);
 		initializeAvailableChromeDevtoolsTools(pi);
+		setWebMcpSessionOwner(ctx.sessionManager);
 		replaceSessionController("Chrome DevTools session replaced");
+		invalidateWebMcpOperations(ctx.sessionManager, "Chrome DevTools session replaced");
 		state.shuttingDown = false;
 		state.settingsNotice = undefined;
 		ctx.ui.setStatus(STATUS_KEY, undefined);
-		await shutdownManagedBrowser();
+		await shutdownManagedBrowser(undefined, {
+			cancelLaunch: true,
+			owner: ctx.sessionManager,
+		});
+		startManagedBrowserSession(ctx.sessionManager);
 		if (generation !== state.sessionGeneration) return;
+		setActivePageId(ctx.sessionManager, undefined);
 		state.activePageId = undefined;
 		state.lastLaunchAttempt = undefined;
 		const projectTrusted = ctx.isProjectTrusted();
 		const settings = await loadSettings({ cwd: ctx.cwd, projectTrusted });
 		if (generation !== state.sessionGeneration) return;
 		applyRuntimeBrowserSettings(settings.effectiveBrowser, settings.paths, projectTrusted);
+		syncManagedBrowserSettings(ctx.sessionManager, settings.effectiveBrowser);
+		applyRuntimeWebMcpSetting(settings.effectiveWebMcpEnabled, ctx.sessionManager);
 		state.settingsNotice = settings.notice;
 		for (const warning of settings.warnings) {
 			ctx.ui.notify(sanitizeChromeDevtoolsDisplay(warning), "warning");
+		}
+		if (webMcpEnabled(ctx.sessionManager)) {
+			ctx.ui.notify(
+				"Experimental WebMCP is enabled. Page-provided tools use the visible browser session and require confirmation for every call.",
+				"warning",
+			);
 		}
 		const availableTools =
 			settings.kind === "loaded" && settings.settings.tools
@@ -95,7 +129,11 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 		configureChromeDevtoolsToolExposure(pi, availableTools, ctx.model);
 	});
 
-	pi.on("model_select", (event) => {
+	pi.on("model_select", (event, ctx) => {
+		invalidateWebMcpOperations(
+			ctx.sessionManager,
+			"Chrome DevTools model and tool exposure changed",
+		);
 		if (!supportsNativeDeferredToolLoading(event.model)) {
 			requireEagerChromeDevtoolsToolExposure(pi);
 		}
@@ -104,8 +142,12 @@ export default function chromeDevtools(pi: ExtensionAPI) {
 	pi.on("session_shutdown", async (_event, ctx) => {
 		state.sessionGeneration += 1;
 		replaceSessionController("Chrome DevTools session shut down");
+		invalidateWebMcpOperations(ctx.sessionManager, "Chrome DevTools session shut down");
 		ctx.ui.setStatus(STATUS_KEY, undefined);
-		const browserShutdown = shutdownManagedBrowser(undefined, { cancelLaunch: true });
+		const browserShutdown = shutdownManagedBrowser(undefined, {
+			cancelLaunch: true,
+			owner: ctx.sessionManager,
+		});
 		await waitForChromeDevtoolsSettings();
 		await waitForSettingsWrites();
 		await browserShutdown;
@@ -125,15 +167,15 @@ async function handleChromeDevtoolsCommand(
 			return;
 		case "help":
 			requireObservableUi(ctx, "help");
-			ctx.ui.notify(buildCommandGuide(), "info");
+			ctx.ui.notify(buildCommandGuide(ctx.sessionManager), "info");
 			return;
 		case "quickstart":
 			requireObservableUi(ctx, "quickstart");
-			ctx.ui.notify(buildQuickstartMessage(), "info");
+			ctx.ui.notify(buildQuickstartMessage(ctx.sessionManager), "info");
 			return;
 		case "status": {
 			requireObservableUi(ctx, "status");
-			const status = await buildToolStatusMessage(pi);
+			const status = await buildToolStatusMessage(pi, ctx.sessionManager);
 			if (generation !== state.sessionGeneration) return;
 			ctx.ui.notify(status, "info");
 			return;
@@ -144,7 +186,7 @@ async function handleChromeDevtoolsCommand(
 			}
 			const { showChromeDevtoolsBrowserSettings } = await import("./browser-settings-menu.js");
 			if (generation !== state.sessionGeneration) return;
-			await showChromeDevtoolsBrowserSettings(ctx, generation);
+			await showChromeDevtoolsBrowserSettings(pi, ctx, generation);
 			return;
 		}
 		case "tools": {
@@ -157,7 +199,12 @@ async function handleChromeDevtoolsCommand(
 			return;
 		}
 		case "enable":
-			await updateChromeDevtoolsTools(pi, ctx, allChromeDevtoolsTools(), "made all available");
+			await updateChromeDevtoolsTools(
+				pi,
+				ctx,
+				allChromeDevtoolsTools(ctx.sessionManager),
+				"made all available",
+			);
 			return;
 		case "disable":
 			await updateChromeDevtoolsTools(pi, ctx, [], "made all unavailable");
@@ -170,7 +217,7 @@ async function handleChromeDevtoolsCommand(
 	ctx.ui.notify(
 		`Unknown /chrome-devtools command: ${args.trim()}
 
-${buildCommandGuide()}`,
+${buildCommandGuide(ctx.sessionManager)}`,
 		"warning",
 	);
 }

@@ -29,8 +29,25 @@ test("check and test remain separate CI gates", () => {
 	const testIndex = ciWorkflow.indexOf("run: npm test");
 	assert.ok(checkIndex >= 0, "CI must run checks");
 	assert.ok(testIndex > checkIndex, "CI must run tests after checks");
+});
 
+test("publish releases only the revision from a successful main CI push", () => {
 	const publishWorkflow = read(".github/workflows/publish.yml");
+	assert.match(
+		publishWorkflow,
+		/workflow_run:\n\s+workflows: \["CI"\]\n\s+types: \[completed\]\n\s+branches: \[main\]/u,
+		"publish must run after main-branch CI completes",
+	);
+	assert.match(
+		publishWorkflow,
+		/event_name == 'workflow_dispatch' \|\|\n\s+\(github\.event\.workflow_run\.event == 'push' &&\n\s+github\.event\.workflow_run\.conclusion == 'success'\)/u,
+		"publish must reject unsuccessful and non-push CI runs",
+	);
+	assert.match(
+		publishWorkflow,
+		/ref: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/u,
+		"publish must check out the CI-tested revision, with a manual-dispatch fallback",
+	);
 	assert.doesNotMatch(
 		publishWorkflow,
 		/\bnpm (?:run )?(?:check|typecheck|test)\b/u,

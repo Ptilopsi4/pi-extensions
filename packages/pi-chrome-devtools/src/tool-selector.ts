@@ -3,12 +3,14 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import {
 	browserCandidateHint,
 	browserLifecycleState,
+	browserSettingsForOwner,
 	devToolsEndpoint,
 	endpointConfigHint,
 	endpointSourceLabel,
 	launchAttemptLines,
 	launchHint,
 	launchModeLabel,
+	managedBrowserForOwner,
 } from "./browser-manager.js";
 import {
 	applyAvailableChromeDevtoolsTools,
@@ -16,9 +18,14 @@ import {
 	CHROME_DEVTOOLS_LOAD_TOOL_NAME,
 	chromeDevtoolsToolExposureMode,
 } from "./lazy-tools.js";
-import { state } from "./runtime.js";
+import { invalidateWebMcpOperations, state, webMcpEnabled } from "./runtime.js";
 import { loadSettings, saveSettings, settingsFilePath } from "./settings.js";
-import { CHROME_DEVTOOLS_TOOL_NAMES, type ChromeDevToolsToolName } from "./tool-names.js";
+import {
+	CHROME_DEVTOOLS_TOOL_NAMES,
+	type ChromeDevToolsToolName,
+	CORE_CHROME_DEVTOOLS_TOOL_NAMES,
+	isWebMcpToolName,
+} from "./tool-names.js";
 
 type CommandContext = ExtensionCommandContext;
 
@@ -35,6 +42,7 @@ interface ToolStatusSummary {
 	availableChromeToolCount: number;
 	loadedChromeToolCount: number;
 	activeNonChromeToolCount: number;
+	capabilityCount: number;
 }
 
 type ToolSelectionSaveResult = "saved" | "active-tools-changed" | "failed";
@@ -48,7 +56,7 @@ export async function updateChromeDevtoolsTools(
 	const generation = state.sessionGeneration;
 	const result = await transactSelectedTools(pi, ctx, selectedTools, generation);
 	if (result !== "saved" || generation !== state.sessionGeneration) return;
-	const status = await buildToolStatusMessage(pi);
+	const status = await buildToolStatusMessage(pi, ctx.sessionManager);
 	if (generation !== state.sessionGeneration) return;
 	ctx.ui.notify(`Chrome DevTools tool catalog ${action}.\n\n${status}`, "info");
 }
@@ -109,6 +117,14 @@ async function transactSelectedToolsNow(
 	const previousActiveTools = pi.getActiveTools();
 	const previousAvailableTools = availableChromeDevtoolsTools(pi);
 	try {
+		const previousWebMcpTools = previousAvailableTools.filter(isWebMcpToolName);
+		const selectedWebMcpTools = selectedTools.filter(isWebMcpToolName);
+		if (!arraysEqual(previousWebMcpTools, selectedWebMcpTools)) {
+			invalidateWebMcpOperations(
+				ctx.sessionManager,
+				"Chrome DevTools WebMCP gateway availability changed",
+			);
+		}
 		applyChromeDevtoolsTools(pi, selectedTools);
 		await persistSettings(selectedTools);
 		return expectedGeneration === state.sessionGeneration ? "saved" : "failed";
@@ -154,7 +170,7 @@ export function applyChromeDevtoolsTools(
 	applyAvailableChromeDevtoolsTools(pi, selectedTools);
 }
 
-function getToolStatusSummary(pi: ExtensionAPI): ToolStatusSummary {
+function getToolStatusSummary(pi: ExtensionAPI, owner: object): ToolStatusSummary {
 	const chromeToolNames = new Set<string>(CHROME_DEVTOOLS_TOOL_NAMES);
 	const activeToolNames = new Set(pi.getActiveTools());
 	const loadedChromeToolCount = CHROME_DEVTOOLS_TOOL_NAMES.filter((name) =>
@@ -164,8 +180,9 @@ function getToolStatusSummary(pi: ExtensionAPI): ToolStatusSummary {
 	const activeNonChromeToolCount = Array.from(activeToolNames).filter(
 		(name) => !chromeToolNames.has(name) && name !== CHROME_DEVTOOLS_LOAD_TOOL_NAME,
 	).length;
+	const capabilityCount = effectiveCatalog(owner).length;
 	const availabilityStatus =
-		availableChromeToolCount === CHROME_DEVTOOLS_TOOL_NAMES.length
+		availableChromeToolCount === capabilityCount
 			? "enabled"
 			: availableChromeToolCount === 0
 				? "disabled"
@@ -176,36 +193,40 @@ function getToolStatusSummary(pi: ExtensionAPI): ToolStatusSummary {
 		availableChromeToolCount,
 		loadedChromeToolCount,
 		activeNonChromeToolCount,
+		capabilityCount,
 	};
 }
 
-export async function buildToolStatusMessage(pi: ExtensionAPI) {
-	const summary = getToolStatusSummary(pi);
+export async function buildToolStatusMessage(pi: ExtensionAPI, owner: object) {
+	const summary = getToolStatusSummary(pi, owner);
 	const persistedSetting = await persistedSettingLabel();
 	return sanitizeChromeDevtoolsDisplay(
 		[
 			`Chrome DevTools tools available: ${formatRuntimeStatus(summary)}`,
 			`Tool exposure: ${chromeDevtoolsToolExposureMode(pi)}`,
-			`Loaded capability tools this session: ${summary.loadedChromeToolCount}/${CHROME_DEVTOOLS_TOOL_NAMES.length}`,
+			`Loaded capability tools this session: ${summary.loadedChromeToolCount}/${summary.capabilityCount}`,
+			`WebMCP: ${webMcpEnabled(owner) ? "enabled · experimental · confirmation required for every call" : "disabled · experimental"}`,
 			`Loader: ${pi.getActiveTools().includes(CHROME_DEVTOOLS_LOAD_TOOL_NAME) ? "active" : "inactive"}`,
 			`Persisted tool catalog: ${persistedSetting}`,
-			...browserSettingsStatusLines(),
+			...browserSettingsStatusLines(owner),
 			...(state.settingsNotice ? [`Settings note: ${state.settingsNotice}`] : []),
 			`Other active tools preserved: ${summary.activeNonChromeToolCount}`,
-			`Endpoint: ${devToolsEndpoint()}`,
-			`Endpoint source: ${endpointSourceLabel()}`,
-			`Launch mode: ${launchModeLabel()}`,
-			...launchAttemptLines(),
+			`Endpoint: ${devToolsEndpoint(owner)}`,
+			`Endpoint source: ${endpointSourceLabel(owner)}`,
+			`Launch mode: ${launchModeLabel(owner)}`,
+			...launchAttemptLines(owner),
 		].join("\n"),
 	);
 }
 
-export function buildQuickstartMessage() {
-	return buildSettingsSetupMessage();
+export function buildQuickstartMessage(owner: object) {
+	return buildSettingsSetupMessage(owner);
 }
 
-export function buildBrowserStatusMessage() {
-	const lifecycle = browserLifecycleState();
+export function buildBrowserStatusMessage(owner?: object) {
+	const browser = browserSettingsForOwner(owner);
+	const lifecycle = browserLifecycleState(owner);
+	const webMcpIsEnabled = owner ? webMcpEnabled(owner) : false;
 	const browserState =
 		lifecycle === "starting"
 			? "starting managed browser"
@@ -221,36 +242,46 @@ export function buildBrowserStatusMessage() {
 		[
 			`Browser: ${browserState}`,
 			"Viewing this status does not probe the endpoint or launch Chrome.",
-			`Endpoint: ${devToolsEndpoint()}`,
-			`Endpoint source: ${endpointSourceLabel()}`,
-			`Launch mode: ${launchModeLabel()}`,
-			`Unpacked extensions: ${state.extensionPaths.length} (${state.extensionPathsSource})`,
-			...(state.extensionPaths.length > 0
+			`Endpoint: ${devToolsEndpoint(owner)}`,
+			`Endpoint source: ${endpointSourceLabel(owner)}`,
+			`Launch mode: ${launchModeLabel(owner)}`,
+			`Unpacked extensions: ${browser.extensionPaths.length} (${browser.extensionPathsSource})`,
+			`WebMCP: ${webMcpIsEnabled ? "enabled · experimental" : "disabled · experimental"}`,
+			...(webMcpIsEnabled && !managedBrowserForOwner(owner)?.ready
+				? [
+						"WebMCP warning: attached browser profiles may contain everyday authenticated sessions and sensitive state.",
+					]
+				: []),
+			...(browser.extensionPaths.length > 0
 				? ["Unpacked extensions execute trusted browser code in an isolated managed browser."]
 				: []),
-			...launchAttemptLines(),
-			...(needsRecovery ? [launchHint(), endpointConfigHint()] : []),
+			...launchAttemptLines(owner),
+			...(needsRecovery ? [launchHint(owner), endpointConfigHint()] : []),
 		].join("\n"),
 	);
 }
 
-export function buildSettingsSetupMessage() {
+export function buildSettingsSetupMessage(owner: object) {
 	return sanitizeChromeDevtoolsDisplay(
 		[
-			`Chrome DevTools endpoint: ${devToolsEndpoint()}`,
-			`Endpoint source: ${endpointSourceLabel()}`,
-			`Launch mode: ${launchModeLabel()}`,
-			...browserSettingsStatusLines(),
-			launchHint(),
-			browserCandidateHint(),
-			...launchAttemptLines(),
+			`Chrome DevTools endpoint: ${devToolsEndpoint(owner)}`,
+			`Endpoint source: ${endpointSourceLabel(owner)}`,
+			`Launch mode: ${launchModeLabel(owner)}`,
+			...browserSettingsStatusLines(owner),
+			launchHint(owner),
+			browserCandidateHint(owner),
+			...launchAttemptLines(owner),
 			endpointConfigHint(),
 		].join("\n"),
 	);
 }
 
 export function sanitizeChromeDevtoolsDisplay(value: string, maxCharacters = 50_000) {
-	const sanitized = Array.from(stripVTControlCharacters(value), (character) => {
+	const withoutBidi = stripVTControlCharacters(value).replace(
+		/[\u202a-\u202e\u2066-\u2069]/gu,
+		"�",
+	);
+	const sanitized = Array.from(withoutBidi, (character) => {
 		const codePoint = character.codePointAt(0) ?? 0;
 		const unsafeControl =
 			(codePoint >= 0 && codePoint <= 8) ||
@@ -262,10 +293,12 @@ export function sanitizeChromeDevtoolsDisplay(value: string, maxCharacters = 50_
 	return `${sanitized.slice(0, Math.max(0, maxCharacters - 1))}…`;
 }
 
-function browserSettingsStatusLines() {
+function browserSettingsStatusLines(owner: object) {
+	const browser = browserSettingsForOwner(owner);
+	const extensionPaths = browser.extensionPaths;
 	const extensionLines =
-		state.extensionPaths.length > 0
-			? state.extensionPaths.map((extensionPath) => `  - ${extensionPath}`)
+		extensionPaths.length > 0
+			? extensionPaths.map((extensionPath) => `  - ${extensionPath}`)
 			: ["  - none"];
 	return [
 		`Settings file: ${state.settingsFilePath ?? settingsFilePath()} (user)`,
@@ -274,12 +307,13 @@ function browserSettingsStatusLines() {
 					`Project settings: ${state.projectSettingsFilePath} (${state.projectSettingsTrusted ? "trusted" : "untrusted; ignored"})`,
 				]
 			: []),
-		`Auto-launch: ${state.autoLaunchEnabled ? "on" : "off"} (${state.autoLaunchSource})`,
-		`Browser executable: ${state.browserExecutable ?? "automatic discovery"} (${state.browserExecutableSource})`,
-		`Unpacked extensions (${state.extensionPathsSource}):`,
+		`Auto-launch: ${browser.autoLaunchEnabled ? "on" : "off"} (${browser.autoLaunchSource})`,
+		`Browser executable: ${browser.executablePath ?? "automatic discovery"} (${browser.executablePathSource})`,
+		`Unpacked extensions (${browser.extensionPathsSource}):`,
 		...extensionLines,
+		`WebMCP: ${webMcpEnabled(owner) ? "enabled · experimental · every call requires confirmation" : "disabled · experimental"}`,
 		"Confirmed menu settings apply before the next browser connection; manual JSON edits require /reload or session replacement.",
-		...(state.extensionPaths.length > 0
+		...(extensionPaths.length > 0
 			? [
 					"Unpacked extensions require Chrome for Testing or Chromium and execute trusted browser code.",
 				]
@@ -287,9 +321,10 @@ function browserSettingsStatusLines() {
 	];
 }
 
-export function buildCommandGuide() {
+export function buildCommandGuide(owner: object) {
 	return [
 		"Chrome DevTools commands:",
+		`WebMCP: ${webMcpEnabled(owner) ? "enabled" : "disabled"} · experimental · every page-provided call requires confirmation`,
 		"/chrome-devtools — open this menu",
 		"/chrome-devtools help — show command usage",
 		"/chrome-devtools quickstart — show endpoint and launch help",
@@ -302,8 +337,8 @@ export function buildCommandGuide() {
 	].join("\n");
 }
 
-export function allChromeDevtoolsTools() {
-	return [...CHROME_DEVTOOLS_TOOL_NAMES];
+export function allChromeDevtoolsTools(owner: object) {
+	return effectiveCatalog(owner);
 }
 
 export function orderedChromeDevtoolsTools(selectedTools: ReadonlySet<ChromeDevToolsToolName>) {
@@ -311,7 +346,7 @@ export function orderedChromeDevtoolsTools(selectedTools: ReadonlySet<ChromeDevT
 }
 
 function formatRuntimeStatus(summary: ToolStatusSummary) {
-	return `${summary.availabilityStatus} (${summary.availableChromeToolCount}/${CHROME_DEVTOOLS_TOOL_NAMES.length} available)`;
+	return `${summary.availabilityStatus} (${summary.availableChromeToolCount}/${summary.capabilityCount} available)`;
 }
 
 async function persistedSettingLabel() {
@@ -332,6 +367,12 @@ function formatPersistedSelection(tools: readonly ChromeDevToolsToolName[]) {
 	if (tools.length === 0)
 		return `all unavailable (0/${CHROME_DEVTOOLS_TOOL_NAMES.length} selected)`;
 	return `${tools.length}/${CHROME_DEVTOOLS_TOOL_NAMES.length} selected: ${tools.join(", ")}`;
+}
+
+function effectiveCatalog(owner: object): ChromeDevToolsToolName[] {
+	return webMcpEnabled(owner)
+		? [...CHROME_DEVTOOLS_TOOL_NAMES]
+		: [...CORE_CHROME_DEVTOOLS_TOOL_NAMES];
 }
 
 async function persistSettings(selectedTools: readonly ChromeDevToolsToolName[]) {

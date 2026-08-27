@@ -14,10 +14,18 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { test } from "vitest";
+import { createMockContext } from "../../../test/support.js";
 
 const packageRoot = resolve("packages/pi-chrome-devtools");
 const builderUrl = pathToFileURL(join(packageRoot, "scripts/build-runtime.mjs")).href;
-const forbiddenEagerInputs: readonly string[] = ["src/browser-settings-menu.ts", "src/menu.ts"];
+const forbiddenEagerInputs: readonly string[] = [
+	"src/browser-settings-menu.ts",
+	"src/menu.ts",
+	"src/webmcp/discovery.ts",
+	"src/webmcp/policy.ts",
+	"src/webmcp/protocol.ts",
+	"src/webmcp/tools.ts",
+];
 
 type BuildMetadata = {
 	outputs?: Record<
@@ -195,6 +203,18 @@ test("generated runtime is loadable by Pi's Jiti resource loader", async () => {
 		assert.ok(extension?.commands.has("chrome-devtools"));
 		assert.ok(extension?.handlers.has("session_start"));
 		assert.ok(extension?.handlers.has("session_shutdown"));
+		const webMcpListTool = extension?.tools.get("chrome_devtools_webmcp_list_tools");
+		assert.ok(webMcpListTool);
+		await assert.rejects(
+			webMcpListTool.definition.execute(
+				"jiti-webmcp",
+				{},
+				new AbortController().signal,
+				undefined,
+				createMockContext({ mode: "tui", cwd: root }).ctx,
+			),
+			/WebMCP is disabled/u,
+		);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

@@ -2,12 +2,15 @@ import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/p
 
 const STATUS_KEY = "chrome-devtools";
 interface StatusContext {
+	sessionManager: object;
 	ui: { setStatus: (key: string, value: string | undefined) => void };
 }
 interface RenderTheme {
 	bold(text: string): string;
 	fg(color: string, text: string): string;
 }
+const activeStatuses = new WeakMap<object, Array<{ status: string; token: symbol }>>();
+
 interface RenderComponent {
 	invalidate(): void;
 	render(width: number): string[];
@@ -101,10 +104,18 @@ export async function withStatus<T>(
 	status: string,
 	callback: () => Promise<T>,
 ) {
+	const token = Symbol(status);
+	const statuses = activeStatuses.get(ctx.sessionManager) ?? [];
+	statuses.push({ status, token });
+	activeStatuses.set(ctx.sessionManager, statuses);
 	ctx.ui.setStatus(STATUS_KEY, status);
 	try {
 		return await callback();
 	} finally {
-		ctx.ui.setStatus(STATUS_KEY, undefined);
+		const index = statuses.findIndex((entry) => entry.token === token);
+		if (index >= 0) statuses.splice(index, 1);
+		const remaining = statuses.at(-1)?.status;
+		if (statuses.length === 0) activeStatuses.delete(ctx.sessionManager);
+		ctx.ui.setStatus(STATUS_KEY, remaining);
 	}
 }
