@@ -34,7 +34,7 @@ export async function showUsageSettings(
 	}
 	if (parentSignal.aborted || !isCurrent()) return false;
 
-	return ctx.ui.custom<boolean>((tui, theme, keybindings, done) => {
+	return ctx.ui.custom<boolean>((tui, theme, _keybindings, done) => {
 		const localController = new AbortController();
 		const signal = AbortSignal.any([parentSignal, localController.signal]);
 		let changed = false;
@@ -120,13 +120,7 @@ export async function showUsageSettings(
 			handleInput(data: string) {
 				if (closing) return;
 				if (matchesKey(data, Key.ctrl("c"))) finish();
-				else if (keybindings.matches(data, "tui.select.cancel")) finish();
-				else if (keybindings.matches(data, "tui.select.up")) settingsList.handleInput("\u001b[A");
-				else if (keybindings.matches(data, "tui.select.down")) {
-					settingsList.handleInput("\u001b[B");
-				} else if (keybindings.matches(data, "tui.select.confirm")) {
-					settingsList.handleInput("\r");
-				} else settingsList.handleInput(data);
+				else settingsList.handleInput(data);
 				tui.requestRender();
 			},
 			dispose() {

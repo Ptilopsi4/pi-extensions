@@ -133,6 +133,22 @@ test("normalizes legacy limits, signed cents, zero wrappers, and empty configs",
 	assert.deepEqual(legacy.metrics, [
 		{ id: "prepaid-balance", label: "Prepaid balance", value: 0, unit: "usd" },
 	]);
+	const limitOnly = normalizeXaiBillingPayload(
+		{ config: { monthlyLimit: { val: 2_000 } } },
+		undefined,
+		123,
+	);
+	assert.deepEqual(limitOnly.buckets, [
+		{
+			id: "included-allowance",
+			label: "Included allowance",
+			limit: 20,
+			unit: "usd",
+		},
+	]);
+	const formattedLimitOnly = formatUsageReport(limitOnly, "current");
+	assert.match(formattedLimitOnly, /Included allowance:\s+usage unavailable · \$20\.00 limit/);
+	assert.doesNotMatch(formattedLimitOnly, /\$0\.00 used/);
 	const periodOnly = normalizeXaiBillingPayload(
 		{
 			config: {

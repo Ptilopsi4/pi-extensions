@@ -336,6 +336,7 @@ export default function usageExtension(
 						}
 					: undefined;
 			const report = await queryProviderUsage(adapter, auth, signal, remainingMs, guard);
+			if (guard) await guard();
 			if (latestQueries.get(failureKey) === queryId) {
 				cache.set(adapter.id, auth.fingerprint, report);
 				failureBackoff.delete(failureKey);

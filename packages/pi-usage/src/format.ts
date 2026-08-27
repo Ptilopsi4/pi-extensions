@@ -170,9 +170,11 @@ function formatXaiReport(lines: string[], report: UsageReport): void {
 		if (included.unit === "percent" && included.used !== undefined) {
 			value = `${included.used}% used`;
 			if (included.remaining !== undefined) value += ` · ${included.remaining}% left`;
-		} else if (included.used !== undefined || included.limit !== undefined) {
-			value = `${formatUsd(included.used ?? 0)} used`;
+		} else if (included.used !== undefined) {
+			value = `${formatUsd(included.used)} used`;
 			if (included.limit !== undefined) value += ` of ${formatUsd(included.limit)}`;
+		} else if (included.limit !== undefined) {
+			value = `usage unavailable · ${formatUsd(included.limit)} limit`;
 		}
 		const period = included.period ? ` · ${included.period}` : "";
 		const reset = included.resetsAt ? ` (resets ${formatReset(included.resetsAt)})` : "";

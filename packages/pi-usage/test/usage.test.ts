@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
 import { initTheme } from "@earendil-works/pi-coding-agent";
+import {
+	getKeybindings,
+	KeybindingsManager,
+	setKeybindings,
+	TUI_KEYBINDINGS,
+} from "@earendil-works/pi-tui";
 import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import { OAUTH_CREDENTIAL_SOURCE_CHANNEL } from "../src/oauth-credential-source.js";
@@ -1341,6 +1347,80 @@ test("xAI account changes after identity prevent billing and stale publication",
 	assert.equal(statuses.get("usage"), undefined);
 });
 
+test("xAI account changes after the final adapter guard prevent configured publication", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	let activeAccess = "xai-access-a";
+	let credentialReads = 0;
+	const requests: string[] = [];
+	globalThis.fetch = async (input) => {
+		const url = String(input);
+		requests.push(url);
+		if (url.endsWith("/api/v1/key")) return usageFetch(input);
+		if (url.includes("/user?")) {
+			return new Response(JSON.stringify({ userId: "fixture-user" }), { status: 200 });
+		}
+		return new Response(JSON.stringify({ config: { creditUsagePercent: 10 } }), {
+			status: 200,
+		});
+	};
+	const settings = memorySettingsRuntime(true);
+	const choices = ["View another configured provider…", "xAI"];
+	const titles: string[] = [];
+	const mock = createMockPi();
+	usageExtension(mock.pi, {
+		settingsRuntime: settings.runtime,
+		credentialReader: (provider) => {
+			if (provider !== "xai") return undefined;
+			credentialReads += 1;
+			const access = activeAccess;
+			if (credentialReads === 5) {
+				queueMicrotask(() => {
+					activeAccess = "xai-access-b";
+				});
+			}
+			return {
+				type: "oauth",
+				access,
+				refresh: `refresh-${access}`,
+				expires: Date.now() + 60_000,
+			};
+		},
+	});
+	const command = mock.commands.get("usage");
+	assert.ok(command);
+	const { ctx, statuses } = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		model: openRouterModel,
+		select: async (title: string) => {
+			titles.push(title);
+			return choices.shift();
+		},
+		modelRegistry: {
+			getProviderAuth: async (provider: string) => ({
+				auth: { apiKey: provider === "xai" ? activeAccess : "openrouter-key" },
+			}),
+			getAvailable: () => [openRouterModel, xaiModel],
+			getAll: () => [openRouterModel, xaiModel],
+			getProviderAuthStatus: () => ({ configured: true }),
+			getProviderDisplayName: (provider: string) => provider,
+		},
+	});
+
+	await command.handler("", ctx);
+
+	assert.equal(credentialReads, 6);
+	assert.equal(requests.filter((url) => url.includes("cli-chat-proxy")).length, 2);
+	assert.equal(
+		titles.some((title) => /xAI Usage · Configured/u.test(title)),
+		false,
+	);
+	assert.equal(statuses.get("usage"), "openrouter $75.00 left");
+});
+
 test("enabled xAI appears as a configured provider without changing current status", async (t) => {
 	const originalFetch = globalThis.fetch;
 	t.onTestFinished(() => {
@@ -1434,11 +1514,19 @@ test("the Settings menu action gives RPC mode the active manual settings path", 
 	assert.match(notifications[0]?.message ?? "", /Edit settings manually: \/tmp\/pi-usage\.json/);
 });
 
-test("the TUI SettingsList shows the warning and applies xAI changes immediately", async () => {
+test("the TUI SettingsList shows the warning and applies xAI changes immediately", async (t) => {
 	const settings = memorySettingsRuntime(false);
 	const rendered: string[][] = [];
 	let applied = 0;
 	const controller = new AbortController();
+	const previousKeybindings = getKeybindings();
+	const remappedKeybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+		"tui.select.down": "j",
+		"tui.select.confirm": "x",
+		"tui.select.cancel": "q",
+	});
+	setKeybindings(remappedKeybindings);
+	t.onTestFinished(() => setKeybindings(previousKeybindings));
 	const { ctx } = createMockContext({
 		hasUI: true,
 		mode: "tui",
@@ -1466,12 +1554,7 @@ test("the TUI SettingsList shows the warning and applies xAI changes immediately
 				)(
 					{ requestRender: () => rendered.push(component.render(100)) },
 					{ bold: (text) => text, fg: (_color, text) => text },
-					{
-						matches: (data: string, id: string) =>
-							(id === "tui.select.down" && data === "j") ||
-							(id === "tui.select.confirm" && data === "x") ||
-							(id === "tui.select.cancel" && data === "q"),
-					},
+					remappedKeybindings,
 					done,
 				);
 				rendered.push(component.render(100));
@@ -1498,9 +1581,16 @@ test("the TUI SettingsList shows the warning and applies xAI changes immediately
 	assert.doesNotMatch(rendered[0]?.join("\n") ?? "", /experimental/iu);
 });
 
-test("Ctrl+C hard-cancels Settings before conflicting configurable actions", async () => {
+test("Ctrl+C hard-cancels Settings before conflicting configurable actions", async (t) => {
 	const settings = memorySettingsRuntime(false);
 	let applied = 0;
+	const previousKeybindings = getKeybindings();
+	const conflictingKeybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+		"tui.select.confirm": "ctrl+c",
+		"tui.select.cancel": "q",
+	});
+	setKeybindings(conflictingKeybindings);
+	t.onTestFinished(() => setKeybindings(previousKeybindings));
 	const { ctx } = createMockContext({
 		hasUI: true,
 		mode: "tui",
@@ -1528,11 +1618,7 @@ test("Ctrl+C hard-cancels Settings before conflicting configurable actions", asy
 				)(
 					{ requestRender() {} },
 					{ bold: (text) => text, fg: (_color, text) => text },
-					{
-						matches: (data: string, id: string) =>
-							(id === "tui.select.confirm" && data === "\u0003") ||
-							(id === "tui.select.cancel" && data === "q"),
-					},
+					conflictingKeybindings,
 					done,
 				);
 				component.handleInput("\u0003");
