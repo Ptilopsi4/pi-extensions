@@ -22,6 +22,13 @@ const codexModel = {
 	baseUrl: "https://chatgpt.com/backend-api",
 };
 
+const zaiModel = {
+	id: "glm-5.3",
+	name: "GLM-5.3",
+	provider: "zai",
+	baseUrl: "https://api.z.ai/api/coding/paas/v4",
+};
+
 function codexAccessToken(accountId: string): string {
 	const payload = Buffer.from(
 		JSON.stringify({
@@ -660,6 +667,59 @@ test("session shutdown aborts usage action and provider selectors", async (t) =>
 	assert.equal(dialogSignals.length, 2);
 	assert.equal(dialogSignals[0], dialogSignals[1]);
 	assert.equal(dialogSignals[0]?.aborted, true);
+});
+
+test("menu-only providers query through /usage without automatic status refresh", async (t) => {
+	const originalFetch = globalThis.fetch;
+	t.onTestFinished(() => {
+		globalThis.fetch = originalFetch;
+	});
+	let fetches = 0;
+	globalThis.fetch = async () => {
+		fetches += 1;
+		return new Response(
+			JSON.stringify({
+				data: {
+					limits: [{ type: "CREDIT_LIMIT", unit: 3, percentage: 10 }],
+					level: "lite",
+				},
+			}),
+			{ status: 200 },
+		);
+	};
+	const titles: string[] = [];
+	const mock = createMockPi();
+	usageExtension(mock.pi);
+	const command = mock.commands.get("usage");
+	assert.ok(command);
+	const { ctx, statuses } = createMockContext({
+		hasUI: true,
+		mode: "rpc",
+		model: zaiModel,
+		select: async (title: string) => {
+			titles.push(title);
+			return "Close";
+		},
+		modelRegistry: {
+			getProviderAuth: async () => ({ auth: { apiKey: "zai-key" } }),
+			getAvailable: () => [zaiModel],
+			getAll: () => [zaiModel],
+			getProviderAuthStatus: () => ({ configured: true }),
+			getProviderDisplayName: () => "Z.AI",
+		},
+	});
+
+	mock.events.get("session_start")?.[0]?.({}, ctx);
+	await settle();
+	mock.events.get("turn_start")?.[0]?.({}, ctx);
+	await settle();
+	assert.equal(fetches, 0);
+	assert.equal(statuses.get("usage"), undefined);
+
+	await command.handler("", ctx);
+	assert.equal(fetches, 1);
+	assert.match(titles[0] ?? "", /5h window:\s+10% used · 90% left/);
+	assert.equal(statuses.get("usage"), undefined);
 });
 
 test("automatic provider failures back off instead of retrying every turn", async (t) => {

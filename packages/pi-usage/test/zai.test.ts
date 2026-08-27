@@ -99,7 +99,7 @@ test("Z.AI adapter normalizes 5h, weekly, and MCP monthly windows", () => {
 	const weekly = report.buckets.find((bucket) => bucket.id === "weekly");
 	assert.deepEqual(weekly, {
 		id: "weekly",
-		label: "Weekly usage",
+		label: "Weekly window",
 		used: 120_000,
 		remaining: 380_000,
 		limit: 500_000,
@@ -111,7 +111,7 @@ test("Z.AI adapter normalizes 5h, weekly, and MCP monthly windows", () => {
 	const mcpMonthly = report.buckets.find((bucket) => bucket.id === "mcp-monthly");
 	assert.deepEqual(mcpMonthly, {
 		id: "mcp-monthly",
-		label: "MCP monthly usage",
+		label: "MCP monthly allowance",
 		used: 224,
 		remaining: 3_776,
 		limit: 4_000,
@@ -123,8 +123,13 @@ test("Z.AI adapter normalizes 5h, weekly, and MCP monthly windows", () => {
 		{ id: "mcp-search-prime", label: "search-prime", value: 67, unit: "count" },
 	]);
 	assert.deepEqual(report.notes, ["Plan: lite"]);
-	assert.match(formatUsageReport(report, "current"), /Z\.AI Usage · Current/);
-	assert.match(formatUsageReport(report, "current"), /GLM Coding Plan usage/);
+	const rendered = formatUsageReport(report, "current");
+	assert.match(rendered, /Z\.AI Usage · Current/);
+	assert.match(rendered, /GLM Coding Plan usage/);
+	assert.match(rendered, /MCP monthly allowance:\s+224 of 4000 used · 3776 left \(resets /);
+	assert.match(rendered, /5h window:\s+13% used · 87% left \(resets /);
+	assert.match(rendered, /Weekly window:\s+120000 of 500000 used · 380000 left \(resets /);
+	assert.match(rendered, /search-prime:\s+67/);
 	assert.equal(formatUsageStatusline(report), undefined);
 });
 
@@ -187,6 +192,35 @@ test("Z.AI adapter shows percentage-only weekly windows as percent buckets", () 
 	);
 	const weekly = report.buckets.find((bucket) => bucket.id === "weekly");
 	assert.equal(weekly?.windowMinutes, 10_080);
+});
+
+test("Z.AI adapter accepts current credit-limit and mixed rollout window names", () => {
+	for (const types of [
+		["CREDIT_LIMIT", "CREDIT_LIMIT"],
+		["TOKENS_LIMIT", "CREDIT_LIMIT"],
+	] as const) {
+		const report = normalizeZaiQuotaPayload(
+			"zai",
+			"Z.AI",
+			{
+				data: {
+					limits: [
+						{ type: types[0], unit: 3, percentage: 42 },
+						{ type: types[1], unit: 6, percentage: 15 },
+					],
+				},
+			},
+			800,
+		);
+
+		assert.deepEqual(
+			report.buckets.map((bucket) => [bucket.id, bucket.used, bucket.remaining]),
+			[
+				["five-hour", 42, 58],
+				["weekly", 15, 85],
+			],
+		);
+	}
 });
 
 test("Z.AI adapter rejects malformed or empty quota responses", () => {

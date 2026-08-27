@@ -102,6 +102,7 @@ export const SUPPORTED_ADAPTERS: readonly UsageProviderAdapter[] = [
 		id: "zai",
 		displayName: "Z.AI",
 		semantics: { kind: "consumer-subscription", label: "GLM Coding Plan usage" },
+		publishesStatusline: false,
 		async query(auth, signal, timeoutMs) {
 			const payload = await fetchProviderJson(
 				zaiMonitorUrl(auth.model.baseUrl),
@@ -117,6 +118,7 @@ export const SUPPORTED_ADAPTERS: readonly UsageProviderAdapter[] = [
 		id: "zai-coding-cn",
 		displayName: "Z.AI Coding CN",
 		semantics: { kind: "consumer-subscription", label: "GLM Coding Plan usage" },
+		publishesStatusline: false,
 		async query(auth, signal, timeoutMs) {
 			const payload = await fetchProviderJson(
 				zaiMonitorUrl(auth.model.baseUrl),
@@ -532,12 +534,6 @@ function headerValue(
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {
 	return Object.keys(headers).some((key) => key.toLowerCase() === name.toLowerCase());
-}
-
-function opencodeUsageUrl(baseUrl: string | undefined): string {
-	const base = baseUrl?.trim().replace(/\/+$/u, "");
-	if (!base) throw new Error("OpenCode Go model base URL is unavailable.");
-	return `${base}/usage`;
 }
 
 function zaiMonitorUrl(baseUrl: string | undefined): string {

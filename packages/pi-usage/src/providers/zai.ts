@@ -21,18 +21,19 @@ export function normalizeZaiQuotaPayload(
 		if (!limit) continue;
 		const type = asString(limit.type);
 		const unit = asNonnegativeNumber(limit.unit);
+		const isPlanUsage = type === "TOKENS_LIMIT" || type === "CREDIT_LIMIT";
 		if (type === "TIME_LIMIT") {
-			addCountBucket(buckets, limit, "mcp-monthly", "MCP monthly usage");
+			addCountBucket(buckets, limit, "mcp-monthly", "MCP monthly allowance");
 			addUsageDetailMetrics(metrics, limit.usageDetails);
-		} else if (type === "TOKENS_LIMIT" && unit === 3) {
+		} else if (isPlanUsage && unit === 3) {
 			addPercentBucket(buckets, limit, "five-hour", "5h window", FIVE_HOUR_WINDOW_MINUTES);
-		} else if (type === "TOKENS_LIMIT" && unit === 6) {
+		} else if (isPlanUsage && unit === 6) {
 			const used = asNonnegativeNumber(limit.currentValue);
 			const quota = asNonnegativeNumber(limit.usage);
 			if (used !== undefined && quota !== undefined) {
-				addCountBucket(buckets, limit, "weekly", "Weekly usage", WEEKLY_WINDOW_MINUTES);
+				addCountBucket(buckets, limit, "weekly", "Weekly window", WEEKLY_WINDOW_MINUTES);
 			} else {
-				addPercentBucket(buckets, limit, "weekly", "Weekly usage", WEEKLY_WINDOW_MINUTES);
+				addPercentBucket(buckets, limit, "weekly", "Weekly window", WEEKLY_WINDOW_MINUTES);
 			}
 		}
 	}
