@@ -13,16 +13,22 @@ const GENERATED_BANNER = [
 	"// @ts-nocheck -- generated JavaScript uses a .ts extension for Pi's Jiti loader.",
 ].join("\n");
 
-const FORBIDDEN_EAGER_INPUTS = [
+const FORBIDDEN_RUNTIME_INPUTS = [
+	"src/agents/",
 	"src/auto-transport.ts",
 	"src/capability-grant.ts",
+	"src/child-peer-bridge.ts",
+	"src/child-peer-tools.ts",
 	"src/completion-delivery.ts",
+	"src/completion-requirement.ts",
+	"src/config-registration.ts",
 	"src/config-status.ts",
 	"src/config-ui.ts",
 	"src/create-stateful-transport.ts",
 	"src/cwd-policy.ts",
-	"src/execution/runtime-policy.ts",
+	"src/delegation-contract.ts",
 	"src/in-process-transport.ts",
+	"src/inspect-registration.ts",
 	"src/inspect.ts",
 	"src/peer-communication.ts",
 	"src/persistence.ts",
@@ -30,10 +36,13 @@ const FORBIDDEN_EAGER_INPUTS = [
 	"src/retained-semantic-state.ts",
 	"src/rpc-transport.ts",
 	"src/semantic-snapshot.ts",
+	"src/settings-reader.ts",
+	"src/settings/",
+	"src/stateful",
 	"src/subprocess-transport.ts",
+	"src/usage-recording",
 	"src/workspace.ts",
 ];
-const FORBIDDEN_EAGER_EXTERNALS = ["@narumitw/pi-tui-kit"];
 
 export async function buildRuntime({
 	outputDirectory = distDirectory,
@@ -51,12 +60,8 @@ export async function buildRuntime({
 			absWorkingDir: packageRoot,
 			banner: { js: GENERATED_BANNER },
 			bundle: true,
-			chunkNames: "chunks/[name]-[hash]",
 			entryNames: "[dir]/[name]",
-			entryPoints: {
-				index: "src/index.ts",
-				"chunks/child-peer-bridge": "src/child-peer-bridge.ts",
-			},
+			entryPoints: { index: "src/index.ts" },
 			format: "esm",
 			legalComments: "none",
 			metafile: true,
@@ -65,7 +70,6 @@ export async function buildRuntime({
 			packages: "external",
 			platform: "node",
 			sourcemap: true,
-			splitting: true,
 			target: "es2022",
 			write: true,
 		});
@@ -85,42 +89,22 @@ export function validateEagerGraph(metadata) {
 		normalizePath(output.entryPoint ?? "").endsWith("/src/index.ts"),
 	);
 	if (!entry) throw new Error("Generated runtime metadata has no src/index.ts entrypoint");
-
-	for (const output of Object.values(outputs)) {
-		for (const inputPath of Object.keys(output.inputs ?? {})) {
-			const normalized = normalizePath(inputPath);
-			if (normalized.includes("/node_modules/")) {
-				throw new Error(`Bundled package input: ${normalized}`);
-			}
-		}
-	}
-
-	const eagerOutputs = collectEagerOutputs(outputs, entry[0]);
+	const eagerOutputs = collectReachableOutputs(outputs, entry[0]);
 	const eagerInputs = new Set();
 	for (const outputPath of eagerOutputs) {
 		const output = outputs[outputPath];
 		if (!output) continue;
 		for (const inputPath of Object.keys(output.inputs ?? {})) {
-			eagerInputs.add(normalizePath(inputPath));
-		}
-		for (const imported of output.imports ?? []) {
-			if (
-				imported.external &&
-				FORBIDDEN_EAGER_EXTERNALS.some(
-					(dependency) =>
-						imported.path === dependency || imported.path.startsWith(`${dependency}/`),
-				)
-			) {
-				throw new Error(
-					`Eager external dependency: ${imported.path} from ${normalizePath(outputPath)}`,
-				);
+			const normalized = normalizePath(inputPath);
+			if (normalized.includes("/node_modules/")) {
+				throw new Error(`Bundled package input: ${normalized}`);
 			}
+			eagerInputs.add(normalized);
 		}
 	}
-
-	for (const forbidden of FORBIDDEN_EAGER_INPUTS) {
-		if ([...eagerInputs].some((input) => input.endsWith(`/${forbidden}`))) {
-			throw new Error(`First-use implementation is eager: ${forbidden}`);
+	for (const forbidden of FORBIDDEN_RUNTIME_INPUTS) {
+		if ([...eagerInputs].some((input) => input.includes(`/${forbidden}`))) {
+			throw new Error(`Retained implementation is reachable: ${forbidden}`);
 		}
 	}
 	return { eagerInputs, eagerOutputs };
@@ -129,41 +113,32 @@ export function validateEagerGraph(metadata) {
 export async function validateGeneratedFiles(outputDirectory) {
 	const files = await listFiles(outputDirectory);
 	const runtimeFiles = files.filter((path) => path.endsWith(".ts"));
-	if (!runtimeFiles.includes("index.ts")) {
-		throw new Error("Generated runtime is missing index.ts");
-	}
-	if (!runtimeFiles.some((path) => path.startsWith("chunks/"))) {
-		throw new Error("Generated runtime has no lazy chunks");
-	}
-	if (!runtimeFiles.includes("chunks/child-peer-bridge.ts")) {
-		throw new Error("Generated runtime is missing the child peer bridge");
-	}
-
-	let bridgeReferences = 0;
+	if (!runtimeFiles.includes("index.ts")) throw new Error("Generated runtime is missing index.ts");
 	for (const runtimePath of runtimeFiles) {
 		const source = await readFile(join(outputDirectory, runtimePath), "utf8");
 		if (!source.startsWith(GENERATED_BANNER)) {
 			throw new Error(`Generated marker is missing from ${runtimePath}`);
 		}
-		if (/["']\.\.?\/[^"']+\.js["']/u.test(source)) {
+		if (/child-peer-bridge/u.test(source)) {
+			throw new Error(`Generated runtime retains a child peer bridge in ${runtimePath}`);
+		}
+		if (/(["'])\.\.?\/[^"']+\.js\1/u.test(source)) {
 			throw new Error(`Generated runtime retains a .js import specifier in ${runtimePath}`);
 		}
-		if (/["']\.\.?\/[^"']*src\//u.test(source)) {
+		if (/(["'])\.\.?\/[^"']*src\//u.test(source)) {
 			throw new Error(`Generated runtime imports authoritative source from ${runtimePath}`);
 		}
 		if (!files.includes(`${runtimePath}.map`)) {
 			throw new Error(`Source map is missing for ${runtimePath}`);
 		}
-		if (/new URL\((["'])\.\/child-peer-bridge\.ts\1,\s*import\.meta\.url\)/u.test(source)) {
-			bridgeReferences += 1;
-			const bridgePath = posix.join(posix.dirname(runtimePath), "child-peer-bridge.ts");
-			if (!files.includes(bridgePath)) {
-				throw new Error(`Child peer bridge target is missing for ${runtimePath}: ${bridgePath}`);
+		for (const specifier of relativeSpecifiers(source)) {
+			const target = posix.normalize(posix.join(posix.dirname(runtimePath), specifier));
+			if (!files.includes(target)) {
+				throw new Error(
+					`Generated relative import target is missing for ${runtimePath}: ${target}`,
+				);
 			}
 		}
-	}
-	if (bridgeReferences !== 1) {
-		throw new Error(`Generated runtime has ${bridgeReferences} child peer bridge references`);
 	}
 }
 
@@ -183,7 +158,6 @@ async function assertSafeOutputDirectory(outputDirectory) {
 			"Runtime output directory must be inside the package root and owned by the build",
 		);
 	}
-
 	const realPackageRoot = await realpath(packageRoot);
 	const realOutputParent = await realpath(dirname(outputDirectory));
 	const relativeParent = relative(realPackageRoot, realOutputParent);
@@ -196,19 +170,23 @@ async function assertSafeOutputDirectory(outputDirectory) {
 	}
 }
 
-function collectEagerOutputs(outputs, entryPath) {
-	const eager = new Set();
+function collectReachableOutputs(outputs, entryPath) {
+	const reachable = new Set();
 	const pending = [entryPath];
 	while (pending.length > 0) {
 		const outputPath = pending.pop();
-		if (!outputPath || eager.has(outputPath)) continue;
-		eager.add(outputPath);
+		if (!outputPath || reachable.has(outputPath)) continue;
+		reachable.add(outputPath);
 		for (const imported of outputs[outputPath]?.imports ?? []) {
-			if (imported.external || imported.kind === "dynamic-import") continue;
-			if (outputs[imported.path]) pending.push(imported.path);
+			if (!imported.external && outputs[imported.path]) pending.push(imported.path);
 		}
 	}
-	return eager;
+	return reachable;
+}
+
+function relativeSpecifiers(source) {
+	const matches = source.matchAll(/(?:from\s*|import\s*\(|import\s*)(["'])(\.\.?\/[^"']+)\1/gu);
+	return [...matches].map((match) => match[2]);
 }
 
 export async function publishRuntime(

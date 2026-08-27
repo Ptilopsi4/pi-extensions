@@ -1,332 +1,114 @@
 import assert from "node:assert/strict";
-import { afterAll, test } from "vitest";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
-import { createStatefulTransport } from "../src/create-stateful-transport.js";
-import subagents from "../src/index.js";
-import type { ManagedAgent, TurnOutcome } from "../src/registry.js";
-import type { SubagentTransport } from "../src/transport.js";
-import { installSubagentsTestEnvironment } from "./subagents-test-helpers.js";
 
-const restoreTestEnvironment = installSubagentsTestEnvironment();
-afterAll(restoreTestEnvironment);
+const packageRoot = path.resolve("packages/pi-subagents");
+const importAgentDir = await mkdtemp(path.join(os.tmpdir(), "pi-subagents-import-agent-"));
+const importPreviousAgentDir = process.env.PI_CODING_AGENT_DIR;
+process.env.PI_CODING_AGENT_DIR = importAgentDir;
+const boundedFactory = (
+	(await import(
+		`${pathToFileURL(path.join(packageRoot, "src/index.ts")).href}?startup=${crypto.randomUUID()}`
+	)) as { default: (pi: never) => void }
+).default;
+if (importPreviousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+else process.env.PI_CODING_AGENT_DIR = importPreviousAgentDir;
+await rm(importAgentDir, { recursive: true, force: true });
 
-async function emitAll(
+test("source startup reaches only the bounded runtime graph", async () => {
+	const builder = (await import(
+		`${pathToFileURL(path.join(packageRoot, "scripts/build-runtime.mjs")).href}?audit=${crypto.randomUUID()}`
+	)) as {
+		buildRuntime(options: { outputDirectory: string }): Promise<{
+			outputs?: Record<string, { inputs?: Record<string, unknown> }>;
+		}>;
+		validateEagerGraph(metadata: unknown): { eagerInputs: Set<string> };
+	};
+	const root = await mkdtemp(path.join(packageRoot, ".pi-subagents-build-test-"));
+	try {
+		const metadata = await builder.buildRuntime({ outputDirectory: path.join(root, "dist") });
+		const inputs = [...builder.validateEagerGraph(metadata).eagerInputs].join("\n");
+		assert.match(inputs, /src\/bounded-subagents\.ts/u);
+		assert.doesNotMatch(
+			inputs,
+			/registry|persistence|mailbox|peer-|semantic|stateful|settings|workspace|usage-recording|auto-transport|rpc-transport|subprocess-transport/u,
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("bounded extension never reads or mutates legacy settings and retained state", async () => {
+	const root = await mkdtemp(path.join(os.tmpdir(), "pi-subagents-legacy-nonmutation-"));
+	const previous = process.env.PI_CODING_AGENT_DIR;
+	const legacy = path.join(root, "pi-subagents.json");
+	const state = path.join(root, "pi-subagents-state");
+	await writeFile(legacy, "{ malformed sentinel settings \u202e", "utf8");
+	await mkdir(state);
+	await writeFile(path.join(state, "sentinel.bin"), Buffer.from([0, 1, 2, 3, 255]));
+	const before = await snapshot(root);
+	process.env.PI_CODING_AGENT_DIR = root;
+	try {
+		const mock = createMockPi();
+		boundedFactory(mock.pi);
+		const context = createMockContext();
+		await emit(mock, "session_start", { reason: "startup" }, context.ctx);
+		await emit(mock, "session_shutdown", { reason: "quit" }, context.ctx);
+		assert.deepEqual(await snapshot(root), before);
+
+		await writeFile(
+			legacy,
+			JSON.stringify({ stateful: { enabled: true }, unknown: "sentinel" }),
+			"utf8",
+		);
+		const validBefore = await snapshot(root);
+		const validMock = createMockPi();
+		boundedFactory(validMock.pi);
+		const validContext = createMockContext();
+		await emit(validMock, "session_start", { reason: "startup" }, validContext.ctx);
+		await emit(validMock, "session_shutdown", { reason: "quit" }, validContext.ctx);
+		assert.deepEqual(await snapshot(root), validBefore);
+	} finally {
+		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previous;
+		await rm(root, { recursive: true, force: true });
+	}
+
+	const absentRoot = await mkdtemp(path.join(os.tmpdir(), "pi-subagents-legacy-absent-"));
+	const absentAgentDir = path.join(absentRoot, "not-created");
+	const old = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = absentAgentDir;
+	try {
+		const mock = createMockPi();
+		boundedFactory(mock.pi);
+		await assert.rejects(readFile(absentAgentDir), /ENOENT/u);
+	} finally {
+		if (old === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = old;
+		await rm(absentRoot, { recursive: true, force: true });
+	}
+});
+
+async function emit(
 	mock: ReturnType<typeof createMockPi>,
-	name: string,
-	event: unknown,
-	ctx = createMockContext().ctx,
-): Promise<void> {
-	for (const handler of mock.events.get(name) ?? []) await handler(event, ctx);
+	event: string,
+	payload: unknown,
+	ctx: ExtensionContext,
+) {
+	for (const handler of mock.events.get(event) ?? []) await handler(payload, ctx);
 }
 
-function managedAgent(): ManagedAgent {
-	return {
-		id: "sa_lazy",
-		agent: "explorer",
-		rootId: "sa_lazy",
-		depth: 0,
-		children: [],
-		state: "running",
-		createdAt: 1,
-		updatedAt: 1,
-		cwd: process.cwd(),
-		history: [],
-		mailbox: [],
-	};
-}
-
-class FakeTransport implements SubagentTransport {
-	readonly kind = "fake" as const;
-	turns = 0;
-	shutdowns = 0;
-
-	async runTurn(): Promise<TurnOutcome> {
-		this.turns += 1;
-		return { output: "done", exitCode: 0 };
+async function snapshot(directory: string, prefix = ""): Promise<Record<string, string>> {
+	const result: Record<string, string> = {};
+	for (const entry of await readdir(path.join(directory, prefix), { withFileTypes: true })) {
+		const relative = path.join(prefix, entry.name);
+		if (entry.isDirectory()) Object.assign(result, await snapshot(directory, relative));
+		else result[relative] = (await readFile(path.join(directory, relative))).toString("base64");
 	}
-
-	async shutdown(): Promise<void> {
-		this.shutdowns += 1;
-	}
+	return result;
 }
-
-test("Subagents idle startup registers every surface without loading deferred implementations", async () => {
-	const mock = createMockPi();
-	const loads = {
-		config: 0,
-		inspect: 0,
-		transport: 0,
-	};
-	subagents(mock.pi, {
-		loadStatefulTransport: async () => {
-			loads.transport += 1;
-			return new FakeTransport();
-		},
-		config: {
-			loadConfigUi: async () => {
-				loads.config += 1;
-				return {} as never;
-			},
-		},
-		inspect: {
-			loadExecution: async () => {
-				loads.inspect += 1;
-				return {} as never;
-			},
-		},
-	});
-	const context = createMockContext();
-	await emitAll(mock, "session_start", { reason: "startup" }, context.ctx);
-
-	assert.deepEqual(loads, {
-		config: 0,
-		inspect: 0,
-		transport: 0,
-	});
-	assert.deepEqual(
-		[...new Set(mock.tools.map((tool) => tool.name))],
-		[
-			"subagent_spawn",
-			"subagent_send",
-			"subagent_await",
-			"subagent_manage",
-			"subagent_mailbox",
-			"subagent_inspect",
-		],
-	);
-	assert.ok(mock.commands.has("subagents"));
-	await emitAll(mock, "session_shutdown", { reason: "quit" }, context.ctx);
-});
-
-test("Subagents direct status stays lightweight and manager UI loads once on demand", async () => {
-	const mock = createMockPi();
-	let loads = 0;
-	let shows = 0;
-	subagents(mock.pi, {
-		config: {
-			loadConfigUi: async () => {
-				loads += 1;
-				return {
-					showSubagentManager: async () => {
-						shows += 1;
-					},
-					showSubagentSettings: async () => undefined,
-				};
-			},
-		},
-	});
-	const context = createMockContext({ mode: "tui", hasUI: true });
-	await emitAll(mock, "session_start", { reason: "startup" }, context.ctx);
-	const command = mock.commands.get("subagents");
-	assert.ok(command);
-	await command.handler("status", context.ctx);
-	assert.equal(loads, 0);
-	await command.handler("", context.ctx);
-	await command.handler("", context.ctx);
-	assert.equal(loads, 1);
-	assert.equal(shows, 2);
-	await emitAll(mock, "session_shutdown", { reason: "quit" }, context.ctx);
-});
-
-test("Subagents direct status ignores stale lazy status loads", async () => {
-	const mock = createMockPi();
-	let statusLoadingStarted!: () => void;
-	const statusLoading = new Promise<void>((resolve) => {
-		statusLoadingStarted = resolve;
-	});
-	let releaseStatus!: () => void;
-	const statusGate = new Promise<void>((resolve) => {
-		releaseStatus = resolve;
-	});
-	let shows = 0;
-	subagents(mock.pi, {
-		config: {
-			loadConfigStatus: async () => {
-				statusLoadingStarted();
-				await statusGate;
-				return {
-					showSubagentHelp: () => {
-						shows += 1;
-					},
-					showSubagentStatus: () => {
-						shows += 1;
-					},
-				};
-			},
-		},
-	});
-	const context = createMockContext({ mode: "tui", hasUI: true });
-	await emitAll(mock, "session_start", { reason: "startup" }, context.ctx);
-	const command = mock.commands.get("subagents");
-	assert.ok(command);
-	const running = command.handler("status", context.ctx);
-	await statusLoading;
-	await emitAll(mock, "session_shutdown", { reason: "quit" }, context.ctx);
-	releaseStatus();
-	await running;
-	assert.equal(shows, 0);
-});
-
-test("stateful transport loads once on first turn and stays unloaded on idle shutdown", async () => {
-	let loads = 0;
-	const implementation = new FakeTransport();
-	const transport = createStatefulTransport({
-		kind: "subprocess",
-		modelRegistry: {} as never,
-		getParentRuntime: () => ({ model: undefined, thinkingLevel: "off" }),
-		getSettings: () => undefined,
-		loadTransport: async () => {
-			loads += 1;
-			return implementation;
-		},
-	});
-	const idle = createStatefulTransport({
-		kind: "subprocess",
-		modelRegistry: {} as never,
-		getParentRuntime: () => ({ model: undefined, thinkingLevel: "off" }),
-		getSettings: () => undefined,
-		loadTransport: async () => {
-			throw new Error("idle shutdown loaded a transport");
-		},
-	});
-
-	await idle.shutdown?.();
-	assert.equal(loads, 0);
-	await transport.runTurn(managedAgent(), "first", new AbortController().signal);
-	await transport.runTurn(managedAgent(), "second", new AbortController().signal);
-	assert.equal(loads, 1);
-	assert.equal(implementation.turns, 2);
-	await transport.shutdown?.();
-	assert.equal(implementation.shutdowns, 1);
-});
-
-test("stateful transport retries a rejected implementation load", async () => {
-	let loads = 0;
-	const implementation = new FakeTransport();
-	const transport = createStatefulTransport({
-		kind: "subprocess",
-		modelRegistry: {} as never,
-		getParentRuntime: () => ({ model: undefined, thinkingLevel: "off" }),
-		getSettings: () => undefined,
-		loadTransport: async () => {
-			loads += 1;
-			if (loads === 1) throw new Error("temporary transport loader failure");
-			return implementation;
-		},
-	});
-	await assert.rejects(
-		() => transport.runTurn(managedAgent(), "first", new AbortController().signal),
-		/temporary transport loader failure/u,
-	);
-	await transport.runTurn(managedAgent(), "second", new AbortController().signal);
-	assert.equal(loads, 2);
-	assert.equal(implementation.turns, 1);
-	await transport.shutdown?.();
-});
-
-test("stateful transport cancellation during loading starts no turn", async () => {
-	let releaseLoading!: (transport: SubagentTransport) => void;
-	const loading = new Promise<SubagentTransport>((resolve) => {
-		releaseLoading = resolve;
-	});
-	const implementation = new FakeTransport();
-	const transport = createStatefulTransport({
-		kind: "subprocess",
-		modelRegistry: {} as never,
-		getParentRuntime: () => ({ model: undefined, thinkingLevel: "off" }),
-		getSettings: () => undefined,
-		loadTransport: () => loading,
-	});
-	const controller = new AbortController();
-	const running = transport.runTurn(managedAgent(), "first", controller.signal);
-	void running.catch(() => undefined);
-	await Promise.resolve();
-	controller.abort(new DOMException("turn cancelled", "AbortError"));
-	releaseLoading(implementation);
-
-	await assert.rejects(
-		running,
-		(error) =>
-			error instanceof DOMException &&
-			error.name === "AbortError" &&
-			error.message === "turn cancelled",
-	);
-	assert.equal(implementation.turns, 0);
-	await transport.shutdown?.();
-});
-
-test("stateful transport cancellation wins over a loader rejection", async () => {
-	let rejectLoading!: (error: Error) => void;
-	const loading = new Promise<SubagentTransport>((_resolve, reject) => {
-		rejectLoading = reject;
-	});
-	const transport = createStatefulTransport({
-		kind: "subprocess",
-		modelRegistry: {} as never,
-		getParentRuntime: () => ({ model: undefined, thinkingLevel: "off" }),
-		getSettings: () => undefined,
-		loadTransport: () => loading,
-	});
-	const controller = new AbortController();
-	const running = transport.runTurn(managedAgent(), "first", controller.signal);
-	void running.catch(() => undefined);
-	await Promise.resolve();
-	controller.abort(new DOMException("turn cancelled", "AbortError"));
-	rejectLoading(new Error("loader failed after cancellation"));
-
-	await assert.rejects(
-		running,
-		(error) =>
-			error instanceof DOMException &&
-			error.name === "AbortError" &&
-			error.message === "turn cancelled",
-	);
-	await transport.shutdown?.();
-});
-
-test("stateful transport rejects an already-cancelled turn without loading", async () => {
-	let loads = 0;
-	const transport = createStatefulTransport({
-		kind: "subprocess",
-		modelRegistry: {} as never,
-		getParentRuntime: () => ({ model: undefined, thinkingLevel: "off" }),
-		getSettings: () => undefined,
-		loadTransport: async () => {
-			loads += 1;
-			return new FakeTransport();
-		},
-	});
-	const controller = new AbortController();
-	controller.abort(new DOMException("turn cancelled", "AbortError"));
-
-	await assert.rejects(
-		() => transport.runTurn(managedAgent(), "first", controller.signal),
-		(error) => error instanceof DOMException && error.name === "AbortError",
-	);
-	assert.equal(loads, 0);
-	await transport.shutdown?.();
-});
-
-test("stateful transport shutdown disposes an implementation that resolves after closure", async () => {
-	let releaseLoading!: (transport: SubagentTransport) => void;
-	const loading = new Promise<SubagentTransport>((resolve) => {
-		releaseLoading = resolve;
-	});
-	const implementation = new FakeTransport();
-	const transport = createStatefulTransport({
-		kind: "subprocess",
-		modelRegistry: {} as never,
-		getParentRuntime: () => ({ model: undefined, thinkingLevel: "off" }),
-		getSettings: () => undefined,
-		loadTransport: () => loading,
-	});
-	const running = transport.runTurn(managedAgent(), "first", new AbortController().signal);
-	void running.catch(() => undefined);
-	await Promise.resolve();
-	const shutdown = transport.shutdown?.();
-	releaseLoading(implementation);
-	await shutdown;
-	await assert.rejects(running, /shut down while loading/u);
-	assert.equal(implementation.turns, 0);
-	assert.equal(implementation.shutdowns, 1);
-});
