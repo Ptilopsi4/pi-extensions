@@ -74,7 +74,8 @@ test("bare subagents opens a current-session manager and keeps direct routes pre
 		assert.match(managerText, /Diagnostics/);
 		assert.match(managerText, /Help/);
 		assert.doesNotMatch(managerText, /Consult resources:|Settings: \/|Transport:/);
-		assert.equal(managerContext.notifications.length, 0);
+		assert.equal(managerContext.notifications.length, 1);
+		assert.match(managerContext.notifications[0]?.message ?? "", /pi-subagents 3\.0\.0/i);
 
 		let nestedCall = 0;
 		const nestedRenders: string[][] = [];

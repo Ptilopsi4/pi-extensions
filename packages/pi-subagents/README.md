@@ -8,6 +8,11 @@ Use the built-in `explorer` for read-only evidence and `worker` for a clearly ow
 
 The compatibility default exposes background and blocking methods, while **Keep Pi available (async)** is an optional smaller background-only surface.
 
+> [!WARNING]
+> `@narumitw/pi-subagents` 3.0.0 will replace this implementation with the bounded-job runtime currently developed as `pi-subagents-v3`.
+> The release will remove `/subagents`, extension settings, local usage recording, the current `subagent` and underscore-named tool APIs, custom agent catalogs and per-agent configuration, retained conversations and messaging, persisted recovery, auto-resume completion, advanced orchestration and verification, alternate transports, trust-aware cwd policy, and extension-owned worktree isolation.
+> It will instead expose `subagent-spawn`, `subagent-inspect`, `subagent-cancel`, `subagent-wait`, and `subagent-reply` for bounded background jobs.
+
 ## ✨ Features
 
 - Provides blocking batches, detached reusable agents, read-only consultation, metadata inspection, and queue-only mailboxes.
