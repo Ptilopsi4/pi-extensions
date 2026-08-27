@@ -147,11 +147,17 @@ The optional native `powershell` tool must be active when an automatic Plan poli
 Built-in `edit` and `write`, `update_plan`, tools still inactive at the first request, and deselected tools are blocked at execution time even though active schemas remain visible.
 Extension and custom tools are denied by default because Pi tools do not expose standardized mutability metadata; explicitly allow a custom-tool name before starting only when you accept the risk.
 For example, you can opt into `firecrawl_scrape`, `firecrawl_search`, or `lsp_diagnostics` when you want to use the effective active tool during planning.
+An active selectable tool omitted from the Plan policy reports that it needs explicit selection through `/plan tools` or `defaultPlanTools` before the next workflow.
+Registered but inactive, unregistered, metadata-free, and built-in blocked tools report their distinct fail-closed reasons instead of suggesting that every denial is a missing selection.
+A tool admitted before later deactivation can be reactivated and reused in the current workflow without restarting.
 After they become visible, the Plan-only helpers remain visible in Normal mode, but their handlers and the `tool_call` policy reject calls unless Plan mode owns the active workflow.
 
 Limited `bash` uses a fail-closed Bash policy, including when an extension overrides the canonical `bash` tool name.
 It accepts common inspection commands, read-only Git and npm queries, pipelines and command lists composed entirely of accepted commands, plus selected checks such as `npm test`, `npm run typecheck`, and `cargo test`.
-It rejects output/input redirects, shell expansion, substitutions, subshells, background jobs, mutating flags, dependency changes, editors, and unknown commands.
+Reviewed Git inspections may place `--no-pager` before the accepted subcommand.
+They may also place one or more complete `-C <path>` pairs before the accepted subcommand only when every path is `.` or the exact current Pi working directory.
+Other targets are rejected so `git -C` cannot introduce executable configuration, hooks, filters, signing programs, or lazy-fetch remotes from another repository.
+It rejects output/input redirects, shell expansion, substitutions, subshells, background jobs, incomplete or directory-changing `-C` pairs, other Git global options, Git config overrides, mutating flags, dependency changes, editors, and unknown commands.
 
 Limited `powershell` uses a separate fail-closed PowerShell policy, including when an extension overrides the canonical `powershell` tool name.
 It accepts canonical inspection cmdlets such as `Get-ChildItem`, `Get-Content`, `Get-Item`, `Get-Location`, `Resolve-Path`, `Select-String`, `Test-Path`, `Measure-Object`, `Sort-Object`, `Format-List`, `Format-Table`, `Out-String`, and `Write-Output`.
@@ -413,11 +419,13 @@ Duplicate values are removed in first-seen order.
 With the example configuration above, commands such as these are accepted:
 
 ```bash
+git -C . status --short
 git rev-parse --show-toplevel
 git blame -- src/plan-mode.ts
 git diff --cached
 git show --stat --oneline HEAD
 git log -p -1 HEAD -- src/plan-mode.ts
+git -C . diff --check
 gh pr view 218 --json number,title,state
 gh issue list --state open --json number,title,state
 ```
@@ -425,6 +433,11 @@ gh issue list --state open --json number,title,state
 The command-specific validators still reject unsafe forms, including:
 
 ```bash
+git -C
+git -C packages/pi-plan-mode status --short
+git -C packages -C .. status --short
+git -c core.fsmonitor=false -C . status --short
+git -C . checkout main
 git blame --textconv -- src/plan-mode.ts
 git cat-file --filters HEAD
 git diff --ext-diff
@@ -446,7 +459,8 @@ GitHub CLI read paths require `--json <fields>` output so Plan mode does not rel
 Unknown `safeSubcommands` keys or values, non-array values, and non-string entries invalidate the entire settings file and trigger the normal warning/default fallback on session start.
 
 Read-only does not mean private: Git inspection can expose repository history and tracked secrets, while `gh` queries can expose remote repository, pull request, and issue data available to your authenticated account.
-The policy reduces accidental mutation and explicit helper execution; it is not a sandbox or a confidentiality boundary.
+A `git -C <path>` inspection is accepted only when the path keeps Git in Pi's current working directory.
+The policy reduces accidental mutation and cross-repository executable configuration; it is not a sandbox or a confidentiality boundary.
 
 ### Thinking level
 
