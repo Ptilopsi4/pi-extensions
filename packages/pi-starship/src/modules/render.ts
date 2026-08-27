@@ -33,6 +33,7 @@ export function renderStatusline(
 					values,
 					style: module.style,
 					styles: module.styles,
+					options: module.options,
 					display: module.display,
 				})
 			: { style: module.style };

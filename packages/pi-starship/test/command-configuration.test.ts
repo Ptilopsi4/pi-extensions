@@ -34,7 +34,7 @@ test("Configuration exposes four focused screens under seven top-level goals", a
 			apply() {},
 			settingsPath: path,
 		});
-		const tui = createTuiHarness({ width: 64, rows: 18 });
+		const tui = createTuiHarness({ width: 64, rows: 21 });
 		const context = createMockContext({ mode: "tui", hasUI: true, custom: tui.custom });
 		const running = mock.commands.get("starship")?.handler("", context.ctx);
 		await tui.waitForOpen();

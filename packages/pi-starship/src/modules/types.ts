@@ -1,4 +1,4 @@
-import type { StyledChunk } from "../format/style.js";
+import type { ColorSpec, StyledChunk } from "../format/style.js";
 
 export interface GitBranchSnapshot {
 	name: string;
@@ -83,6 +83,8 @@ export interface StarshipRuntimeSnapshot {
 	gitRoot?: string;
 	model?: { provider: string; id: string };
 	thinkingLevel: string;
+	/** Native TUI thinking-role colors for the current theme, level keyed. */
+	thinkingTheme?: Readonly<Record<string, ColorSpec>>;
 	turnCount: number;
 	activeTools: ReadonlyMap<string, number>;
 	isStreaming: boolean;
@@ -140,7 +142,8 @@ export type ModuleOptionSchema =
 	| { kind: "boolean"; default: boolean }
 	| { kind: "integer"; default: number; minimum: number; maximum: number }
 	| { kind: "string-array"; default: readonly string[]; allowNegative?: boolean }
-	| { kind: "string-map"; default: Readonly<Record<string, string>> };
+	| { kind: "string-map"; default: Readonly<Record<string, string>> }
+	| { kind: "style-map"; default: Readonly<Record<string, string>> };
 
 export interface ModuleDisplayConfig {
 	threshold: number;
@@ -160,6 +163,7 @@ export interface ModuleStyleContext {
 	values: Readonly<Record<string, string>>;
 	style: string;
 	styles: Readonly<Record<string, string>>;
+	options: Readonly<Record<string, ModuleOptionValue>>;
 	display: readonly ModuleDisplayConfig[];
 }
 

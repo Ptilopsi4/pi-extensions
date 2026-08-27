@@ -302,6 +302,9 @@ function normalizeModule(
 	const known = new Set(["format", "symbol", "disabled", ...Object.keys(optionSchemas)]);
 	if (definition.styleDefaults) {
 		for (const field of Object.keys(definition.styleDefaults)) known.add(field);
+		// Modules whose styles resolve through the style variable still accept the
+		// legacy style field as their fallback style.
+		if (definition.styleVariables?.includes("style")) known.add("style");
 	} else if (!definition.displayDefaults) known.add("style");
 	if (definition.displayDefaults) known.add("display");
 	if (name === "extension_status") {
@@ -336,6 +339,11 @@ function normalizeModule(
 			diagnostics.push(typeDiagnostic(`${name}.symbol`, "string"));
 		} else module.symbol = value.symbol;
 	}
+	if (definition.styleDefaults && value.style !== undefined) {
+		if (typeof value.style !== "string") {
+			diagnostics.push(typeDiagnostic(`${name}.style`, "string"));
+		} else module.style = value.style;
+	}
 	if (definition.styleDefaults) {
 		for (const field of Object.keys(definition.styleDefaults)) {
 			if (value[field] === undefined) continue;
@@ -364,7 +372,7 @@ function normalizeModule(
 	}
 	for (const [key, schema] of Object.entries(optionSchemas)) {
 		if (value[key] === undefined) continue;
-		const normalized = normalizeModuleOption(value[key], schema);
+		const normalized = normalizeModuleOption(value[key], schema, activePalette(config));
 		if (normalized.ok) module.options[key] = normalized.value;
 		else diagnostics.push(diagnostic("warning", `${name}.${key}`, normalized.message));
 	}
@@ -680,6 +688,7 @@ function validateLiteralStyles(
 function normalizeModuleOption(
 	value: unknown,
 	schema: ModuleOptionSchema,
+	palette: ColorPalette = {},
 ): { ok: true; value: ModuleOptionValue } | { ok: false; message: string } {
 	switch (schema.kind) {
 		case "string":
@@ -730,6 +739,21 @@ function normalizeModuleOption(
 			}
 			const result: Record<string, string> = {};
 			for (const [key, item] of Object.entries(value)) setOwn(result, key, item as string);
+			return { ok: true, value: result };
+		}
+		case "style-map": {
+			if (!isRecord(value) || Object.values(value).some((item) => typeof item !== "string")) {
+				return { ok: false, message: "Expected a table of style strings; using the default value" };
+			}
+			const result: Record<string, string> = {};
+			for (const [key, item] of Object.entries(value)) {
+				if (isValidStyle(item as string, palette)) setOwn(result, key, item as string);
+				else
+					return {
+						ok: false,
+						message: `Invalid style ${JSON.stringify(item)}; using the default value`,
+					};
+			}
 			return { ok: true, value: result };
 		}
 	}

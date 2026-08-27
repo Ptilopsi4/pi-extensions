@@ -265,6 +265,16 @@ An invalid root format falls back to the built-in root format; an invalid module
 The background-free direct defaults are: `brand = "bold white"`, `provider`/`model` = `"bold blue"`, `thinking`/`git_branch`/`turn` = `"bold purple"`, `directory`/`git_worktree` = `"cyan bold"`, `github_pr = "bold blue"`, `git_commit = "green bold"`, `git_state`/`activity`/`time` = `"bold yellow"`, `git_status = "red bold"`, `tokens = "bold cyan"`, `cache = "bold green"`, `extension_status = "dimmed white"`, `direnv = "bold bright-yellow"`, and `fill = "bold black"`.
 Context, cost, Git metrics, and username use the state/multi-style defaults below.
 
+### Theme-following and deterministic colors
+
+`thinking` colors follow the current native Pi theme by default: each level (`style_off`, `style_minimal`, `style_low`, `style_medium`, `style_high`, `style_xhigh`, `style_max`) maps to the theme's thinking role color, matching the built-in thinking indicator.
+Without theme colors (headless renders) the built-in dark gradient applies.
+Any configured `style_*` field overrides the theme color for that level, and the legacy `style` field is only the fallback for unknown levels.
+
+`model` renders a deterministic per-model hash color: every model in a series (the id without its `-YYYYMMDD` or `-latest` suffix) shares one hue, while the full id nudges saturation and lightness so distinct models differ slightly.
+The hash replaces only the color of the module style, keeping its modifiers: the built-in default and modifier-only styles (`bold`, `italic`) receive the hash color, while an explicit color in `style` or a matching `model_styles` entry stays fully user-controlled.
+Set `hash_colors = false` to keep the configured style color for models without a `model_styles` match.
+
 ### State-selected styles
 
 `context` and `cost` select the last entry at the highest threshold less than or equal to the current value.
@@ -440,6 +450,20 @@ When no alias matches, truncation runs after the built-in Claude/GPT shortening 
 It always changes display only—the provider model ID is untouched.
 Terminal control sequences in model IDs and truncation symbols are removed at render time.
 An empty symbol truncates without a marker.
+`model_styles` maps model ids (or shared prefixes) to explicit styles; an exact id wins, then the longest matching prefix, otherwise the deterministic hash color applies:
+
+```toml
+[model]
+model_styles = { "claude-" = "bold orange", "claude-3-7-sonnet-20250219" = "bold red" }
+```
+
+Invalid style values in `model_styles` are rejected with a warning and ignored.
+The provider module accepts exact `provider_aliases` to shorten provider names:
+
+```toml
+[provider]
+provider_aliases = { "openai-codex" = "codex" }
+```
 For example, `middle` can retain both a Hugging Face model family and its variant, while `start` is useful when a llama.cpp server reports an absolute model path.
 pi-starship treats model IDs as opaque strings and does not parse paths, repositories, GGUF suffixes, or quantization names.
 

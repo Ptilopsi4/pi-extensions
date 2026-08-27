@@ -325,6 +325,8 @@ test("model truncation options normalize values and reject invalid directions in
 		truncation_symbol: "…",
 		truncation_direction: "end",
 		model_aliases: {},
+		model_styles: {},
+		hash_colors: true,
 	});
 
 	const valid = loadFromText(
@@ -335,6 +337,8 @@ test("model truncation options normalize values and reject invalid directions in
 		truncation_symbol: "",
 		truncation_direction: "middle",
 		model_aliases: { raw: "short" },
+		model_styles: {},
+		hash_colors: true,
 	});
 	assert.deepEqual(valid.diagnostics, []);
 
@@ -346,6 +350,8 @@ test("model truncation options normalize values and reject invalid directions in
 		truncation_symbol: "…",
 		truncation_direction: "end",
 		model_aliases: {},
+		model_styles: {},
+		hash_colors: true,
 	});
 	assert.deepEqual(
 		invalid.diagnostics.map((item) => item.path),

@@ -1,5 +1,7 @@
 import { sanitizeTerminalText } from "@narumitw/pi-tui-kit/terminal-text";
-import { defineModule } from "./types.js";
+import { parseColor } from "../format/style.js";
+import { modelColorHex } from "./model-color.js";
+import { defineModule, type ModuleOptionValue } from "./types.js";
 
 const TRUNCATION_DIRECTIONS = ["start", "middle", "end"] as const;
 type TruncationDirection = (typeof TRUNCATION_DIRECTIONS)[number];
@@ -23,6 +25,33 @@ export const modelModule = defineModule({
 			values: TRUNCATION_DIRECTIONS,
 		},
 		model_aliases: { kind: "string-map", default: {} },
+		model_styles: { kind: "style-map", default: {} },
+		hash_colors: { kind: "boolean", default: true },
+	},
+	styleVariables: ["style"],
+	resolveStyleVariables: ({ runtime, style, options }) => {
+		const id = runtime.model?.id;
+		if (!id) return { style };
+		const map = styleMapOption(options, "model_styles");
+		const exact = map[id];
+		if (exact) return { style: exact };
+		let longest: string | undefined;
+		let longestLength = 0;
+		for (const [key, value] of Object.entries(map)) {
+			if (key.length > longestLength && id.startsWith(key)) {
+				longest = value;
+				longestLength = key.length;
+			}
+		}
+		if (longest) return { style: longest };
+		if (options.hash_colors === false) return { style };
+		// Hash coloring applies when the style has no explicit color: the built-in
+		// default and modifier-only styles keep their modifiers while the hash
+		// supplies the color; an explicit color stays fully user-controlled.
+		if (style === DEFAULT_MODEL_STYLE || !hasExplicitColor(style)) {
+			return { style: hashModelStyle(id, style) };
+		}
+		return { style };
 	},
 	values: ({ runtime, options }) => {
 		if (!runtime.model) return undefined;
@@ -82,4 +111,36 @@ export function shortenModel(model: string): string {
 		.replace(/^gpt-/u, "gpt ")
 		.replace(/-20\d{6}$/u, "")
 		.replace(/-latest$/u, "");
+}
+
+const DEFAULT_MODEL_STYLE = "bold blue";
+
+function styleMapOption(
+	options: Readonly<Record<string, ModuleOptionValue>>,
+	name: string,
+): Readonly<Record<string, string>> {
+	const value = options[name];
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Readonly<Record<string, string>>)
+		: {};
+}
+
+/** Replace the color of the module style with the deterministic model hash color. */
+export function hashModelStyle(modelId: string, baseStyle: string): string {
+	const modifiers = baseStyle
+		.split(/\s+/u)
+		.filter(Boolean)
+		.filter((token) => token !== "none" && !parseColor(token));
+	return [...modifiers, modelColorHex(modelId)].join(" ");
+}
+
+function hasExplicitColor(style: string): boolean {
+	return style
+		.split(/\s+/u)
+		.filter(Boolean)
+		.some((token) => {
+			if (token === "none") return false;
+			const normalized = token.replace(/^(?:fg:|bg:)+/u, "");
+			return parseColor(normalized) !== undefined;
+		});
 }

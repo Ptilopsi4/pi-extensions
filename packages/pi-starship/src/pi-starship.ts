@@ -14,6 +14,7 @@ import {
 	type StarshipConfig,
 	settingsFilePath,
 } from "./config.js";
+import type { ColorSpec } from "./format/style.js";
 import { gitSnapshotEqual, readGitSnapshot } from "./modules/git/runtime.js";
 import {
 	type GithubPrSnapshot,
@@ -58,6 +59,7 @@ interface RuntimeState {
 	activeTools: Map<string, number>;
 	isStreaming: boolean;
 	thinkingLevel: string;
+	thinkingTheme?: Record<string, ColorSpec>;
 	lastCompletedTool?: string;
 	git?: GitSnapshot;
 	githubPr?: GithubPrSnapshot;
@@ -264,6 +266,7 @@ export default function piStarship(pi: ExtensionAPI, options: PiStarshipOptions 
 		stopGithubPr();
 		runtime.git = undefined;
 		runtime.workspace = undefined;
+		runtime.thinkingTheme = undefined;
 		runtime.requestRender = undefined;
 		runtime.renderPreview = undefined;
 		runtime.inspect = undefined;
@@ -275,7 +278,8 @@ export default function piStarship(pi: ExtensionAPI, options: PiStarshipOptions 
 		workspaceController.start(generation);
 		startGithubPr(target);
 
-		ctx.ui.setFooter((tui, _theme, footerData) => {
+		ctx.ui.setFooter((tui, theme, footerData) => {
+			runtime.thinkingTheme = thinkingThemeFrom(theme);
 			runtime.requestRender = () => tui.requestRender();
 			runtime.renderPreview = (preview, width) => {
 				const snapshot = runtimeSnapshot(ctx, footerData, runtime);
@@ -322,6 +326,7 @@ export default function piStarship(pi: ExtensionAPI, options: PiStarshipOptions 
 						stopGithubPr();
 						runtime.git = undefined;
 						runtime.workspace = undefined;
+						runtime.thinkingTheme = undefined;
 						runtime.requestRender = undefined;
 						runtime.renderPreview = undefined;
 						runtime.inspect = undefined;
@@ -428,6 +433,7 @@ export default function piStarship(pi: ExtensionAPI, options: PiStarshipOptions 
 		stopGithubPr();
 		runtime.git = undefined;
 		runtime.workspace = undefined;
+		runtime.thinkingTheme = undefined;
 		runtime.requestRender = undefined;
 		runtime.renderPreview = undefined;
 		runtime.inspect = undefined;
@@ -565,6 +571,7 @@ function runtimeSnapshot(
 		gitRoot: runtime.git?.root,
 		model: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
 		thinkingLevel: runtime.thinkingLevel,
+		thinkingTheme: runtime.thinkingTheme,
 		turnCount: userTurnCount(ctx),
 		activeTools: runtime.activeTools,
 		isStreaming: runtime.isStreaming,
@@ -612,6 +619,50 @@ function formatDiagnostics(loaded: LoadedStarshipConfig): string {
 export function wrapFormattedStatusline(format: string, width: number): string[] {
 	if (width <= 0) return [];
 	return wrapTextWithAnsi(format, width);
+}
+
+const THINKING_THEME_ROLES = [
+	["off", "thinkingOff"],
+	["minimal", "thinkingMinimal"],
+	["low", "thinkingLow"],
+	["medium", "thinkingMedium"],
+	["high", "thinkingHigh"],
+	["xhigh", "thinkingXhigh"],
+	["max", "thinkingMax"],
+] as const;
+
+export interface ThinkingThemeSource {
+	getFgAnsi(color: string): string;
+}
+
+/** Extract the native TUI thinking colors so the footer matches the theme. */
+export function thinkingThemeFrom(
+	source: ThinkingThemeSource | undefined,
+): Record<string, ColorSpec> | undefined {
+	if (!source || typeof source.getFgAnsi !== "function") return undefined;
+	const colors: Record<string, ColorSpec> = {};
+	for (const [level, role] of THINKING_THEME_ROLES) {
+		const spec = ansiToColorSpec(source.getFgAnsi(role));
+		if (spec) colors[level] = spec;
+	}
+	return Object.keys(colors).length > 0 ? colors : undefined;
+}
+
+export function ansiToColorSpec(prefix: string): ColorSpec | undefined {
+	const escapeCharacter = String.fromCharCode(27);
+	const fixed = new RegExp(`^${escapeCharacter}\\[38;5;(\\d{1,3})m$`, "u").exec(prefix);
+	if (fixed) {
+		const value = Number(fixed[1]);
+		return value <= 255 ? { kind: "fixed", value } : undefined;
+	}
+	const rgb = new RegExp(`^${escapeCharacter}\\[38;2;(\\d{1,3});(\\d{1,3});(\\d{1,3})m$`, "u").exec(
+		prefix,
+	);
+	if (rgb) {
+		const [red, green, blue] = [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+		if (red <= 255 && green <= 255 && blue <= 255) return { kind: "rgb", red, green, blue };
+	}
+	return undefined;
 }
 
 export {
