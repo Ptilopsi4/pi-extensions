@@ -15,10 +15,9 @@ import type { UsageSettings, UsageSettingsRuntime } from "./settings.js";
 
 const OFF = "Off";
 const ON = "On";
-const EXPERIMENTAL_ON = "Experimental (On)";
 
-export const XAI_EXPERIMENTAL_WARNING =
-	"Experimental: enabling xAI usage sends the matched Pi xAI OAuth bearer to the undocumented cli-chat-proxy.grok.com consumer endpoint.";
+export const XAI_USAGE_WARNING =
+	"Warning: xAI usage sends the matched Pi xAI OAuth bearer to the undocumented cli-chat-proxy.grok.com consumer endpoint.";
 
 type UsageSettingId = keyof UsageSettings;
 
@@ -51,16 +50,16 @@ export async function showUsageSettings(
 				values: [OFF, ON],
 			},
 			{
-				id: "experimentalXaiUsage",
-				label: "Experimental xAI usage",
-				description: XAI_EXPERIMENTAL_WARNING,
-				currentValue: state.settings.experimentalXaiUsage ? EXPERIMENTAL_ON : OFF,
-				values: [OFF, EXPERIMENTAL_ON],
+				id: "xaiUsage",
+				label: "xAI usage",
+				description: XAI_USAGE_WARNING,
+				currentValue: state.kind !== "invalid" && state.settings.xaiUsage ? ON : OFF,
+				values: [OFF, ON],
 			},
 		];
 		const container = new Container();
 		container.addChild(new Text(theme.fg("accent", theme.bold("pi-usage Settings")), 1, 1));
-		container.addChild(new Text(theme.fg("warning", XAI_EXPERIMENTAL_WARNING), 1, 0));
+		container.addChild(new Text(theme.fg("warning", XAI_USAGE_WARNING), 1, 0));
 
 		let settingsList: SettingsList;
 		const finish = () => {
@@ -79,7 +78,8 @@ export async function showUsageSettings(
 				saveQueue = saveQueue.then(async () => {
 					const previous = settingsRuntime.get().settings[settingId];
 					if (settingsRuntime.get().kind === "invalid") {
-						settingsList.updateValue(id, displayValue(settingId, previous));
+						const effectivePrevious = settingId === "xaiUsage" ? false : previous;
+						settingsList.updateValue(id, displayValue(settingId, effectivePrevious));
 						if (!signal.aborted && isCurrent()) {
 							ctx.ui.notify("Repair pi-usage.json and reload before changing settings.", "error");
 							tui.requestRender();
@@ -137,7 +137,6 @@ export async function showUsageSettings(
 	});
 }
 
-function displayValue(id: UsageSettingId, enabled: boolean): string {
-	if (!enabled) return OFF;
-	return id === "experimentalXaiUsage" ? EXPERIMENTAL_ON : ON;
+function displayValue(_id: UsageSettingId, enabled: boolean): string {
+	return enabled ? ON : OFF;
 }

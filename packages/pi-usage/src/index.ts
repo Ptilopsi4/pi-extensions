@@ -40,13 +40,13 @@ export { normalizeXaiBillingPayload } from "./providers/xai.js";
 export { normalizeZaiQuotaPayload } from "./providers/zai.js";
 export {
 	adapterForProvider,
-	EXPERIMENTAL_XAI_ADAPTER,
 	isStaleExtensionContextError,
 	providerIsConfigured,
 	queryProviderUsage,
 	resolveUsageAuth,
 	SUPPORTED_ADAPTERS,
 	usageAdapters,
+	XAI_ADAPTER,
 } from "./query.js";
 export type {
 	UsageSettings,

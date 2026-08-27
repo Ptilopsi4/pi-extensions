@@ -31,7 +31,7 @@ function memoryRuntime(
 		path: "/tmp/pi-usage.json",
 		settings: {
 			codexFastMode: options.enabled ?? false,
-			experimentalXaiUsage: false,
+			xaiUsage: false,
 		},
 		...(options.kind === "invalid" ? { issue: "bad file" } : { document: {} }),
 	};
@@ -312,7 +312,7 @@ test("session replacement aborts stale loads and accepted writes before UI publi
 	releaseLoad({
 		kind: "loaded",
 		path: "/tmp/pi-usage.json",
-		settings: { codexFastMode: true, experimentalXaiUsage: false },
+		settings: { codexFastMode: true, xaiUsage: false },
 		document: { codexFastMode: true },
 	});
 	await pendingLoad;

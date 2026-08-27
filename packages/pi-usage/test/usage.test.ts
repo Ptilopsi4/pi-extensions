@@ -48,17 +48,17 @@ function codexAccessToken(accountId: string): string {
 }
 
 function memorySettingsRuntime(
-	experimentalXaiUsage = false,
+	xaiUsage = true,
 	failUpdates = false,
 	kind: UsageSettingsState["kind"] = "loaded",
 ): { runtime: UsageSettingsRuntime; state: () => UsageSettingsState } {
 	let state: UsageSettingsState = {
 		kind,
 		path: "/tmp/pi-usage.json",
-		settings: { codexFastMode: false, experimentalXaiUsage },
+		settings: { codexFastMode: false, xaiUsage },
 		...(kind === "invalid"
 			? { issue: "invalid test settings" }
-			: { document: { codexFastMode: false, experimentalXaiUsage } }),
+			: { document: { codexFastMode: false, xaiUsage } }),
 	};
 	const runtime: UsageSettingsRuntime = {
 		get: () => structuredClone(state),
@@ -1084,7 +1084,7 @@ test("statusline follows runtime auth changes and clears for unsupported selecte
 	assert.equal(fetches, 5);
 });
 
-test("disabled xAI reports the opt-in warning with zero auth and network requests", async (t) => {
+test("disabled xAI reports the privacy warning with zero auth and network requests", async (t) => {
 	const originalFetch = globalThis.fetch;
 	t.onTestFinished(() => {
 		globalThis.fetch = originalFetch;
@@ -1095,8 +1095,9 @@ test("disabled xAI reports the opt-in warning with zero auth and network request
 		fetches += 1;
 		throw new Error("must not fetch");
 	};
+	const settings = memorySettingsRuntime(false);
 	const mock = createMockPi();
-	usageExtension(mock.pi);
+	usageExtension(mock.pi, { settingsRuntime: settings.runtime });
 	const command = mock.commands.get("usage");
 	assert.ok(command);
 	let title = "";
@@ -1125,7 +1126,7 @@ test("disabled xAI reports the opt-in warning with zero auth and network request
 
 	await command.handler("", ctx);
 
-	assert.match(title, /Experimental xAI usage is disabled/);
+	assert.match(title, /xAI usage is disabled/);
 	assert.equal(authCalls, 0);
 	assert.equal(fetches, 0);
 	assert.equal(statuses.get("usage"), undefined);
@@ -1142,7 +1143,7 @@ test("invalid settings keep xAI disabled without resolving auth or fetching", as
 		fetches += 1;
 		throw new Error("must not fetch");
 	};
-	const settings = memorySettingsRuntime(false, false, "invalid");
+	const settings = memorySettingsRuntime(true, false, "invalid");
 	const mock = createMockPi();
 	usageExtension(mock.pi, { settingsRuntime: settings.runtime });
 	const command = mock.commands.get("usage");
@@ -1247,7 +1248,7 @@ test("xAI opt-out after identity prevents billing and stale publication", async 
 	let fetches = 0;
 	globalThis.fetch = async () => {
 		fetches += 1;
-		await settings.runtime.update({ experimentalXaiUsage: false });
+		await settings.runtime.update({ xaiUsage: false });
 		return new Response(JSON.stringify({ userId: "fixture-user" }), { status: 200 });
 	};
 	const credential = {
@@ -1433,8 +1434,8 @@ test("the Settings menu action gives RPC mode the active manual settings path", 
 	assert.match(notifications[0]?.message ?? "", /Edit settings manually: \/tmp\/pi-usage\.json/);
 });
 
-test("the TUI SettingsList warns before activation and applies xAI changes immediately", async () => {
-	const settings = memorySettingsRuntime();
+test("the TUI SettingsList shows the warning and applies xAI changes immediately", async () => {
+	const settings = memorySettingsRuntime(false);
 	const rendered: string[][] = [];
 	let applied = 0;
 	const controller = new AbortController();
@@ -1486,18 +1487,19 @@ test("the TUI SettingsList warns before activation and applies xAI changes immed
 		controller.signal,
 		() => true,
 		(id) => {
-			if (id === "experimentalXaiUsage") applied += 1;
+			if (id === "xaiUsage") applied += 1;
 		},
 	);
 
 	assert.equal(changed, true);
-	assert.equal(settings.state().settings.experimentalXaiUsage, true);
+	assert.equal(settings.state().settings.xaiUsage, true);
 	assert.equal(applied, 1);
 	assert.match(rendered[0]?.join("\n") ?? "", /undocumented\s+cli-chat-proxy\.grok\.com/);
+	assert.doesNotMatch(rendered[0]?.join("\n") ?? "", /experimental/iu);
 });
 
 test("Ctrl+C hard-cancels Settings before conflicting configurable actions", async () => {
-	const settings = memorySettingsRuntime();
+	const settings = memorySettingsRuntime(false);
 	let applied = 0;
 	const { ctx } = createMockContext({
 		hasUI: true,
@@ -1551,13 +1553,13 @@ test("Ctrl+C hard-cancels Settings before conflicting configurable actions", asy
 	assert.equal(changed, false);
 	assert.deepEqual(settings.state().settings, {
 		codexFastMode: false,
-		experimentalXaiUsage: false,
+		xaiUsage: false,
 	});
 	assert.equal(applied, 0);
 });
 
 test("a durable settings save still applies lifecycle cleanup when disposal wins the await", async () => {
-	const settings = memorySettingsRuntime();
+	const settings = memorySettingsRuntime(false);
 	const controller = new AbortController();
 	const update = settings.runtime.update;
 	settings.runtime.update = async (patch, signal) => {
@@ -1607,11 +1609,11 @@ test("a durable settings save still applies lifecycle cleanup when disposal wins
 		controller.signal,
 		() => true,
 		(id) => {
-			if (id === "experimentalXaiUsage") applied += 1;
+			if (id === "xaiUsage") applied += 1;
 		},
 	);
 
-	assert.equal(settings.state().settings.experimentalXaiUsage, true);
+	assert.equal(settings.state().settings.xaiUsage, true);
 	assert.equal(applied, 1);
 });
 
@@ -1664,9 +1666,9 @@ test("the TUI SettingsList rolls back its displayed and effective value after sa
 	);
 
 	assert.equal(changed, false);
-	assert.equal(settings.state().settings.experimentalXaiUsage, false);
+	assert.equal(settings.state().settings.xaiUsage, false);
 	assert.match(notifications[0]?.message ?? "", /disk full/);
-	assert.match(latest.join("\n"), /Experimental xAI usage.*Off/su);
+	assert.match(latest.join("\n"), /xAI usage.*Off/su);
 });
 
 test("shutdown cancels an explicit xAI identity body before billing or status publication", async (t) => {

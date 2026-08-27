@@ -7,9 +7,9 @@ import { formatUsageReport, formatUsageStatusline } from "../src/format.js";
 import { normalizeXaiBillingPayload } from "../src/providers/xai.js";
 import {
 	adapterForProvider,
-	EXPERIMENTAL_XAI_ADAPTER,
 	queryProviderUsage,
 	resolveUsageAuth,
+	XAI_ADAPTER,
 } from "../src/query.js";
 import type { ResolvedUsageAuth, XaiBillingPayload, XaiUserPayload } from "../src/types.js";
 
@@ -66,9 +66,9 @@ function resolvedAuth(): ResolvedUsageAuth {
 	};
 }
 
-test("xAI stays outside provider discovery until the experimental opt-in is enabled", () => {
-	assert.equal(adapterForProvider("xai"), undefined);
-	assert.equal(adapterForProvider("xai", true), EXPERIMENTAL_XAI_ADAPTER);
+test("xAI is discovered by default and can be disabled through settings", () => {
+	assert.equal(adapterForProvider("xai"), XAI_ADAPTER);
+	assert.equal(adapterForProvider("xai", false), undefined);
 });
 
 test("normalizes current credits while keeping allowance, on-demand, and prepaid values distinct", async () => {
@@ -192,7 +192,7 @@ test("xAI auth requires one exact complete OAuth match and rejects custom origin
 	};
 	const auth = await resolveUsageAuth(
 		xaiContext(),
-		EXPERIMENTAL_XAI_ADAPTER,
+		XAI_ADAPTER,
 		new Uint8Array(32),
 		() => undefined,
 		candidateReader([oauth()]),
@@ -215,7 +215,7 @@ test("xAI auth requires one exact complete OAuth match and rejects custom origin
 			() =>
 				resolveUsageAuth(
 					xaiContext(),
-					EXPERIMENTAL_XAI_ADAPTER,
+					XAI_ADAPTER,
 					new Uint8Array(32),
 					() => undefined,
 					candidateReader(failure.candidates),
@@ -228,7 +228,7 @@ test("xAI auth requires one exact complete OAuth match and rejects custom origin
 		() =>
 			resolveUsageAuth(
 				xaiContext("api-key"),
-				EXPERIMENTAL_XAI_ADAPTER,
+				XAI_ADAPTER,
 				new Uint8Array(32),
 				() => undefined,
 				candidateReader([]),
@@ -241,7 +241,7 @@ test("xAI auth requires one exact complete OAuth match and rejects custom origin
 				xaiContext("oauth-access", {
 					model: { ...xaiModel, baseUrl: "https://proxy.example.test/v1" },
 				}),
-				EXPERIMENTAL_XAI_ADAPTER,
+				XAI_ADAPTER,
 			),
 		/custom.*base URL|official/iu,
 	);
@@ -249,7 +249,7 @@ test("xAI auth requires one exact complete OAuth match and rejects custom origin
 		() =>
 			resolveUsageAuth(
 				xaiContext("oauth-access", { baseUrl: "https://proxy.example.test/v1" }),
-				EXPERIMENTAL_XAI_ADAPTER,
+				XAI_ADAPTER,
 			),
 		/proxy-resolved/iu,
 	);
@@ -266,7 +266,7 @@ test("identity-first transport sends only approved headers in exact order and do
 	};
 	let guards = 0;
 	const report = await queryProviderUsage(
-		EXPERIMENTAL_XAI_ADAPTER,
+		XAI_ADAPTER,
 		resolvedAuth(),
 		new AbortController().signal,
 		1_000,
@@ -302,7 +302,7 @@ test("transport refuses unsafe identity, redirects, stale guards, cancellation, 
 	await assert.rejects(
 		() =>
 			queryProviderUsage(
-				EXPERIMENTAL_XAI_ADAPTER,
+				XAI_ADAPTER,
 				resolvedAuth(),
 				new AbortController().signal,
 				1_000,
@@ -316,7 +316,7 @@ test("transport refuses unsafe identity, redirects, stale guards, cancellation, 
 	await assert.rejects(
 		() =>
 			queryProviderUsage(
-				EXPERIMENTAL_XAI_ADAPTER,
+				XAI_ADAPTER,
 				resolvedAuth(),
 				new AbortController().signal,
 				1_000,
@@ -334,7 +334,7 @@ test("transport refuses unsafe identity, redirects, stale guards, cancellation, 
 	await assert.rejects(
 		() =>
 			queryProviderUsage(
-				EXPERIMENTAL_XAI_ADAPTER,
+				XAI_ADAPTER,
 				resolvedAuth(),
 				new AbortController().signal,
 				1_000,
@@ -356,7 +356,7 @@ test("transport refuses unsafe identity, redirects, stale guards, cancellation, 
 			{ status: 200 },
 		);
 	const pending = queryProviderUsage(
-		EXPERIMENTAL_XAI_ADAPTER,
+		XAI_ADAPTER,
 		resolvedAuth(),
 		controller.signal,
 		1_000,
@@ -378,7 +378,7 @@ test("transport refuses unsafe identity, redirects, stale guards, cancellation, 
 	await assert.rejects(
 		() =>
 			queryProviderUsage(
-				EXPERIMENTAL_XAI_ADAPTER,
+				XAI_ADAPTER,
 				resolvedAuth(),
 				new AbortController().signal,
 				5,
@@ -403,7 +403,7 @@ test("HTTP failures redact OAuth secrets and the transient consumer identity", a
 	await assert.rejects(
 		() =>
 			queryProviderUsage(
-				EXPERIMENTAL_XAI_ADAPTER,
+				XAI_ADAPTER,
 				resolvedAuth(),
 				new AbortController().signal,
 				1_000,

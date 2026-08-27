@@ -154,12 +154,12 @@ export const SUPPORTED_ADAPTERS: readonly UsageProviderAdapter[] = [
 //   723dd2aa22d17be35617463837dc47cda008d90e.
 // The approved 2026-08-27 protocol smoke found Authorization sufficient for identity and billing,
 // but x-userid remains attached to billing to bind the proxy-canonical identity as Grok Build does.
-export const EXPERIMENTAL_XAI_ADAPTER: UsageProviderAdapter = {
+export const XAI_ADAPTER: UsageProviderAdapter = {
 	id: "xai",
 	displayName: "xAI",
 	semantics: {
 		kind: "consumer-subscription",
-		label: "Experimental xAI consumer subscription usage",
+		label: "xAI consumer subscription usage",
 	},
 	publishesStatusline: false,
 	async query(auth, signal, timeoutMs, guard) {
@@ -195,17 +195,15 @@ export const EXPERIMENTAL_XAI_ADAPTER: UsageProviderAdapter = {
 	},
 };
 
-export function usageAdapters(experimentalXaiUsage = false): readonly UsageProviderAdapter[] {
-	return experimentalXaiUsage
-		? [...SUPPORTED_ADAPTERS, EXPERIMENTAL_XAI_ADAPTER]
-		: SUPPORTED_ADAPTERS;
+export function usageAdapters(xaiUsage = true): readonly UsageProviderAdapter[] {
+	return xaiUsage ? [...SUPPORTED_ADAPTERS, XAI_ADAPTER] : SUPPORTED_ADAPTERS;
 }
 
 export function adapterForProvider(
 	providerId: string | undefined,
-	experimentalXaiUsage = false,
+	xaiUsage = true,
 ): UsageProviderAdapter | undefined {
-	return usageAdapters(experimentalXaiUsage).find((adapter) => adapter.id === providerId);
+	return usageAdapters(xaiUsage).find((adapter) => adapter.id === providerId);
 }
 
 export function isStaleExtensionContextError(error: unknown): boolean {

@@ -96,7 +96,7 @@ export function normalizeXaiBillingPayload(
 		source: "cli-chat-proxy.grok.com consumer billing",
 		semantics: {
 			kind: "consumer-subscription",
-			label: "Experimental xAI consumer subscription usage",
+			label: "xAI consumer subscription usage",
 		},
 		buckets,
 		metrics,
