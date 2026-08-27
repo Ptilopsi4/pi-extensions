@@ -3,14 +3,13 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import {
 	browserCandidateHint,
 	browserLifecycleState,
+	browserSettingsForOwner,
 	devToolsEndpoint,
 	endpointConfigHint,
 	endpointSourceLabel,
 	launchAttemptLines,
 	launchHint,
 	launchModeLabel,
-	managedBrowserExtensionPaths,
-	managedBrowserExtensionPathsSource,
 	managedBrowserForOwner,
 } from "./browser-manager.js";
 import {
@@ -213,7 +212,7 @@ export async function buildToolStatusMessage(pi: ExtensionAPI, owner: object) {
 			...(state.settingsNotice ? [`Settings note: ${state.settingsNotice}`] : []),
 			`Other active tools preserved: ${summary.activeNonChromeToolCount}`,
 			`Endpoint: ${devToolsEndpoint(owner)}`,
-			`Endpoint source: ${endpointSourceLabel()}`,
+			`Endpoint source: ${endpointSourceLabel(owner)}`,
 			`Launch mode: ${launchModeLabel(owner)}`,
 			...launchAttemptLines(owner),
 		].join("\n"),
@@ -225,6 +224,7 @@ export function buildQuickstartMessage(owner: object) {
 }
 
 export function buildBrowserStatusMessage(owner?: object) {
+	const browser = browserSettingsForOwner(owner);
 	const lifecycle = browserLifecycleState(owner);
 	const webMcpIsEnabled = owner ? webMcpEnabled(owner) : false;
 	const browserState =
@@ -243,16 +243,16 @@ export function buildBrowserStatusMessage(owner?: object) {
 			`Browser: ${browserState}`,
 			"Viewing this status does not probe the endpoint or launch Chrome.",
 			`Endpoint: ${devToolsEndpoint(owner)}`,
-			`Endpoint source: ${endpointSourceLabel()}`,
+			`Endpoint source: ${endpointSourceLabel(owner)}`,
 			`Launch mode: ${launchModeLabel(owner)}`,
-			`Unpacked extensions: ${managedBrowserExtensionPaths(owner).length} (${managedBrowserExtensionPathsSource(owner)})`,
+			`Unpacked extensions: ${browser.extensionPaths.length} (${browser.extensionPathsSource})`,
 			`WebMCP: ${webMcpIsEnabled ? "enabled · experimental" : "disabled · experimental"}`,
 			...(webMcpIsEnabled && !managedBrowserForOwner(owner)?.ready
 				? [
 						"WebMCP warning: attached browser profiles may contain everyday authenticated sessions and sensitive state.",
 					]
 				: []),
-			...(managedBrowserExtensionPaths(owner).length > 0
+			...(browser.extensionPaths.length > 0
 				? ["Unpacked extensions execute trusted browser code in an isolated managed browser."]
 				: []),
 			...launchAttemptLines(owner),
@@ -265,7 +265,7 @@ export function buildSettingsSetupMessage(owner: object) {
 	return sanitizeChromeDevtoolsDisplay(
 		[
 			`Chrome DevTools endpoint: ${devToolsEndpoint(owner)}`,
-			`Endpoint source: ${endpointSourceLabel()}`,
+			`Endpoint source: ${endpointSourceLabel(owner)}`,
 			`Launch mode: ${launchModeLabel(owner)}`,
 			...browserSettingsStatusLines(owner),
 			launchHint(owner),
@@ -294,7 +294,8 @@ export function sanitizeChromeDevtoolsDisplay(value: string, maxCharacters = 50_
 }
 
 function browserSettingsStatusLines(owner: object) {
-	const extensionPaths = managedBrowserExtensionPaths(owner);
+	const browser = browserSettingsForOwner(owner);
+	const extensionPaths = browser.extensionPaths;
 	const extensionLines =
 		extensionPaths.length > 0
 			? extensionPaths.map((extensionPath) => `  - ${extensionPath}`)
@@ -306,9 +307,9 @@ function browserSettingsStatusLines(owner: object) {
 					`Project settings: ${state.projectSettingsFilePath} (${state.projectSettingsTrusted ? "trusted" : "untrusted; ignored"})`,
 				]
 			: []),
-		`Auto-launch: ${state.autoLaunchEnabled ? "on" : "off"} (${state.autoLaunchSource})`,
-		`Browser executable: ${state.browserExecutable ?? "automatic discovery"} (${state.browserExecutableSource})`,
-		`Unpacked extensions (${managedBrowserExtensionPathsSource(owner)}):`,
+		`Auto-launch: ${browser.autoLaunchEnabled ? "on" : "off"} (${browser.autoLaunchSource})`,
+		`Browser executable: ${browser.executablePath ?? "automatic discovery"} (${browser.executablePathSource})`,
+		`Unpacked extensions (${browser.extensionPathsSource}):`,
 		...extensionLines,
 		`WebMCP: ${webMcpEnabled(owner) ? "enabled · experimental · every call requires confirmation" : "disabled · experimental"}`,
 		"Confirmed menu settings apply before the next browser connection; manual JSON edits require /reload or session replacement.",

@@ -55,31 +55,47 @@ const DEFAULT_BROWSER_MANAGER_OPERATIONS: BrowserManagerOperations = {
 let browserManagerOperations = DEFAULT_BROWSER_MANAGER_OPERATIONS;
 
 interface ManagedBrowserScope {
-	configuredPort: number;
+	browser: EffectiveBrowserSettings;
 	controller: AbortController;
-	extensionPaths: string[];
-	extensionPathsSource: EffectiveBrowserSettings["extensionPathsSource"];
 	generation: number;
 	launchPromise?: Promise<void>;
 	managedBrowser?: ManagedBrowser;
 	port: number;
-	portConfigured: boolean;
 	lastLaunchAttempt?: BrowserLaunchAttempt;
 }
 
 const managedBrowserScopes = new WeakMap<object, ManagedBrowserScope>();
 
+function cloneBrowserSettings(browser: EffectiveBrowserSettings): EffectiveBrowserSettings {
+	return { ...browser, extensionPaths: [...browser.extensionPaths] };
+}
+
+function runtimeBrowserSettings(): EffectiveBrowserSettings {
+	return {
+		endpoint: `http://${formatHostForUrl(state.host)}:${state.configuredPort}`,
+		host: state.host,
+		port: state.configuredPort,
+		hostConfigured: state.hostConfigured,
+		portConfigured: state.portConfigured,
+		autoLaunchEnabled: state.autoLaunchEnabled,
+		...(state.browserExecutable ? { executablePath: state.browserExecutable } : {}),
+		extensionPaths: [...state.extensionPaths],
+		endpointSource: state.endpointSource,
+		autoLaunchSource: state.autoLaunchSource,
+		executablePathSource: state.browserExecutableSource,
+		extensionPathsSource: state.extensionPathsSource,
+	};
+}
+
 function managedBrowserScope(owner: object) {
 	const existing = managedBrowserScopes.get(owner);
 	if (existing) return existing;
+	const browser = runtimeBrowserSettings();
 	const created: ManagedBrowserScope = {
-		configuredPort: state.configuredPort,
+		browser,
 		controller: new AbortController(),
-		extensionPaths: [...state.extensionPaths],
-		extensionPathsSource: state.extensionPathsSource,
 		generation: 0,
-		port: state.configuredPort,
-		portConfigured: state.portConfigured,
+		port: browser.port,
 	};
 	managedBrowserScopes.set(owner, created);
 	return created;
@@ -95,19 +111,20 @@ export function startManagedBrowserSession(owner: object) {
 
 export function syncManagedBrowserSettings(owner: object, browser: EffectiveBrowserSettings) {
 	const scope = managedBrowserScope(owner);
-	scope.configuredPort = browser.port;
-	scope.extensionPaths = [...browser.extensionPaths];
-	scope.extensionPathsSource = browser.extensionPathsSource;
+	scope.browser = cloneBrowserSettings(browser);
 	scope.port = browser.port;
-	scope.portConfigured = browser.portConfigured;
+}
+
+export function browserSettingsForOwner(owner?: object) {
+	return owner ? managedBrowserScope(owner).browser : runtimeBrowserSettings();
 }
 
 export function managedBrowserExtensionPaths(owner?: object) {
-	return owner ? managedBrowserScope(owner).extensionPaths : state.extensionPaths;
+	return browserSettingsForOwner(owner).extensionPaths;
 }
 
 export function managedBrowserExtensionPathsSource(owner?: object) {
-	return owner ? managedBrowserScope(owner).extensionPathsSource : state.extensionPathsSource;
+	return browserSettingsForOwner(owner).extensionPathsSource;
 }
 
 export function managedBrowserForOwner(owner?: object) {
@@ -136,11 +153,11 @@ function managedBrowserPort(owner?: object) {
 }
 
 function managedBrowserConfiguredPort(owner?: object) {
-	return owner ? managedBrowserScope(owner).configuredPort : state.configuredPort;
+	return browserSettingsForOwner(owner).port;
 }
 
 function managedBrowserPortConfigured(owner?: object) {
-	return owner ? managedBrowserScope(owner).portConfigured : state.portConfigured;
+	return browserSettingsForOwner(owner).portConfigured;
 }
 
 function setManagedBrowserPort(owner: object | undefined, port: number) {
@@ -216,18 +233,19 @@ export async function ensureDevToolsEndpoint(
 	}
 }
 
-function validateExtensionLaunchMode(_owner?: object) {
-	if (!isLocalDevToolsHost(state.host)) {
+function validateExtensionLaunchMode(owner?: object) {
+	const browser = browserSettingsForOwner(owner);
+	if (!isLocalDevToolsHost(browser.host)) {
 		throw new DevToolsEndpointError(
 			"Unpacked extensions require a local extension-owned managed browser; remote CDP endpoints cannot be modified.",
 		);
 	}
-	if (!state.autoLaunchEnabled) {
+	if (!browser.autoLaunchEnabled) {
 		throw new DevToolsEndpointError(
 			"Auto-launch is required for unpacked extensions so Pi can create an isolated managed browser.",
 		);
 	}
-	if (!state.browserExecutable) {
+	if (!browser.executablePath) {
 		throw new DevToolsEndpointError(
 			"Unpacked extensions require browser.executablePath for Chrome for Testing or Chromium in pi-chrome-devtools.json.",
 		);
@@ -293,7 +311,7 @@ async function prepareManagedBrowserLaunch(
 	}
 	if (managedBrowserPortConfigured(owner)) {
 		const available = await browserManagerOperations.isPortAvailable(
-			state.host,
+			browserSettingsForOwner(owner).host,
 			managedBrowserPort(owner),
 		);
 		throwIfBrowserLaunchCancelled(generation, signal, owner);
@@ -313,7 +331,7 @@ async function launchManagedBrowser(
 	owner?: object,
 ) {
 	throwIfBrowserLaunchCancelled(generation, signal, owner);
-	const candidateDefinitions = browserCandidateDefinitions();
+	const candidateDefinitions = browserCandidateDefinitions(owner);
 	const candidates = await resolveBrowserCandidates(
 		candidateDefinitions,
 		generation,
@@ -790,8 +808,9 @@ function shouldAutoLaunchAfterEndpointError(error: unknown, owner?: object) {
 	return !managedBrowserPortConfigured(owner) && error instanceof DevToolsEndpointError;
 }
 
-function canAutoLaunchBrowser(_owner?: object) {
-	return state.autoLaunchEnabled && isLocalDevToolsHost(state.host);
+function canAutoLaunchBrowser(owner?: object) {
+	const browser = browserSettingsForOwner(owner);
+	return browser.autoLaunchEnabled && isLocalDevToolsHost(browser.host);
 }
 
 function extensionsConfigured(owner?: object) {
@@ -812,7 +831,7 @@ function isTimeoutError(error: unknown) {
 }
 
 export function devToolsEndpoint(owner?: object) {
-	return `http://${formatHostForUrl(state.host)}:${managedBrowserPort(owner)}`;
+	return `http://${formatHostForUrl(browserSettingsForOwner(owner).host)}:${managedBrowserPort(owner)}`;
 }
 
 export function formatHostForUrl(host: string) {
@@ -820,8 +839,8 @@ export function formatHostForUrl(host: string) {
 	return host.includes(":") ? `[${host}]` : host;
 }
 
-export function endpointSourceLabel() {
-	return state.endpointSource;
+export function endpointSourceLabel(owner?: object) {
+	return browserSettingsForOwner(owner).endpointSource;
 }
 
 export type BrowserLifecycleState = "starting" | "running" | "exited" | "failed" | "unobserved";
@@ -835,10 +854,11 @@ export function browserLifecycleState(owner?: object): BrowserLifecycleState {
 }
 
 export function launchModeLabel(owner?: object) {
+	const browser = browserSettingsForOwner(owner);
 	const managedBrowser = managedBrowserForOwner(owner);
 	if (extensionsConfigured(owner)) {
-		if (!isLocalDevToolsHost(state.host)) return "invalid; extensions require a local endpoint";
-		if (!state.autoLaunchEnabled) return "invalid; extensions require auto-launch";
+		if (!isLocalDevToolsHost(browser.host)) return "invalid; extensions require a local endpoint";
+		if (!browser.autoLaunchEnabled) return "invalid; extensions require auto-launch";
 		if (managedBrowser && !managedBrowser.exited) {
 			return managedBrowserPortConfigured(owner)
 				? "extension-owned browser on explicit port"
@@ -848,8 +868,8 @@ export function launchModeLabel(owner?: object) {
 			? "force extension-owned launch on explicit port"
 			: "force extension-owned launch on dynamic port";
 	}
-	if (!isLocalDevToolsHost(state.host)) return "manual remote endpoint";
-	if (!state.autoLaunchEnabled) return "manual; auto-launch disabled";
+	if (!isLocalDevToolsHost(browser.host)) return "manual remote endpoint";
+	if (!browser.autoLaunchEnabled) return "manual; auto-launch disabled";
 	if (managedBrowser && !managedBrowser.exited) {
 		return managedBrowserPortConfigured(owner)
 			? "auto-launched on explicit port"
@@ -876,13 +896,14 @@ export function launchAttemptLines(owner?: object) {
 }
 
 export function launchHint(owner?: object) {
+	const browser = browserSettingsForOwner(owner);
 	if (extensionsConfigured(owner)) {
 		return "Configured unpacked extensions force an isolated extension-owned launch; existing CDP browsers are never reused, modified, or closed.";
 	}
-	if (!isLocalDevToolsHost(state.host)) {
+	if (!isLocalDevToolsHost(browser.host)) {
 		return `Remote/non-local endpoints are not auto-launched. Start a browser with CDP enabled at ${devToolsEndpoint(owner)}.`;
 	}
-	if (!state.autoLaunchEnabled) {
+	if (!browser.autoLaunchEnabled) {
 		return `Auto-launch is disabled. Start a browser manually: ${chromeLaunchCommand(owner)}`;
 	}
 	const managedMode = managedBrowserPortConfigured(owner)
@@ -895,13 +916,14 @@ export function browserCandidateHint(owner?: object) {
 	if (extensionsConfigured(owner)) {
 		return "Extension browser requirement: configure Chrome for Testing or Chromium with browser.executablePath; branded Chrome is rejected because it may ignore unpacked-extension flags.";
 	}
-	return `Browser candidates: ${browserCandidateDefinitions()
+	return `Browser candidates: ${browserCandidateDefinitions(owner)
 		.map((candidate) => candidate.label)
 		.join(", ")}`;
 }
 
 export function chromeLaunchCommand(owner?: object) {
-	const executable = state.browserExecutable ?? defaultManualBrowserExecutable();
+	const executable =
+		browserSettingsForOwner(owner).executablePath ?? defaultManualBrowserExecutable();
 	const dataDir =
 		process.platform === "win32" ? "%TEMP%\\pi-chrome-devtools" : "/tmp/pi-chrome-devtools";
 	return `${quoteCommandPart(executable)} --remote-debugging-port=${managedBrowserPort(owner)} --user-data-dir=${dataDir}`;
@@ -928,22 +950,23 @@ export function isLocalDevToolsHost(host: string) {
 	return ["localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"].includes(normalizedHost);
 }
 
-function browserCandidateDefinitions(): BrowserCandidateDefinition[] {
-	const explicitCandidate = explicitBrowserCandidateDefinition();
+function browserCandidateDefinitions(owner?: object): BrowserCandidateDefinition[] {
+	const explicitCandidate = explicitBrowserCandidateDefinition(owner);
 	if (explicitCandidate.length > 0) return explicitCandidate;
 
 	return uniqueBrowserCandidates(platformBrowserCandidateDefinitions());
 }
 
-function explicitBrowserCandidateDefinition(): BrowserCandidateDefinition[] {
-	if (!state.browserExecutable) return [];
+function explicitBrowserCandidateDefinition(owner?: object): BrowserCandidateDefinition[] {
+	const browser = browserSettingsForOwner(owner);
+	if (!browser.executablePath) return [];
 	return [
 		{
 			label:
-				state.browserExecutableSource === "environment"
+				browser.executablePathSource === "environment"
 					? "PI_CHROME_DEVTOOLS_BROWSER"
 					: "browser.executablePath",
-			executable: state.browserExecutable,
+			executable: browser.executablePath,
 			source: "env",
 		},
 	];
