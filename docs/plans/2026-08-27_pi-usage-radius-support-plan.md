@@ -40,7 +40,7 @@ flowchart LR
     C -- no --> X[Fail closed]
     C -- yes --> D[GET context and budgets]
     D --> E[GET analytics schema]
-    E --> F[Build actor-scoped read-only aggregate]
+    E --> F[Build fixed actor-scoped read-only aggregate]
     F --> G[POST analytics query]
     G --> H[Validate freshness and exact USD nanos]
     H --> I[Distinct applicable budget buckets]
@@ -49,7 +49,7 @@ flowchart LR
 
 `packages/pi-usage/src/query.ts` owns gateway identity, auth destination policy, bounded multi-request transport, request-generation guards, and adapter registration.
 
-`packages/pi-usage/src/providers/radius.ts` owns strict response parsing, actor and budget applicability, read-only query construction, exact USD-nano conversion, and `UsageReport` normalization.
+`packages/pi-usage/src/providers/radius.ts` owns strict response parsing, actor and budget applicability, fixed read-only query templates, exact USD-nano conversion, and `UsageReport` normalization.
 
 Radius remains explicit-query-only because analytics may be delayed and may not represent a live account quota.
 
@@ -76,7 +76,7 @@ Radius remains explicit-query-only because analytics may be delayed and may not 
 
 - Incorrect budget applicability could fabricate remaining spend, so the live discovery gate is blocking.
 - Analytics may expose organization-wide data, so queries must be actor-scoped and request only required aggregate columns.
-- Server-returned actor identifiers could alter generated SQL unless literals are escaped and the query is constrained to read-only syntax.
+- Server-returned actor identifiers could alter generated SQL unless literals are escaped and callers can select only fixed templates whose complete statements and every CTE are read-only.
 - USD-nano values can exceed JavaScript's safe integer range, so conversion must retain exact integer precision until display rounding.
 - A model inference origin may differ from the OAuth control plane, so deriving credential destination from `baseUrl` alone could leak credentials.
 - Delayed analytics can mislead users unless cutoff and stale-data semantics are validated and displayed.
@@ -89,14 +89,14 @@ Radius remains explicit-query-only because analytics may be delayed and may not 
 - [ ] Establish the gateway-origin contract for the built-in provider and document why custom gateways can or cannot derive a matching control-plane origin from a Pi public API or Radius response; verify custom and proxy gateways fail closed unless their credential destination is independently proven.
 - [ ] Create sanitized fixtures from the current OpenAPI schema and approved discovery responses for owner, admin, member, no-budget, disabled-budget, per-member, shared, group, daily, weekly, monthly, multiple-budget, delayed-export, and unauthorized cases; verify fixtures contain no real tenant or credential data and avoid invented undocumented fields.
 - [ ] Add `packages/pi-usage/src/providers/radius.ts` and extend `packages/pi-usage/src/types.ts` to parse only the proven context, budget, schema, and analytics response shapes, preserve exact USD nanos, and normalize each applicable budget or unbounded spend metric with explicit freshness notes; verify in `packages/pi-usage/test/radius.test.ts` that malformed, inapplicable, stale, and non-displayable data never creates a fabricated remaining amount.
-- [ ] Implement a read-only Radius query builder that accepts only `SELECT` or `WITH … SELECT`, scopes rows to the authenticated actor when required, and defensively escapes every server-returned literal; verify actor IDs containing SQL metacharacters cannot change query structure or broaden scope.
+- [ ] Implement only fixed, pre-reviewed Radius aggregate templates whose complete statements and every CTE contain read-only `SELECT` queries, expose no caller-supplied SQL fragments, scope rows to the authenticated actor, and defensively escape every inserted server-returned literal; verify exact emitted-query snapshots plus actor IDs containing SQL metacharacters and data-modifying CTE text cannot change query structure, introduce `INSERT`, `UPDATE`, `DELETE`, or `MERGE`, or broaden scope.
 - [ ] Update `packages/pi-usage/src/query.ts` to register `radius`, resolve immutable endpoint and auth data, fetch context and budgets, fetch schema, and submit the approved aggregate query with redirect refusal, bounded bodies, one deadline, shared cancellation, and secret-safe errors; verify exact request order, origins, headers, 401/403/404/409/502 responses, malformed JSON, body stalls, timeouts, cancellation after each boundary, and stale cache exclusion.
 - [ ] Add request-generation guards that revalidate the bearer fingerprint, gateway identity, current model, session generation, context validity, and cancellation state after every network `await`; verify account, gateway, session, disposal, and shutdown changes cannot start another request or publish stale results.
 - [ ] Update `packages/pi-usage/src/format.ts`, `packages/pi-usage/src/index.ts`, and `packages/pi-usage/test/usage.test.ts` to render distinct applicable budgets, organization spend metrics, shared/per-member semantics, and analytics cutoff through the existing current/configured/all-provider menu; verify partial failures remain isolated, hostile text is sanitized, and `formatUsageStatusline()` returns `undefined` for Radius.
 - [ ] Update `packages/pi-usage/README.md` and `packages/pi-usage/package.json` with Radius support, official operations, role requirements, budget semantics, analytics delay, built-in/custom gateway boundary, displayed fields, privacy limits, and no-statusline policy; verify README structure with the fenced-code-aware heading audit from `docs/readme-conventions.md` and review metadata against implementation.
 - [ ] Add a minor Changeset for `@narumitw/pi-usage` only after the discovery and origin gates permit enabling the Radius adapter; verify with `npm exec changeset status`.
 - [ ] Audit the final diff against `docs/extension-conventions.md`, `docs/readme-conventions.md`, and the non-applicability of `docs/extension-settings.md`, including cancellation, disposal, session replacement, shutdown, stale state after every `await`, origin validation, SQL scope, terminal sanitization, secret redaction, and package boundaries; record deviations and unavailable live checks in the handoff.
-- [ ] Run `npm test -- packages/pi-usage/test/radius.test.ts packages/pi-usage/test/usage.test.ts packages/pi-usage/test/core.test.ts packages/pi-usage/test/generated-entry.test.ts`, then `npm run check` and `npm test`; verify all deterministic gates pass within the repository's 5,000 ms per-test limit.
+- [ ] Run `npm --workspace @narumitw/pi-usage run build` and `npm exec vitest run -- packages/pi-usage/test/radius.test.ts packages/pi-usage/test/usage.test.ts packages/pi-usage/test/core.test.ts packages/pi-usage/test/generated-entry.test.ts` for the focused files, then `npm run check` and plain `npm test` for the full suite; verify the focused runner selects only the named files and all deterministic gates pass within the repository's 5,000 ms per-test limit.
 - [ ] Run `npm --workspace @narumitw/pi-usage run build`, `just pack usage`, and `pi --no-extensions --no-skills -e ./packages/pi-usage --list-models`; verify generated imports resolve, the tarball contains only declared files, and Pi loads the package without a Radius analytics request.
 - [ ] Run one explicitly approved final live smoke against a disposable Radius organization after reviewing the exact read-only requests; verify `/usage` displays only proven actor-scoped values and freshness labels, or keep the adapter disabled if the smoke fails.
 
@@ -113,7 +113,7 @@ After release, remove Radius from `SUPPORTED_ADAPTERS` in a patch release if its
 - [ ] The discovery gate proves every displayed Radius number against a documented OpenAPI field or approved actor-scoped aggregate.
 - [ ] Remaining budget appears only when applicability, period boundaries, current spend, and analytics freshness are verified.
 - [ ] The built-in gateway credential destination is proven, and custom or proxy gateways fail closed unless an equivalent public contract exists.
-- [ ] Radius analytics remain read-only, minimally scoped, cancellation-safe, cache-isolated by bearer and gateway, terminal-sanitized, and secret-redacted.
+- [ ] Radius analytics use only fixed aggregate templates whose complete statements and every CTE are read-only, minimally scoped, cancellation-safe, cache-isolated by bearer and gateway, terminal-sanitized, and secret-redacted.
 - [ ] Current/configured menus, explicit all-provider partial failures, account and gateway changes, stale contexts, and shutdown cleanup have deterministic regression coverage.
 - [ ] Radius remains explicit-query-only and does not publish or schedule statusline usage.
 - [ ] The README, metadata, exports, tests, and conditional minor Changeset agree with the enabled behavior.
