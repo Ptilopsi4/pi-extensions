@@ -1,9 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { fileURLToPath } from "node:url";
 import { getPackageDir } from "@earendil-works/pi-coding-agent";
+import { CHILD_COMMUNICATION_TOOL_NAMES } from "./child-communication-tools.js";
+import { brokerEnvironment } from "./message-broker.js";
 import type { ChildRequest, ChildResult } from "./types.js";
 
 const CORE_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
@@ -13,7 +15,6 @@ const MAX_OUTPUT_BYTES = 32 * 1024;
 const MAX_ERROR_BYTES = 8 * 1024;
 const MAX_EVENT_LINE_BYTES = 256 * 1024;
 const KILL_GRACE_MS = 1_000;
-const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
 
 interface ProcessSettlement {
 	code: number;
@@ -46,23 +47,8 @@ interface AssistantEvent {
 
 export async function runChild(request: ChildRequest): Promise<ChildResult> {
 	if (request.signal.aborted) return cancelledResult();
-	const prompt = [
-		request.agent.systemPrompt.trim(),
-		request.readOnly
-			? [
-					"This is a read-only consultation.",
-					"Use only the executor-provided read, grep, find, and ls tools.",
-					"Do not claim to edit files, run shell commands, mutate state, or persist a session.",
-					"If asked to implement, return analysis or instructions instead.",
-				].join("\n")
-			: "",
-	]
-		.filter(Boolean)
-		.join("\n\n");
-	const temporary = await writePrompt(prompt);
 	try {
-		if (request.signal.aborted) return cancelledResult();
-		const invocation = resolvePiInvocation(buildPiArgs(request, temporary.filePath));
+		const invocation = resolvePiInvocation(buildPiArgs(request));
 		return await executeProcess(invocation, request);
 	} catch (error) {
 		if (request.signal.aborted) return cancelledResult();
@@ -73,33 +59,34 @@ export async function runChild(request: ChildRequest): Promise<ChildResult> {
 			limitations: [],
 			truncated: false,
 		};
-	} finally {
-		await fs.promises
-			.rm(temporary.directory, { recursive: true, force: true })
-			.catch(() => undefined);
 	}
 }
 
-export function buildPiArgs(request: ChildRequest, promptPath: string): string[] {
-	const args = ["--mode", "json", "-p", "--no-session", "--no-extensions"];
-	if (request.agent.model) args.push("--model", request.agent.model);
-	if (request.agent.thinkingLevel) args.push("--thinking", request.agent.thinkingLevel);
-	args.push(request.projectTrusted ? "--approve" : "--no-approve");
-	if (request.readOnly) {
-		args.push("--no-skills", "--no-prompt-templates");
-		const tools = (request.agent.tools ?? [...READ_ONLY_TOOLS]).filter((tool) =>
-			READ_ONLY_TOOLS.has(tool),
-		);
-		if (tools.length > 0) args.push("--tools", [...new Set(tools)].join(","));
-		else args.push("--no-tools");
-	} else if (request.agent.tools) {
-		if (request.agent.tools.length > 0) {
-			args.push("--tools", [...new Set(request.agent.tools)].join(","));
-		} else args.push("--no-tools");
-	}
-	if (promptPath) args.push("--append-system-prompt", promptPath);
+export function buildPiArgs(request: ChildRequest): string[] {
+	const args = [
+		"--mode",
+		"json",
+		"-p",
+		"--no-session",
+		"--no-extensions",
+		"--no-skills",
+		"--no-prompt-templates",
+		"-e",
+		childCommunicationBridgePath(),
+		"--model",
+		request.model,
+		"--thinking",
+		request.thinkingLevel,
+		request.projectTrusted ? "--approve" : "--no-approve",
+	];
+	const tools = [...new Set([...request.tools, ...CHILD_COMMUNICATION_TOOL_NAMES])];
+	args.push("--tools", tools.join(","));
 	args.push(`Task: ${request.task}`);
 	return args;
+}
+
+export function childCommunicationBridgePath(): string {
+	return fileURLToPath(new URL("./child-communication-bridge.ts", import.meta.url));
 }
 
 async function executeProcess(
@@ -192,6 +179,7 @@ async function executeProcess(
 				stdio: ["ignore", "pipe", "pipe"],
 				env: {
 					...globalThis.process.env,
+					...brokerEnvironment(request.communication),
 					PI_SUBAGENT_DEPTH: String(
 						(Number.parseInt(globalThis.process.env.PI_SUBAGENT_DEPTH ?? "0", 10) || 0) + 1,
 					),
@@ -283,18 +271,6 @@ async function executeProcess(
 		limitations,
 		truncated,
 	};
-}
-
-async function writePrompt(prompt: string): Promise<{ directory: string; filePath: string }> {
-	const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-subagent-v3-"));
-	const filePath = path.join(directory, "agent.md");
-	try {
-		await fs.promises.writeFile(filePath, prompt, { encoding: "utf8", mode: 0o600 });
-		return { directory, filePath };
-	} catch (error) {
-		await fs.promises.rm(directory, { recursive: true, force: true }).catch(() => undefined);
-		throw error;
-	}
 }
 
 function resolvePiInvocation(args: string[]): { command: string; args: string[] } {

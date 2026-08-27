@@ -1,5 +1,11 @@
 # @narumitw/pi-usage
 
+## 0.52.3
+
+### Patch Changes
+
+- d74a181: Use the canonical OpenCode Go usage endpoint regardless of the selected model's base URL.
+
 ## 0.52.2
 
 ### Patch Changes

@@ -12,7 +12,7 @@ Pi TUI Kit provides declarative screens, standalone task and confirmation flows,
 - Defines typed action, detail, settings, choice, review, multi-select, and document screens.
 - Adapts shared flows across Pi TUI and RPC modes.
 - Owns standard navigation, cancellation, disposal, lifecycle, consistent horizontal framing, and width-safe rendering.
-- Provides focused task, confirmation, live-choice, custom-interaction, terminal-text, hint, horizontal-rule, and testing helpers.
+- Provides focused task, confirmation, live-choice, custom-interaction, terminal-text, hint, editor-status-widget, horizontal-rule, and testing helpers.
 - Publishes built ESM and TypeScript declarations for independently installable extensions.
 
 ## 📦 Install
@@ -26,7 +26,7 @@ npm install @narumitw/pi-tui-kit
 The published package contains built ESM and declarations in `dist/`; consumers do not need a TypeScript loader for dependencies.
 
 The package root remains the supported entrypoint for menus and interaction runners.
-Import lightweight display helpers from `@narumitw/pi-tui-kit/terminal-text` or `@narumitw/pi-tui-kit/interaction-hints` when a startup path does not otherwise need the full Kit runtime.
+Import lightweight display helpers from `@narumitw/pi-tui-kit/editor-status-widget`, `@narumitw/pi-tui-kit/terminal-text`, or `@narumitw/pi-tui-kit/interaction-hints` when a startup path does not otherwise need the full Kit runtime.
 
 ### Compatibility floor
 
@@ -48,7 +48,7 @@ Review syntax coloring synchronously loads the Kit's complete declared highlight
 Root imports, ordinary menus, task frames, and Markdown-only reviews do not evaluate that highlighter.
 Mermaid rendering lazy-loads its declared renderer only before the first screen containing an enabled Mermaid fence.
 
-The `terminal-text` and `interaction-hints` subpaths expose only their focused ESM and declaration graphs, while the package root keeps every existing export for compatibility.
+The `editor-status-widget`, `terminal-text`, and `interaction-hints` subpaths expose only their focused ESM and declaration graphs, while the package root keeps every existing export for compatibility.
 
 Repository maintainers can measure cold root and lightweight-subpath imports plus first actions, code-review, Mermaid, and task frames in fresh serial processes:
 
@@ -111,6 +111,35 @@ export function createPreviewDivider(theme: Pick<Theme, "fg">) {
 Long and wide-character labels truncate by terminal cells on narrow renders.
 Terminal and bidirectional controls are removed from labels at the display boundary.
 When the available width cannot preserve the requested padding, the component reduces the inset to keep one rule cell visible.
+
+## 📊 Editor status widgets
+
+Use `EditorStatusWidget` as a width-safe presentation frame for passive status or progress rows near Pi's editor.
+The component renders the standard `borderMuted` top rule and truncates every extension-owned body row to the available terminal width.
+The consumer continues owning widget keys, placement, snapshots, body formatting, terminal-text sanitization, RPC publication, refresh scheduling, and session lifecycle.
+The body renderer receives a normalized non-negative integer width and runs on every render, so it can wrap or style content before the final width guard.
+
+```ts
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { EditorStatusWidget } from "@narumitw/pi-tui-kit/editor-status-widget";
+
+export function publishProgress(ctx: ExtensionContext, lines: readonly string[]) {
+  const snapshot = [...lines];
+  ctx.ui.setWidget(
+    "example:progress",
+    (_tui, theme) =>
+      new EditorStatusWidget({
+        theme,
+        renderBody: (width) => snapshot.map((line) => theme.fg("muted", line)),
+      }),
+    { placement: "aboveEditor" },
+  );
+}
+```
+
+`EditorStatusWidget` treats body rows as terminal-formatted display text and does not sanitize or wrap them.
+Sanitize untrusted values before styling or width-sensitive formatting, and perform product-specific wrapping in `renderBody()`.
+Publish plain string arrays separately when an extension supports Pi RPC widgets because RPC ignores component factories.
 
 ## 🧭 Complete menu example
 
@@ -778,6 +807,7 @@ Consumer fixtures continue to own domain state, persistence, generation checks, 
 - `runQuestionnaire()` — adapts required choices, free-form answers, optional TUI notes, direct single-question submission, multi-question read-only review, and sequential RPC while preserving typed Submitted, Back, Close, Stale, Unsupported, and Error outcomes.
 - `formatInteractionHints()` — formats sanitized, normalized, de-duplicated injected bindings and literal shortcut keys for specialized interaction hints; the lightweight `@narumitw/pi-tui-kit/interaction-hints` subpath exports it and its public types.
 - `sanitizeTerminalText()` — removes terminal and bidirectional display controls from untrusted single-line presentation text without mutating raw payloads; the lightweight `@narumitw/pi-tui-kit/terminal-text` subpath exports it.
+- `EditorStatusWidget` — frames extension-owned passive editor status rows with the standard muted top rule and a final terminal-width guard; the lightweight `@narumitw/pi-tui-kit/editor-status-widget` subpath exports it and its public options.
 - `HorizontalRule` — renders a full-width or inset horizontal divider with an optional sanitized and aligned label plus render-time style callbacks.
 - `runCustomInteraction()` — owns cancellation, stale checks, exactly-once disposal, optional pending work draining, and typed results around one extension-owned custom TUI component.
 - `resolveMenuScreen()` — resolves and validates a dynamic screen for tests or adapters.
@@ -797,6 +827,7 @@ Version 12 added optional searchable `choice` fields, version 11 added Live Choi
 - `src/task.ts` — standalone and menu-shared task lifecycle orchestration
 - `src/confirmation.ts` — standalone confirmation mode adaptation and lifecycle results
 - `src/live-choice.ts` — standalone live-choice TUI/RPC adaptation and preview-work ownership
+- `src/editor-status-widget.ts` — passive editor-widget presentation framing without publication or lifecycle ownership
 - `src/questionnaire.ts` — standalone questionnaire TUI/RPC adaptation and public result contract
 - `src/interaction-hints.ts` — injected-key and literal-shortcut hint formatting, published through the lightweight `/interaction-hints` subpath
 - `src/terminal-text.ts` — terminal display sanitization published through the lightweight `/terminal-text` subpath

@@ -1,7 +1,7 @@
 {
 	"name": "@narumitw/pi-subagents-v3",
 	"version": "0.0.0",
-	"description": "Minimal bounded subagent job primitives for Pi.",
+	"description": "Bounded subagent jobs with asynchronous main-agent messaging for Pi.",
 	"type": "module",
 	"license": "MIT",
 	"private": true,
@@ -37,12 +37,16 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*",
 		"typebox": "*"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.10",
+		"@earendil-works/pi-ai": "0.84.3",
 		"@earendil-works/pi-coding-agent": "0.84.3",
+		"@earendil-works/pi-tui": "0.84.3",
 		"@types/node": "26.2.0",
 		"typebox": "1.3.18",
 		"typescript": "7.0.2"

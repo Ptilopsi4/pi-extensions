@@ -1,1 +1,1 @@
-export { default } from "./subagents-v3.js";
+export { default } from "./subagents.js";

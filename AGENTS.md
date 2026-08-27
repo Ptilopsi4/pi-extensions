@@ -139,7 +139,7 @@ Run commands from the repository root unless a command says otherwise.
 - Set the Bash tool timeout to 300 seconds.
 - Run `npm run check` or `just check` for the build, Biome, boundaries, and workspace typechecks.
 - Run `npm test` or `just test` separately for active tests.
-- CI and release verification must run both gates.
+- CI must run both gates, and `publish.yml` must not rerun tests or typechecks.
 - Run `just pack <unscoped-name>` and inspect the tarball after package metadata or publishing changes.
 - After packaged extension runtime-loading changes, run `npm --workspace @narumitw/pi-<unscoped-name> run build --if-present`, then smoke with `pi -e ./packages/pi-<unscoped-name>`; record why and what remains unverified if the smoke is impractical.
 - After project-local extension changes, smoke it in isolation with `pi --no-extensions -e ./.pi/extensions/<extension>/index.ts`, then verify trusted-project auto-discovery and `/reload` when practical.
