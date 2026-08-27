@@ -73,6 +73,18 @@ export interface SubagentsDependencies {
 	usageRecording?: Partial<UsageRecordingDependencies>;
 }
 
+const VERSION_3_MIGRATION_WARNING = [
+	"pi-subagents 3.0.0 will replace this runtime with the bounded-job design currently developed as pi-subagents-v3.",
+	"The release will remove:",
+	"• /subagents, extension settings, and local usage recording;",
+	"• the current subagent tool and underscore-named lifecycle and consultation tools;",
+	"• custom agent catalogs, per-agent model settings, and custom agent prompts;",
+	"• retained conversations, follow-up turns, mailboxes, peer and nested messaging, persisted recovery, and auto-resume completion;",
+	"• chains, fan-in, panels, workflow DAGs, dynamic scheduling, structured result contracts, and verification orchestration;",
+	"• alternate transports, trust-aware cwd policy, and extension-owned worktree isolation.",
+	"3.0.0 will instead expose subagent-spawn, subagent-inspect, subagent-cancel, subagent-wait, and subagent-reply for bounded background jobs.",
+].join("\n");
+
 export default function (pi: ExtensionAPI, dependencies: SubagentsDependencies = {}) {
 	pi.registerMessageRenderer(SUBAGENT_COMPLETION_MESSAGE_TYPE, renderCompletionMessage);
 	const loadBlockingExecution = cachedModuleLoader(
@@ -83,6 +95,7 @@ export default function (pi: ExtensionAPI, dependencies: SubagentsDependencies =
 	const settings = readSubagentSettings();
 	let currentSettings: SubagentSettings | undefined = settings;
 	let currentCatalog = "";
+	let migrationWarningShown = false;
 	const blockingEnabled = settings?.blocking?.enabled !== false;
 	const statefulEnabled = settings?.stateful?.enabled !== false;
 	if (blockingEnabled) {
@@ -100,6 +113,10 @@ export default function (pi: ExtensionAPI, dependencies: SubagentsDependencies =
 			...new Set([loadNotice, refreshedNotice].filter((value) => value !== undefined)),
 		].join("\n");
 		if (notice) ctx.ui.notify(notice, "warning");
+		if (ctx.hasUI && !migrationWarningShown) {
+			migrationWarningShown = true;
+			ctx.ui.notify(VERSION_3_MIGRATION_WARNING, "warning");
+		}
 
 		currentCatalog = formatAgentCatalog(
 			discoverAgentCatalog(ctx.cwd, ctx.isProjectTrusted(), refreshedSettings),

@@ -142,6 +142,50 @@ test("subagents registers consistent blocking guidance and one management comman
 	);
 });
 
+test("subagents warns once per loaded runtime about the 3.0.0 removals", async () => {
+	const mock = createMockPi();
+	subagents(mock.pi);
+	const headless = createMockContext({ mode: "print", hasUI: false });
+	for (const handler of mock.events.get("session_start") ?? []) {
+		await handler({ reason: "new" }, headless.ctx);
+	}
+	assert.deepEqual(headless.notifications, []);
+
+	const tui = createMockContext({ mode: "tui", hasUI: true });
+	for (const handler of mock.events.get("session_start") ?? []) {
+		await handler({ reason: "fork" }, tui.ctx);
+	}
+	const warnings = tui.notifications.filter((notification) =>
+		notification.message.includes("pi-subagents 3.0.0"),
+	);
+	assert.equal(warnings.length, 1);
+	assert.equal(warnings[0]?.level, "warning");
+	for (const expected of [
+		"/subagents",
+		"underscore-named",
+		"custom agent catalogs",
+		"retained conversations",
+		"workflow DAGs",
+		"trust-aware cwd policy",
+		"subagent-spawn",
+		"subagent-reply",
+	]) {
+		assert.match(warnings[0]?.message ?? "", new RegExp(expected, "i"));
+	}
+
+	for (const handler of mock.events.get("session_start") ?? []) {
+		await handler({ reason: "resume" }, tui.ctx);
+	}
+	assert.equal(
+		tui.notifications.filter((notification) => notification.message.includes("pi-subagents 3.0.0"))
+			.length,
+		1,
+	);
+	for (const handler of mock.events.get("session_shutdown") ?? []) {
+		await handler({ reason: "quit" }, tui.ctx);
+	}
+});
+
 test("deprecated blocking subagent warns once per UI session without changing execution", async () => {
 	const result = {
 		content: [{ type: "text" as const, text: "LEGACY_RESULT" }],
@@ -187,8 +231,20 @@ test("deprecated blocking subagent warns once per UI session without changing ex
 	for (const handler of mock.events.get("session_start") ?? []) {
 		await handler({ reason: "new" }, context.ctx);
 	}
+	assert.equal(
+		context.notifications.filter((notification) =>
+			notification.message.includes("pi-subagents 3.0.0"),
+		).length,
+		1,
+	);
 	assert.deepEqual(await execute(), result);
-	assert.equal(context.notifications.length, 2, "a replacement session receives one new warning");
+	assert.equal(
+		context.notifications.filter((notification) =>
+			/subagent is deprecated/i.test(notification.message),
+		).length,
+		2,
+		"a replacement session receives one new tool warning",
+	);
 	for (const handler of mock.events.get("session_shutdown") ?? []) {
 		await handler({ reason: "quit" }, context.ctx);
 	}
